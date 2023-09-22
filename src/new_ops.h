@@ -94,6 +94,22 @@ typedef union tregister_t {
     double      asFloat;
 } tregister_t;
 
+typedef union simd_register_t {
+    float       f32[8];
+    double      f64[4];
+    uint32_t    i32[8];
+    uint64_t    i64[4];
+    uint16_t    i16[16];
+    uint8_t     i8[32];
+} simd_register_t;
+
+typedef uint8_t i8_t;
+typedef uint16_t i16_t;
+typedef uint32_t i32_t;
+typedef uint64_t i64_t;
+typedef float f32_t;
+typedef double f64_t;
+
 uint64_t symbol_offset(object_file *obj, const char *name);
 
 #define CODE(name) add_symbol(obj, name)
@@ -188,8 +204,6 @@ static inline void compile_imm_qword(object_file* obj, uint64_t qword) {
 
 static inline void add_instruction(object_file* obj, struct instruction instr) {
     RESIZE_CONTENTS();
-    printf("instruction: %04x\n", instr.opcode.opcode);
-    printf("contents_size: %d\n", obj->contents_size);
     obj->contents[obj->contents_size - 1].type = file_insert_type_instruction;
     obj->contents[obj->contents_size - 1].instruction = instr;
     obj->comp_size += 2 + instr.opcode.nbytes;
@@ -228,7 +242,6 @@ static inline void compile_bytes(object_file* obj, struct bytes bytes) {
 static inline void compile_instruction(object_file* obj, struct instruction instr) {
     uint16_t op = instr.opcode.opcode;
     op |= instr.opcode.nbytes << opcode_nbytes_shift;
-    printf("opcode: %04x ", op);
     compile_imm_word(obj, op);
     for (uint8_t i = 0; i < 4; i++) {
         switch (instr.args[i].type)
@@ -236,20 +249,15 @@ static inline void compile_instruction(object_file* obj, struct instruction inst
         case arg_none:
             break;
         case arg_reg:
-            printf("reg: %02x ", instr.args[i].reg);
             compile_imm_byte(obj, instr.args[i].reg);
             break;
         case arg_imm16:
-            printf("imm16: %04x ", instr.args[i].imm16);
             compile_imm_word(obj, instr.args[i].imm16);
             break;
-        case arg_sym:{
-            uint64_t off = symbol_offset(obj, instr.args[i].sym);
-            printf("sym: %s %08llx ", instr.args[i].sym, off);
-            compile_imm_dword(obj, off);}
+        case arg_sym:
+            compile_imm_dword(obj, symbol_offset(obj, instr.args[i].sym));
             break;
         case arg_imm64:
-            printf("imm64: %016llx ", instr.args[i].imm64);
             compile_imm_qword(obj, instr.args[i].imm64);
             break;
         default:
@@ -257,7 +265,6 @@ static inline void compile_instruction(object_file* obj, struct instruction inst
             break;
         }
     }
-    printf("\n");
 }
 
 #define opcode_nop              0b000000000000
@@ -297,8 +304,24 @@ static inline void compile_instruction(object_file* obj, struct instruction inst
 #define opcode_inc              0b000000100010
 #define opcode_dec              0b000000100011
 #define opcode_irq              0b000000100100
-#define opcode_ldr_addr         0b000000100101
+// #define opcode_ldr_addr         0b000000100101
 #define opcode_mov              0b000000100110
+
+#define opcode_qadd             0b010000100111
+#define opcode_qsub             0b010000101000
+#define opcode_qmul             0b010000101001
+#define opcode_qdiv             0b010000101010
+#define opcode_qmod             0b010000101011
+#define opcode_qand             0b010000101100
+#define opcode_qor              0b010000101101
+#define opcode_qxor             0b010000101110
+#define opcode_qshl             0b010000101111
+#define opcode_qshr             0b010000110000
+#define opcode_qconv            0b010000110001
+#define opcode_qaddsub          0b010000110010
+#define opcode_qshuf            0b010000110011
+#define opcode_qmov             0b010000110100
+#define opcode_qmov2            0b010000110101
 
 //      opcode                      nbytes                 // mnemonic                                  // bytecode
 #define op_nop                  OPC(0, opcode_nop)         // nop                                       // 0x000
@@ -355,6 +378,19 @@ static inline void compile_instruction(object_file* obj, struct instruction inst
 #define op_xor_reg_imm16        OPC(3, opcode_xor)         // xor r1 0x1234                             // 0x01E 0x01 0x12 0x34
 #define op_shl_reg_imm16        OPC(3, opcode_shl)         // shl r1 0x1234                             // 0x01F 0x01 0x12 0x34
 #define op_shr_reg_imm16        OPC(3, opcode_shr)         // shr r1 0x1234                             // 0x020 0x01 0x12 0x34
+#define op_qadd_reg_reg         OPC(3, opcode_qadd)        // qadd (b|w|d|q|float|double) xmm1 xmm2     // 0x427 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qsub_reg_reg         OPC(3, opcode_qsub)        // qsub (b|w|d|q|float|double) xmm1 xmm2     // 0x428 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qmul_reg_reg         OPC(3, opcode_qmul)        // qmul (b|w|d|q|float|double) xmm1 xmm2     // 0x429 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qdiv_reg_reg         OPC(3, opcode_qdiv)        // qdiv (b|w|d|q|float|double) xmm1 xmm2     // 0x42A 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qmod_reg_reg         OPC(3, opcode_qmod)        // qmod (b|w|d|q|float|double) xmm1 xmm2     // 0x42B 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qand_reg_reg         OPC(3, opcode_qand)        // qand (b|w|d|q|float|double) xmm1 xmm2     // 0x42C 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qor_reg_reg          OPC(3, opcode_qor)         // qor (b|w|d|q|float|double) xmm1 xmm2      // 0x42D 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qxor_reg_reg         OPC(3, opcode_qxor)        // qxor (b|w|d|q|float|double) xmm1 xmm2     // 0x42E 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qshl_reg_reg         OPC(3, opcode_qshl)        // qshl (b|w|d|q|float|double) xmm1 xmm2     // 0x42F 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qshr_reg_reg         OPC(3, opcode_qshr)        // qshr (b|w|d|q|float|double) xmm1 xmm2     // 0x430 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qaddsub_reg_reg      OPC(3, opcode_qaddsub)     // qaddsub (b|w|d|q|float|double) xmm1 xmm2  // 0x432 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qshuf_reg_reg        OPC(3, opcode_qshuf)       // qshuf (b|w|d|q|float|double) xmm1 xmm2    // 0x433 0x(01|02|04|08|10|20) 0x01 0x02
+#define op_qmov_reg_reg         OPC(3, opcode_qmov)        // qmov (b|w|d|q|float|double) xmm1 r2       // 0x434 0x(01|02|04|08|10|20) 0x01 0x02
 
 #define op_ldr_reg_mem          OPC(4, opcode_ldr)         // ldr r1 [r2 (0x1234)]                      // 0x002 0x01 0x02 0x12 0x34
 #define op_b_addr               OPC(4, opcode_b)           // b label                                   // 0x006 (label address in data (32 bit))
@@ -369,9 +405,11 @@ static inline void compile_instruction(object_file* obj, struct instruction inst
 #define op_psh_addr             OPC(4, opcode_psh)         // psh label                                 // 0x015 (label address in data (32 bit))
 #define op_pp_addr              OPC(4, opcode_pp)          // pp label                                  // 0x016 (label address in data (32 bit))
 #define op_mov_reg_reg_reg      OPC(4, opcode_mov)         // mov r1 (b|w|d|q) [r2 r3]                  // 0x026 0x01 0x0(1|2|4|8) 0x02 0x03
+#define op_qconv_reg_reg        OPC(4, opcode_qconv)       // qconv (b|w|d|q|float|double) xmm1 (b|w|d|q|float|double) xmm2 // 0x431 0x(01|02|04|08|10|20) 0x01 0x(01|02|04|08|10|20) 0x02
+#define op_qmov_reg_imm         OPC(4, opcode_qmov)        // qmov (b|w|d|q|float|double) [xmm1 (0x12)] r1 // 0x434 0x(01|02|04|08|10|20) 0x01 0x12 0x02
+#define op_qmov2_reg_imm        OPC(4, opcode_qmov2)       // qmov r1 (b|w|d|q|float|double) [xmm1 (0x12)] // 0x435 0x01 0x(01|02|04|08|10|20) 0x12 0x02
 
-#define op_ldr_reg_addr         OPC(5, opcode_ldr)         // ldr r1 [label]                            // 0x002 0x01 (label address in data (32 bit))
-#define op_addr_ldr_reg_addr    OPC(5, opcode_ldr_addr)    // ldr r1 label                              // 0x025 0x01 (label address in data (32 bit))
+#define op_ldr_reg_addr         OPC(5, opcode_ldr)         // ldr r1 label                              // 0x002 0x01 (label address in data (32 bit))
 #define op_mov_reg_reg          OPC(5, opcode_mov)         // mov r1 (b|w|d|q) [r2 (0x1234)]            // 0x026 0x01 0x0(1|2|4|8) 0x12 0x34 0x02
 #define op_add_reg_mem          OPC(5, opcode_add)         // add r1 (b|w|d|q) [r2 (0x1234)]            // 0x017 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
 #define op_sub_reg_mem          OPC(5, opcode_sub)         // sub r1 (b|w|d|q) [r2 (0x1234)]            // 0x018 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
@@ -386,7 +424,7 @@ static inline void compile_instruction(object_file* obj, struct instruction inst
 
 #define op_ldr_reg_addr_reg     OPC(6, opcode_ldr)         // ldr r1 [label r2]                         // 0x002 0x01 0x02 (label address in data (32 bit))
 
-#define op_ldr_reg_addr_imm16   OPC(7, opcode_ldr)         // ldr r1 [label 0x1234]                     // 0x002 0x01 0x12 0x34 (label address in data (32 bit))
+#define op_ldr_reg_addr_imm16   OPC(7, opcode_ldr)         // ldr r1 [label (0x1234)]                   // 0x002 0x01 0x12 0x34 (label address in data (32 bit))
 #define op_mov_reg_addr_reg     OPC(7, opcode_mov)         // mov r1 (b|w|d|q) [label r2]               // 0x026 0x01 0x0(1|2|4|8) (label address in data (32 bit)) 0x02
 #define op_add_reg_addr_reg     OPC(7, opcode_add)         // add r1 (b|w|d|q) [label r2]               // 0x017 0x01 0x0(1|2|4|8) (label address in data (32 bit)) 0x02
 #define op_sub_reg_addr_reg     OPC(7, opcode_sub)         // sub r1 (b|w|d|q) [label r2]               // 0x018 0x01 0x0(1|2|4|8) (label address in data (32 bit)) 0x02

@@ -6,6 +6,10 @@ build: {
   includes: [
     "src";
   ];
+  flags: [
+    "-O2";
+  ];
+  std: "gnu17";
   units: [
     "main.c";
     "h64c.c";

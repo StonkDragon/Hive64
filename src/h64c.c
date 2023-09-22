@@ -16,6 +16,7 @@ typedef enum _TokenType {
     Directive,
     LeftBracket,
     RightBracket,
+    SimdRegister,
 } TokenType;
 
 typedef struct _Token {
@@ -81,7 +82,7 @@ object_file* compile(Token* tokens) {
     CREATE_OBJECT();
     for (;tokens->type != EOF; tokens++) {
         if (tokens->type == Identifier) {
-            printf("%s:%d: DEBUG: %s\n", tokens->file, tokens->line, tokens->value);
+            printf("%s:%d: %s\n", tokens->file, tokens->line, tokens->value);
             if (ins("nop")) {
                 instruction_t instr = (instruction_t) {
                     .opcode = op_nop
@@ -136,7 +137,7 @@ object_file* compile(Token* tokens) {
                     char* str = tokens->value;
                     str = unquote(str);
                     instruction_t instr = (instruction_t) {
-                        .opcode = op_addr_ldr_reg_addr,
+                        .opcode = op_ldr_reg_addr,
                         .args = {
                             ARG_REG(reg1),
                             ARG_SYM(str)
@@ -224,9 +225,10 @@ object_file* compile(Token* tokens) {
                             char* str = tokens->value;
                             str = unquote(str);
                             instruction_t instr = (instruction_t) {
-                                .opcode = op_ldr_reg_addr,
+                                .opcode = op_ldr_reg_addr_imm16,
                                 .args = {
                                     ARG_REG(reg1),
+                                    ARG_IMM16(0),
                                     ARG_SYM(str)
                                 }
                             };
@@ -923,6 +925,284 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
+
+            #define SIMD_SIMPLE(_op) \
+            } else if (ins(#_op)) { \
+                tokens++; \
+                if (tokens->type != Identifier) { \
+                    printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value); \
+                    return NULL; \
+                } \
+                if (!ins("byte") && !ins("word") && !ins("dword") && !ins("qword") && !ins("float") && !ins("double")) { \
+                    printf("%s:%d: Expected byte, word, dword, qword, float, or double, got %s\n", tokens->file, tokens->line, tokens->value); \
+                    return NULL; \
+                } \
+                uint8_t mode = 0; \
+                if (ins("byte")) { \
+                    mode = 0x01; \
+                } else if (ins("word")) { \
+                    mode = 0x02; \
+                } else if (ins("dword")) { \
+                    mode = 0x04; \
+                } else if (ins("qword")) { \
+                    mode = 0x08; \
+                } else if (ins("float")) { \
+                    mode = 0x10; \
+                } else if (ins("double")) { \
+                    mode = 0x20; \
+                } \
+                tokens++; \
+                if (tokens->type != SimdRegister) { \
+                    printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value); \
+                    return NULL; \
+                } \
+                uint8_t reg1 = atoi(tokens->value + 3); \
+                tokens++; \
+                if (tokens->type != SimdRegister) { \
+                    printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value); \
+                    return NULL; \
+                } \
+                uint8_t reg2 = atoi(tokens->value + 3); \
+                instruction_t instr = (instruction_t) { \
+                    .opcode = op_ ## _op ## _reg_reg, \
+                    .args = { \
+                        ARG_REG(mode), \
+                        ARG_REG(reg1), \
+                        ARG_REG(reg2) \
+                    } \
+                }; \
+                add_instruction(obj, instr);
+
+
+            SIMD_SIMPLE(qadd)
+            SIMD_SIMPLE(qsub)
+            SIMD_SIMPLE(qmul)
+            SIMD_SIMPLE(qdiv)
+            SIMD_SIMPLE(qmod)
+            SIMD_SIMPLE(qand)
+            SIMD_SIMPLE(qor)
+            SIMD_SIMPLE(qxor)
+            SIMD_SIMPLE(qshl)
+            SIMD_SIMPLE(qshr)
+            SIMD_SIMPLE(qaddsub)
+            SIMD_SIMPLE(qshuf)
+
+            } else if (ins("qconv")) {
+                tokens++;
+                if (tokens->type != Identifier) {
+                    printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                if (!ins("byte") && !ins("word") && !ins("dword") && !ins("qword") && !ins("float") && !ins("double")) {
+                    printf("%s:%d: Expected byte, word, dword, qword, float, or double, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                uint8_t destMode = 0;
+                if (ins("byte")) {
+                    destMode = 0x01;
+                } else if (ins("word")) {
+                    destMode = 0x02;
+                } else if (ins("dword")) {
+                    destMode = 0x04;
+                } else if (ins("qword")) {
+                    destMode = 0x08;
+                } else if (ins("float")) {
+                    destMode = 0x10;
+                } else if (ins("double")) {
+                    destMode = 0x20;
+                }
+                tokens++;
+                if (tokens->type != SimdRegister) {
+                    printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                uint8_t destReg = atoi(tokens->value + 3);
+                tokens++;
+                if (tokens->type != Identifier) {
+                    printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                if (!ins("byte") && !ins("word") && !ins("dword") && !ins("qword") && !ins("float") && !ins("double")) {
+                    printf("%s:%d: Expected byte, word, dword, qword, float, or double, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                uint8_t srcMode = 0;
+                if (ins("byte")) {
+                    srcMode = 0x01;
+                } else if (ins("word")) {
+                    srcMode = 0x02;
+                } else if (ins("dword")) {
+                    srcMode = 0x04;
+                } else if (ins("qword")) {
+                    srcMode = 0x08;
+                } else if (ins("float")) {
+                    srcMode = 0x10;
+                } else if (ins("double")) {
+                    srcMode = 0x20;
+                }
+                tokens++;
+                if (tokens->type != SimdRegister) {
+                    printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                uint8_t srcReg = atoi(tokens->value + 3);
+                instruction_t instr = (instruction_t) {
+                    .opcode = op_qconv_reg_reg,
+                    .args = {
+                        ARG_REG(destMode),
+                        ARG_REG(destReg),
+                        ARG_REG(srcMode),
+                        ARG_REG(srcReg)
+                    }
+                };
+                add_instruction(obj, instr);
+            } else if (ins("qmov")) {
+                tokens++;
+                if (tokens->type == Identifier) {
+                    if (!ins("byte") && !ins("word") && !ins("dword") && !ins("qword") && !ins("float") && !ins("double")) {
+                        printf("%s:%d: Expected byte, word, dword, qword, float, or double, got %s\n", tokens->file, tokens->line, tokens->value);
+                        return NULL;
+                    }
+                    uint8_t destMode = 0;
+                    if (ins("byte")) {
+                        destMode = 0x01;
+                    } else if (ins("word")) {
+                        destMode = 0x02;
+                    } else if (ins("dword")) {
+                        destMode = 0x04;
+                    } else if (ins("qword")) {
+                        destMode = 0x08;
+                    } else if (ins("float")) {
+                        destMode = 0x10;
+                    } else if (ins("double")) {
+                        destMode = 0x20;
+                    }
+                    tokens++;
+                    if (tokens->type != LeftBracket) {
+                        printf("%s:%d: Expected [, got %s\n", tokens->file, tokens->line, tokens->value);
+                        return NULL;
+                    }
+                    tokens++;
+                    if (tokens->type != SimdRegister) {
+                        printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value);
+                        return NULL;
+                    }
+                    uint8_t destReg = atoi(tokens->value + 3);
+                    tokens++;
+                    uint8_t index = 0xFF;
+                    if (tokens->type == Number) {
+                        index = atoi(tokens->value);
+                        tokens++;
+                    }
+                    if (tokens->type != RightBracket) {
+                        printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
+                        return NULL;
+                    }
+                    tokens++;
+                    if (tokens->type != Register) {
+                        printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
+                        return NULL;
+                    }
+                    uint8_t srcReg = atoi(tokens->value + 1);
+                    instruction_t instr = (instruction_t) {
+                        .opcode = op_qmov_reg_imm,
+                        .args = {
+                            ARG_REG(destMode),
+                            ARG_REG(destReg),
+                            ARG_REG(index),
+                            ARG_REG(srcReg)
+                        }
+                    };
+                    add_instruction(obj, instr);
+                } else if (tokens->type == Register) {
+                    uint8_t destReg = atoi(tokens->value + 1);
+                    tokens++;
+                    if (tokens->type != Identifier) {
+                        printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
+                        return NULL;
+                    }
+                    if (!ins("byte") && !ins("word") && !ins("dword") && !ins("qword") && !ins("float") && !ins("double")) {
+                        printf("%s:%d: Expected byte, word, dword, qword, float, or double, got %s\n", tokens->file, tokens->line, tokens->value);
+                        return NULL;
+                    }
+                    uint8_t srcMode = 0;
+                    if (ins("byte")) {
+                        srcMode = 0x01;
+                    } else if (ins("word")) {
+                        srcMode = 0x02;
+                    } else if (ins("dword")) {
+                        srcMode = 0x04;
+                    } else if (ins("qword")) {
+                        srcMode = 0x08;
+                    } else if (ins("float")) {
+                        srcMode = 0x10;
+                    } else if (ins("double")) {
+                        srcMode = 0x20;
+                    }
+                    tokens++;
+                    if (tokens->type != LeftBracket) {
+                        printf("%s:%d: Expected [, got %s\n", tokens->file, tokens->line, tokens->value);
+                        return NULL;
+                    }
+                    tokens++;
+                    if (tokens->type != SimdRegister) {
+                        printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value);
+                        return NULL;
+                    }
+                    uint8_t srcReg = atoi(tokens->value + 3);
+                    tokens++;
+                    uint8_t index = 0;
+                    if (tokens->type == Number) {
+                        index = atoi(tokens->value);
+                        tokens++;
+                    }
+                    if (tokens->type != RightBracket) {
+                        printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
+                        return NULL;
+                    }
+                    tokens++;
+                    instruction_t instr = (instruction_t) {
+                        .opcode = op_qmov2_reg_imm,
+                        .args = {
+                            ARG_REG(destReg),
+                            ARG_REG(srcMode),
+                            ARG_REG(index),
+                            ARG_REG(srcReg)
+                        }
+                    };
+                    add_instruction(obj, instr);
+                } else {
+                    printf("%s:%d: Expected identifier or register, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+            } else if (ins("call")) {
+                tokens++;
+                if (tokens->type != Identifier) {
+                    printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                char* str = tokens->value;
+                str = unquote(str);
+                instruction_t instr = (instruction_t) {
+                    .opcode = op_ldr_reg_imm16,
+                    .args = {
+                        ARG_REG(15),
+                        ARG_IMM16(4)
+                    }
+                };
+                add_instruction(obj, instr);
+                instr = (instruction_t) {
+                    .opcode = op_ldr_reg_addr,
+                    .args = {
+                        ARG_REG(14),
+                        ARG_SYM(str)
+                    }
+                };
+                add_instruction(obj, instr);
+                instr = (instruction_t) {
+                    .opcode = op_irq
+                };
+                add_instruction(obj, instr);
             } else {
                 printf("%s:%d: Unknown instruction: %s\n", tokens->file, tokens->line, tokens->value);
                 return NULL;
@@ -950,6 +1230,21 @@ object_file* compile(Token* tokens) {
                 char* str = tokens->value;
                 str = unquote(str);
                 CODE(str);
+            } else if (eq(tokens->value, "extern")) {
+                tokens++;
+                if (tokens->type != Identifier) {
+                    printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                char* str = tokens->value;
+                str = unquote(str);
+                if (str[0] != '_') {
+                    printf("%s:%d: Extern label must start with _\n", tokens->file, tokens->line);
+                    return NULL;
+                }
+                CODE(str);
+                add_imm_byte(obj, 0x7F);
+                ASCIZ(str + 1);
             }
         }
     }
@@ -1044,6 +1339,23 @@ Token nextToken() {
                     .type = Register
                 };
             }
+            src--;
+        }
+        if (strncmp(src, "xmm", 3) == 0) {
+            src += 3;
+            if (isnumber(*src)) {
+                while (isnumber(*src))
+                    src++;
+                
+                s[src - start] = 0;
+                return (Token) {
+                    .file = file,
+                    .line = line,
+                    .value = s,
+                    .type = SimdRegister
+                };
+            }
+            src -= 3;
         }
         while (isValid(*src))
             src++;
