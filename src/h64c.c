@@ -49,6 +49,31 @@ object_file* run_compile(const char* file_name) {
     src[size] = 0;
     fclose(file);
 
+    int inside_string = 0;
+    int escaped = 0;
+    for (int i = 0; i < size; i++) {
+        if (src[i] == '"') {
+            if (!escaped) {
+                inside_string = !inside_string;
+            }
+        }
+        if (src[i] == '\\' && inside_string) {
+            escaped = !escaped;
+        } else {
+            escaped = 0;
+        }
+        if (src[i] == '\n' && inside_string) {
+            printf("%s:%d: Unterminated string\n", file_name, i);
+            return NULL;
+        }
+        if ((src[i] == ';' || src[i] == '#' || src[i] == '@') && !inside_string) {
+            while (src[i] != '\n' && i < size) {
+                src[i] = ' ';
+                i++;
+            }
+        }
+    }
+
     Token* tokens = parse(src);
     
     object_file* obj = compile(tokens);
@@ -78,6 +103,54 @@ char* lower(char* str) {
 
 char* unquote(const char* str);
 
+uint64_t parse64(char* s) {
+    if (s[0] == '0' && s[1] == 'x') {
+        return strtoull(s + 2, NULL, 16);
+    } else if (s[0] == '0' && s[1] == 'b') {
+        return strtoull(s + 2, NULL, 2);
+    } else if (s[0] == '0' && s[1] == 'o') {
+        return strtoull(s + 2, NULL, 8);
+    } else {
+        return strtoull(s, NULL, 10);
+    }
+}
+
+uint32_t parse32(char* s) {
+    if (s[0] == '0' && s[1] == 'x') {
+        return strtoul(s + 2, NULL, 16);
+    } else if (s[0] == '0' && s[1] == 'b') {
+        return strtoul(s + 2, NULL, 2);
+    } else if (s[0] == '0' && s[1] == 'o') {
+        return strtoul(s + 2, NULL, 8);
+    } else {
+        return strtoul(s, NULL, 10);
+    }
+}
+
+uint16_t parse16(char* s) {
+    if (s[0] == '0' && s[1] == 'x') {
+        return strtoul(s + 2, NULL, 16);
+    } else if (s[0] == '0' && s[1] == 'b') {
+        return strtol(s + 2, NULL, 2);
+    } else if (s[0] == '0' && s[1] == 'o') {
+        return strtoul(s + 2, NULL, 8);
+    } else {
+        return strtoul(s, NULL, 10);
+    }
+}
+
+uint8_t parse8(char* s) {
+    if (s[0] == '0' && s[1] == 'x') {
+        return strtoul(s + 2, NULL, 16);
+    } else if (s[0] == '0' && s[1] == 'b') {
+        return strtol(s + 2, NULL, 2);
+    } else if (s[0] == '0' && s[1] == 'o') {
+        return strtoul(s + 2, NULL, 8);
+    } else {
+        return strtoul(s, NULL, 10);
+    }
+}
+
 object_file* compile(Token* tokens) {
     CREATE_OBJECT();
     for (;tokens->type != EOF; tokens++) {
@@ -99,10 +172,10 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
-                uint8_t reg1 = atoi(tokens->value + 1);
+                uint8_t reg1 = parse8(tokens->value + 1);
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg2 = atoi(tokens->value + 1);
+                    uint8_t reg2 = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_ldr_reg_reg,
                         .args = {
@@ -112,7 +185,7 @@ object_file* compile(Token* tokens) {
                     };
                     add_instruction(obj, instr);
                 } else if (tokens->type == Number) {
-                    int64_t num = atoll(tokens->value);
+                    int64_t num = parse64(tokens->value);
                     if (num > 32767 || num < -32768) {
                         instruction_t instr = (instruction_t) {
                             .opcode = op_ldr_reg_imm,
@@ -147,7 +220,7 @@ object_file* compile(Token* tokens) {
                 } else if (tokens->type == LeftBracket) {
                     tokens++;
                     if (tokens->type == Register) {
-                        uint8_t reg2 = atoi(tokens->value + 1);
+                        uint8_t reg2 = parse8(tokens->value + 1);
                         tokens++;
                         if (tokens->type == RightBracket) {
                             instruction_t instr = (instruction_t) {
@@ -160,7 +233,7 @@ object_file* compile(Token* tokens) {
                             };
                             add_instruction(obj, instr);
                         } else if (tokens->type == Number) {
-                            int64_t num = atoll(tokens->value);
+                            int64_t num = parse64(tokens->value);
                             int16_t num16 = num;
                             if (num > 32767 || num < -32768) {
                                 printf("%s:%d: Number too large\n", tokens->file, tokens->line);
@@ -185,7 +258,7 @@ object_file* compile(Token* tokens) {
                         str = unquote(str);
                         tokens++;
                         if (tokens->type == Register) {
-                            uint8_t reg2 = atoi(tokens->value + 1);
+                            uint8_t reg2 = parse8(tokens->value + 1);
                             tokens++;
                             if (tokens->type != RightBracket) {
                                 printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
@@ -200,7 +273,7 @@ object_file* compile(Token* tokens) {
                                 }
                             };
                         } else if (tokens->type == Number) {
-                            int64_t num = atoll(tokens->value);
+                            int64_t num = parse64(tokens->value);
                             if (num > 32767 || num < -32768) {
                                 printf("%s:%d: Number too large\n", tokens->file, tokens->line);
                                 return NULL;
@@ -249,10 +322,10 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
-                uint8_t reg1 = atoi(tokens->value + 1);
+                uint8_t reg1 = parse8(tokens->value + 1);
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg2 = atoi(tokens->value + 1);
+                    uint8_t reg2 = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_str_reg_reg,
                         .args = {
@@ -262,7 +335,7 @@ object_file* compile(Token* tokens) {
                     };
                     add_instruction(obj, instr);
                 } else if (tokens->type == Number) {
-                    int64_t num = atoll(tokens->value);
+                    int64_t num = parse64(tokens->value);
                     int16_t num16 = num;
                     if (num > 32767 || num < -32768) {
                         instruction_t instr = (instruction_t) {
@@ -293,10 +366,10 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
-                uint8_t reg1 = atoi(tokens->value + 1);
+                uint8_t reg1 = parse8(tokens->value + 1);
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg2 = atoi(tokens->value + 1);
+                    uint8_t reg2 = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_cmp_reg_reg,
                         .args = {
@@ -306,7 +379,7 @@ object_file* compile(Token* tokens) {
                     };
                     add_instruction(obj, instr);
                 } else if (tokens->type == Number) {
-                    int64_t num = atoll(tokens->value);
+                    int64_t num = parse64(tokens->value);
                     int16_t num16 = num;
                     if (num > 32767 || num < -32768) {
                         instruction_t instr = (instruction_t) {
@@ -337,7 +410,7 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
-                uint8_t reg1 = atoi(tokens->value + 1);
+                uint8_t reg1 = parse8(tokens->value + 1);
                 instruction_t instr = (instruction_t) {
                     .opcode = op_cmpz_reg,
                     .args = {
@@ -348,7 +421,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("b")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_b_reg,
                         .args = {
@@ -373,7 +446,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("bne")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_bne_reg,
                         .args = {
@@ -398,7 +471,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("beq")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_beq_reg,
                         .args = {
@@ -423,7 +496,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("bgt")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_bgt_reg,
                         .args = {
@@ -448,7 +521,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("blt")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_blt_reg,
                         .args = {
@@ -473,7 +546,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("bge")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_bge_reg,
                         .args = {
@@ -498,7 +571,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("ble")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_ble_reg,
                         .args = {
@@ -523,7 +596,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("bnz")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_bnz_reg,
                         .args = {
@@ -548,7 +621,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("bz")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_bz_reg,
                         .args = {
@@ -603,7 +676,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("psh")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_psh_reg,
                         .args = {
@@ -612,7 +685,7 @@ object_file* compile(Token* tokens) {
                     };
                     add_instruction(obj, instr);
                 } else if (tokens->type == Number) {
-                    uint64_t num = atoll(tokens->value);
+                    uint64_t num = parse64(tokens->value);
                     if (num > 0xFFFF) {
                         instruction_t instr = (instruction_t) {
                             .opcode = op_psh_imm64,
@@ -646,7 +719,7 @@ object_file* compile(Token* tokens) {
             } else if (ins("pp")) {
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg = atoi(tokens->value + 1);
+                    uint8_t reg = parse8(tokens->value + 1);
                     instruction_t instr = (instruction_t) {
                         .opcode = op_pp_reg,
                         .args = {
@@ -675,10 +748,10 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value); \
                     return NULL; \
                 } \
-                uint8_t reg1 = atoi(tokens->value + 1); \
+                uint8_t reg1 = parse8(tokens->value + 1); \
                 tokens++; \
                 if (tokens->type == Register) { \
-                    uint8_t reg2 = atoi(tokens->value + 1); \
+                    uint8_t reg2 = parse8(tokens->value + 1); \
                     instruction_t instr = (instruction_t) { \
                         .opcode = op_ ##_type ## _reg_reg, \
                         .args = { \
@@ -688,7 +761,7 @@ object_file* compile(Token* tokens) {
                     }; \
                     add_instruction(obj, instr); \
                 } else if (tokens->type == Number) { \
-                    int64_t num = atoll(tokens->value); \
+                    int64_t num = parse64(tokens->value); \
                     int16_t num16 = num; \
                     if (num > 32767 || num < -32768) { \
                         instruction_t instr = (instruction_t) { \
@@ -729,7 +802,7 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
-                uint8_t reg = atoi(tokens->value + 1);
+                uint8_t reg = parse8(tokens->value + 1);
                 instruction_t instr = (instruction_t) {
                     .opcode = op_not_reg,
                     .args = {
@@ -743,7 +816,7 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
-                uint8_t reg = atoi(tokens->value + 1);
+                uint8_t reg = parse8(tokens->value + 1);
                 instruction_t instr = (instruction_t) {
                     .opcode = op_inc_reg,
                     .args = {
@@ -757,7 +830,7 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
-                uint8_t reg = atoi(tokens->value + 1);
+                uint8_t reg = parse8(tokens->value + 1);
                 instruction_t instr = (instruction_t) {
                     .opcode = op_dec_reg,
                     .args = {
@@ -776,7 +849,7 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
-                uint8_t reg1 = atoi(tokens->value + 1);
+                uint8_t reg1 = parse8(tokens->value + 1);
                 tokens++;
                 if (tokens->type != Identifier) {
                     printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
@@ -803,7 +876,7 @@ object_file* compile(Token* tokens) {
                 }
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg2 = atoi(tokens->value + 1);
+                    uint8_t reg2 = parse8(tokens->value + 1);
                     tokens++;
                     if (tokens->type == RightBracket) {
                         instruction_t instr = (instruction_t) {
@@ -817,7 +890,7 @@ object_file* compile(Token* tokens) {
                         };
                         add_instruction(obj, instr);
                     } else if (tokens->type == Number) {
-                        int64_t num = atoll(tokens->value);
+                        int64_t num = parse64(tokens->value);
                         if (num > 32767 || num < -32768) {
                             printf("%s:%d: Number too large\n", tokens->file, tokens->line);
                             return NULL;
@@ -840,7 +913,7 @@ object_file* compile(Token* tokens) {
                             add_instruction(obj, instr);
                         }
                     } else if (tokens->type == Register) {
-                        uint8_t reg3 = atoi(tokens->value + 1);
+                        uint8_t reg3 = parse8(tokens->value + 1);
                         tokens++;
                         if (tokens->type != RightBracket) {
                             printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
@@ -876,7 +949,7 @@ object_file* compile(Token* tokens) {
                         };
                         add_instruction(obj, instr);
                     } else if (tokens->type == Number) {
-                        int64_t num = atoll(tokens->value);
+                        int64_t num = parse64(tokens->value);
                         if (num > 32767 || num < -32768) {
                             printf("%s:%d: Number too large\n", tokens->file, tokens->line);
                             return NULL;
@@ -899,7 +972,7 @@ object_file* compile(Token* tokens) {
                             add_instruction(obj, instr);
                         }
                     } else if (tokens->type == Register) {
-                        uint8_t reg3 = atoi(tokens->value + 1);
+                        uint8_t reg3 = parse8(tokens->value + 1);
                         tokens++;
                         if (tokens->type != RightBracket) {
                             printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
@@ -954,23 +1027,52 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value); \
                     return NULL; \
                 } \
-                uint8_t reg1 = atoi(tokens->value + 3); \
+                uint8_t reg1 = parse8(tokens->value + 3); \
                 tokens++; \
-                if (tokens->type != SimdRegister) { \
-                    printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value); \
-                    return NULL; \
-                } \
-                uint8_t reg2 = atoi(tokens->value + 3); \
-                instruction_t instr = (instruction_t) { \
-                    .opcode = op_ ## _op ## _reg_reg, \
-                    .args = { \
-                        ARG_REG(mode), \
-                        ARG_REG(reg1), \
-                        ARG_REG(reg2) \
+                if (tokens->type == Number) { \
+                    int64_t num = parse64(tokens->value); \
+                    int16_t num16 = num; \
+                    if (num > 32767 || num < -32768) { \
+                        printf("%s:%d: Number too large\n", tokens->file, tokens->line); \
+                        return NULL; \
+                    } else { \
+                        instruction_t instr = (instruction_t) { \
+                            .opcode = op_ ## _op ## _reg_imm, \
+                            .args = { \
+                                ARG_REG(mode), \
+                                ARG_REG(reg1), \
+                                ARG_IMM16(num16) \
+                            } \
+                        }; \
+                        add_instruction(obj, instr); \
                     } \
-                }; \
-                add_instruction(obj, instr);
-
+                } else if (tokens->type == SimdRegister) { \
+                    uint8_t reg2 = parse8(tokens->value + 3); \
+                    instruction_t instr = (instruction_t) { \
+                        .opcode = op_ ## _op ## _reg_reg, \
+                        .args = { \
+                            ARG_REG(mode), \
+                            ARG_REG(reg1), \
+                            ARG_REG(reg2) \
+                        } \
+                    }; \
+                    add_instruction(obj, instr); \
+                } else if (tokens->type == Register) { \
+                    uint8_t reg2 = parse8(tokens->value + 1); \
+                    instruction_t instr = (instruction_t) { \
+                        .opcode = op_ ## _op ## _reg_sisd, \
+                        .args = { \
+                            ARG_REG(mode), \
+                            ARG_REG(reg1), \
+                            ARG_REG(reg2), \
+                            ARG_IMM16(0) \
+                        } \
+                    }; \
+                    add_instruction(obj, instr); \
+                } else { \
+                    printf("%s:%d: Expected number or simd register, got %s\n", tokens->file, tokens->line, tokens->value); \
+                    return NULL; \
+                }
 
             SIMD_SIMPLE(qadd)
             SIMD_SIMPLE(qsub)
@@ -1014,7 +1116,7 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
-                uint8_t destReg = atoi(tokens->value + 3);
+                uint8_t destReg = parse8(tokens->value + 3);
                 tokens++;
                 if (tokens->type != Identifier) {
                     printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
@@ -1043,7 +1145,7 @@ object_file* compile(Token* tokens) {
                     printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
-                uint8_t srcReg = atoi(tokens->value + 3);
+                uint8_t srcReg = parse8(tokens->value + 3);
                 instruction_t instr = (instruction_t) {
                     .opcode = op_qconv_reg_reg,
                     .args = {
@@ -1085,11 +1187,11 @@ object_file* compile(Token* tokens) {
                         printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value);
                         return NULL;
                     }
-                    uint8_t destReg = atoi(tokens->value + 3);
+                    uint8_t destReg = parse8(tokens->value + 3);
                     tokens++;
                     uint8_t index = 0xFF;
                     if (tokens->type == Number) {
-                        index = atoi(tokens->value);
+                        index = parse8(tokens->value);
                         tokens++;
                     }
                     if (tokens->type != RightBracket) {
@@ -1097,23 +1199,68 @@ object_file* compile(Token* tokens) {
                         return NULL;
                     }
                     tokens++;
-                    if (tokens->type != Register) {
-                        printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                        return NULL;
-                    }
-                    uint8_t srcReg = atoi(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_qmov_reg_imm,
-                        .args = {
-                            ARG_REG(destMode),
-                            ARG_REG(destReg),
-                            ARG_REG(index),
-                            ARG_REG(srcReg)
+                    if (tokens->type == Register) {
+                        uint8_t srcReg = parse8(tokens->value + 1);
+                        instruction_t instr = (instruction_t) {
+                            .opcode = op_qmov_reg_imm,
+                            .args = {
+                                ARG_REG(destMode),
+                                ARG_REG(destReg),
+                                ARG_REG(index),
+                                ARG_REG(srcReg)
+                            }
+                        };
+                        add_instruction(obj, instr);
+                    } else if (tokens->type == LeftBracket) {
+                        tokens++;
+                        if (tokens->type != Identifier) {
+                            printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
+                            return NULL;
                         }
-                    };
-                    add_instruction(obj, instr);
+                        char* str = tokens->value;
+                        str = unquote(str);
+                        tokens++;
+                        if (tokens->type == Number) {
+                            int64_t num = parse64(tokens->value);
+                            if (num > 32767 || num < -32768) {
+                                printf("%s:%d: Number too large\n", tokens->file, tokens->line);
+                                return NULL;
+                            } else {
+                                tokens++;
+                                if (tokens->type != RightBracket) {
+                                    printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
+                                    return NULL;
+                                }
+                                int16_t num16 = num;
+                                instruction_t instr = (instruction_t) {
+                                    .opcode = op_qmov_reg_addr,
+                                    .args = {
+                                        ARG_REG(destMode),
+                                        ARG_REG(destReg),
+                                        ARG_SYM(str),
+                                        ARG_IMM16(num16)
+                                    }
+                                };
+                                add_instruction(obj, instr);
+                            }
+                        } else if (tokens->type == RightBracket) {
+                            instruction_t instr = (instruction_t) {
+                                .opcode = op_qmov_reg_addr,
+                                .args = {
+                                    ARG_REG(destMode),
+                                    ARG_REG(destReg),
+                                    ARG_SYM(str),
+                                    ARG_IMM16(0)
+                                }
+                            };
+                            add_instruction(obj, instr);
+                        } else {
+                            printf("%s:%d: Expected number or ], got %s\n", tokens->file, tokens->line, tokens->value);
+                            return NULL;
+                        }
+                    }
                 } else if (tokens->type == Register) {
-                    uint8_t destReg = atoi(tokens->value + 1);
+                    uint8_t destReg = parse8(tokens->value + 1);
                     tokens++;
                     if (tokens->type != Identifier) {
                         printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
@@ -1147,11 +1294,11 @@ object_file* compile(Token* tokens) {
                         printf("%s:%d: Expected simd register, got %s\n", tokens->file, tokens->line, tokens->value);
                         return NULL;
                     }
-                    uint8_t srcReg = atoi(tokens->value + 3);
+                    uint8_t srcReg = parse8(tokens->value + 3);
                     tokens++;
                     uint8_t index = 0;
                     if (tokens->type == Number) {
-                        index = atoi(tokens->value);
+                        index = parse8(tokens->value);
                         tokens++;
                     }
                     if (tokens->type != RightBracket) {
@@ -1243,6 +1390,69 @@ object_file* compile(Token* tokens) {
                 CODE(str);
                 add_imm_byte(obj, 0x7F);
                 ASCIZ(str + 1);
+            } else if (eq(tokens->value, "byte")) {
+                tokens++;
+                if (tokens->type != Number) {
+                    printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                int64_t num = parse64(tokens->value);
+                if (num > 127 || num < -128) {
+                    printf("%s:%d: Number too large\n", tokens->file, tokens->line);
+                    return NULL;
+                }
+                add_imm_byte(obj, num);
+            } else if (eq(tokens->value, "word")) {
+                tokens++;
+                if (tokens->type != Number) {
+                    printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                int64_t num = parse64(tokens->value);
+                if (num > 32767 || num < -32768) {
+                    printf("%s:%d: Number too large\n", tokens->file, tokens->line);
+                    return NULL;
+                }
+                add_imm_word(obj, num);
+            } else if (eq(tokens->value, "dword")) {
+                tokens++;
+                if (tokens->type != Number) {
+                    printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                int64_t num = parse64(tokens->value);
+                if (num > 2147483647 || num < -2147483648) {
+                    printf("%s:%d: Number too large\n", tokens->file, tokens->line);
+                    return NULL;
+                }
+                add_imm_dword(obj, num);
+            } else if (eq(tokens->value, "qword")) {
+                tokens++;
+                if (tokens->type != Number) {
+                    printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                int64_t num = parse64(tokens->value);
+                add_imm_qword(obj, num);
+            } else if (eq(tokens->value, "float")) {
+                tokens++;
+                if (tokens->type != NumberFloat) {
+                    printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                float num = atof(tokens->value);
+                add_imm_dword(obj, *(int32_t*) &num);
+            } else if (eq(tokens->value, "double")) {
+                tokens++;
+                if (tokens->type != NumberFloat) {
+                    printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                double num = atof(tokens->value);
+                add_imm_qword(obj, *(int64_t*) &num);
+            } else {
+                printf("%s:%d: Unknown directive: %s\n", tokens->file, tokens->line, tokens->value);
+                return NULL;
             }
         }
     }
@@ -1394,17 +1604,59 @@ Token nextToken() {
     } else if (isnumber(*src)) {
         char* s = strdup(src);
         char* start = src;
-        while (isnumber(*src)) {
+        if (*src == '-') {
             src++;
         }
-        
-        s[src - start] = 0;
-        return (Token) {
-            .file = file,
-            .line = line,
-            .value = s,
-            .type = Number
-        };
+        if (strncmp(src, "0x", 2) == 0) {
+            src += 2;
+            while (isxdigit(*src)) {
+                src++;
+            }
+            s[src - start] = 0;
+            return (Token) {
+                .file = file,
+                .line = line,
+                .value = s,
+                .type = Number
+            };
+        } else if (strncmp(src, "0b", 2) == 0) {
+            src += 2;
+            while (*src == '0' || *src == '1') {
+                src++;
+            }
+            s[src - start] = 0;
+            return (Token) {
+                .file = file,
+                .line = line,
+                .value = s,
+                .type = Number
+            };
+        } else {
+            while (isnumber(*src)) {
+                src++;
+            }
+            if (*src == '.') {
+                src++;
+                while (isnumber(*src)) {
+                    src++;
+                }
+                s[src - start] = 0;
+                return (Token) {
+                    .file = file,
+                    .line = line,
+                    .value = s,
+                    .type = NumberFloat
+                };
+            }
+
+            s[src - start] = 0;
+            return (Token) {
+                .file = file,
+                .line = line,
+                .value = s,
+                .type = Number
+            };
+        }
     } else if (*src == '"') {
         char* s = strdup(++src);
         char* start = src;

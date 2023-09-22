@@ -1,14 +1,23 @@
-    ldr r0 [mystr]
-    qmov qword [xmm0 0] r0
-    ldr r0 [mystr 8]
-    qmov qword [xmm0 1] r0
-    
+    ; load the qwords from memory into xmm0
+    ; xmm0 is 256 bits, so it can hold 4 qwords
+    qmov qword [xmm0] [vector]
+
+    ; add 0xFF to each word (16 bits) in xmm0
+    ldr r0 0xFF
+    qadd word xmm0 r0
+    qadd word xmm0 0xFF
+
+    ; create register/memory dump
+    ldr r15 4
+    irq
+
+    ; exit
     ldr r15 1
     ldr r0 0
     irq
 
-.data mystr:
-    .asciz "Hello, World!\n"
-    .byte 0
-
-.extern _printf
+.data vector:
+    .qword 0xffffffffffffffff
+    .qword 0xcccccccccccccccc
+    .qword 0x8888888888888888
+    .qword 0x4444444444444444

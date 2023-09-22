@@ -107,7 +107,8 @@ void dump_registers(object_file* obj, int dumpToFile) {
             printf("\n");
         }
     } else {
-        FILE* f = fopen("dump.txt", "a");
+        remove("memory.dump");
+        FILE* f = fopen("memory.dump", "a");
         fprintf(f, "          |.0|.1|.2|.3|.4|.5|.6|.7|.8|.9|.A|.B|.C|.D|.E|.F|\n");
         for (uint64_t addr = 0; addr < obj->data_size; addr += 16) {
             fprintf(f, "0x%08llx|", addr);
@@ -196,119 +197,77 @@ static inline uint8_t readUint8(uint8_t* data) {
     return data[0];
 }
 
-#define SIMD_F32_OP(_op, _what) \
+#define SIMD_OP(_on, _op, _what) \
 __attribute__((always_inline)) \
-static inline void simd_f32_ ## _op(uint8_t r1, uint8_t r2) { \
-    for (int i = 0; i < 8; i++) { \
-        simd_registers[r1].f32[i] _what ## = simd_registers[r2].f32[i]; \
+static inline void simd_ ## _on ## _ ## _op(uint8_t r1, uint8_t r2) { \
+    for (int i = 0; i < 32 / sizeof(_on ## _t); i++) { \
+        simd_registers[r1]._on[i] _what ## = simd_registers[r2]._on[i]; \
+    } \
+} \
+__attribute__((always_inline)) \
+static inline void simd_ ## _on ## _ ## _op ## _imm(uint8_t r1, int64_t imm) { \
+    for (int i = 0; i < 32 / sizeof(_on ## _t); i++) { \
+        simd_registers[r1]._on[i] _what ## = imm; \
     } \
 }
 
-SIMD_F32_OP(add, +)
-SIMD_F32_OP(sub, -)
-SIMD_F32_OP(mul, *)
-SIMD_F32_OP(div, /)
+SIMD_OP(i8, add, +)
+SIMD_OP(i16, add, +)
+SIMD_OP(i32, add, +)
+SIMD_OP(i64, add, +)
+SIMD_OP(f32, add, +)
+SIMD_OP(f64, add, +)
 
-#undef SIMD_F32_OP
+SIMD_OP(i8, sub, -)
+SIMD_OP(i16, sub, -)
+SIMD_OP(i32, sub, -)
+SIMD_OP(i64, sub, -)
+SIMD_OP(f32, sub, -)
+SIMD_OP(f64, sub, -)
 
-#define SIMD_I32_OP(_op, _what) \
-__attribute__((always_inline)) \
-static inline void simd_i32_ ## _op(uint8_t r1, uint8_t r2) { \
-    for (int i = 0; i < 8; i++) { \
-        simd_registers[r1].i32[i] _what ## = simd_registers[r2].i32[i]; \
-    } \
-}
+SIMD_OP(i8, mul, *)
+SIMD_OP(i16, mul, *)
+SIMD_OP(i32, mul, *)
+SIMD_OP(i64, mul, *)
+SIMD_OP(f32, mul, *)
+SIMD_OP(f64, mul, *)
 
-SIMD_I32_OP(add, +)
-SIMD_I32_OP(sub, -)
-SIMD_I32_OP(mul, *)
-SIMD_I32_OP(div, /)
-SIMD_I32_OP(mod, %)
-SIMD_I32_OP(and, &)
-SIMD_I32_OP(or, |)
-SIMD_I32_OP(xor, ^)
-SIMD_I32_OP(shl, <<)
-SIMD_I32_OP(shr, >>)
+SIMD_OP(i8, div, /)
+SIMD_OP(i16, div, /)
+SIMD_OP(i32, div, /)
+SIMD_OP(i64, div, /)
+SIMD_OP(f32, div, /)
+SIMD_OP(f64, div, /)
 
-#undef SIMD_I32_OP
+SIMD_OP(i8, mod, %)
+SIMD_OP(i16, mod, %)
+SIMD_OP(i32, mod, %)
+SIMD_OP(i64, mod, %)
 
-#define SIMD_I64_OP(_op, _what) \
-__attribute__((always_inline)) \
-static inline void simd_i64_ ## _op(uint8_t r1, uint8_t r2) { \
-    for (int i = 0; i < 4; i++) { \
-        simd_registers[r1].i64[i] _what ## = simd_registers[r2].i64[i]; \
-    } \
-}
+SIMD_OP(i8, and, &)
+SIMD_OP(i16, and, &)
+SIMD_OP(i32, and, &)
+SIMD_OP(i64, and, &)
 
-SIMD_I64_OP(add, +)
-SIMD_I64_OP(sub, -)
-SIMD_I64_OP(mul, *)
-SIMD_I64_OP(div, /)
-SIMD_I64_OP(mod, %)
-SIMD_I64_OP(and, &)
-SIMD_I64_OP(or, |)
-SIMD_I64_OP(xor, ^)
-SIMD_I64_OP(shl, <<)
-SIMD_I64_OP(shr, >>)
+SIMD_OP(i8, or, |)
+SIMD_OP(i16, or, |)
+SIMD_OP(i32, or, |)
+SIMD_OP(i64, or, |)
 
-#undef SIMD_I64_OP
+SIMD_OP(i8, xor, ^)
+SIMD_OP(i16, xor, ^)
+SIMD_OP(i32, xor, ^)
+SIMD_OP(i64, xor, ^)
 
-#define SIMD_F64_OP(_op, _what) \
-__attribute__((always_inline)) \
-static inline void simd_f64_ ## _op(uint8_t r1, uint8_t r2) { \
-    for (int i = 0; i < 4; i++) { \
-        simd_registers[r1].f64[i] _what ## = simd_registers[r2].f64[i]; \
-    } \
-}
+SIMD_OP(i8, shl, <<)
+SIMD_OP(i16, shl, <<)
+SIMD_OP(i32, shl, <<)
+SIMD_OP(i64, shl, <<)
 
-SIMD_F64_OP(add, +)
-SIMD_F64_OP(sub, -)
-SIMD_F64_OP(mul, *)
-SIMD_F64_OP(div, /)
-
-#undef SIMD_F64_OP
-
-#define SIMD_I16_OP(_op, _what) \
-__attribute__((always_inline)) \
-static inline void simd_i16_ ## _op(uint8_t r1, uint8_t r2) { \
-    for (int i = 0; i < 16; i++) { \
-        simd_registers[r1].i16[i] _what ## = simd_registers[r2].i16[i]; \
-    } \
-}
-
-SIMD_I16_OP(add, +)
-SIMD_I16_OP(sub, -)
-SIMD_I16_OP(mul, *)
-SIMD_I16_OP(div, /)
-SIMD_I16_OP(mod, %)
-SIMD_I16_OP(and, &)
-SIMD_I16_OP(or, |)
-SIMD_I16_OP(xor, ^)
-SIMD_I16_OP(shl, <<)
-SIMD_I16_OP(shr, >>)
-
-#undef SIMD_I16_OP
-
-#define SIMD_I8_OP(_op, _what) \
-__attribute__((always_inline)) \
-static inline void simd_i8_ ## _op(uint8_t r1, uint8_t r2) { \
-    for (int i = 0; i < 32; i++) { \
-        simd_registers[r1].i8[i] _what ## = simd_registers[r2].i8[i]; \
-    } \
-}
-
-SIMD_I8_OP(add, +)
-SIMD_I8_OP(sub, -)
-SIMD_I8_OP(mul, *)
-SIMD_I8_OP(div, /)
-SIMD_I8_OP(mod, %)
-SIMD_I8_OP(and, &)
-SIMD_I8_OP(or, |)
-SIMD_I8_OP(xor, ^)
-SIMD_I8_OP(shl, <<)
-SIMD_I8_OP(shr, >>)
-
-#undef SIMD_I8_OP
+SIMD_OP(i8, shr, >>)
+SIMD_OP(i16, shr, >>)
+SIMD_OP(i32, shr, >>)
+SIMD_OP(i64, shr, >>)
 
 __attribute__((always_inline))
 static inline void simd_i64_addsub(uint8_t r1, uint8_t r2) {
@@ -857,6 +816,8 @@ void exec(object_file* obj) {
             ARITH_SIMD(addsub)
             ARITH_SIMD(shuf)
 
+            #undef ARITH_SIMD
+
             default:
                 printf("Unknown instruction: %02x\n", op);
                 break;
@@ -1038,6 +999,54 @@ void exec(object_file* obj) {
                 break;
             }
 
+            #define ARITH_SIMD(_op) \
+            case opcode_q ## _op: { \
+                uint8_t mode = readUint8((uint8_t*) pc); \
+                uint8_t reg1 = readUint8((uint8_t*) pc + 1); \
+                int16_t value = (int16_t) readUint16((uint8_t*) pc + 2); \
+                switch (mode) { \
+                    case 0x01: simd_i8_ ## _op ## _imm(reg1, value); break; \
+                    case 0x02: simd_i16_ ## _op ## _imm(reg1, value); break; \
+                    case 0x04: simd_i32_ ## _op ## _imm(reg1, value); break; \
+                    case 0x08: simd_i64_ ## _op ## _imm(reg1, value); break; \
+                    case 0x10: simd_f32_ ## _op ## _imm(reg1, value); break; \
+                    case 0x20: simd_f64_ ## _op ## _imm(reg1, value); break; \
+                    default: printf("Invalid SIMD mode: %02x\n", mode); break; \
+                } \
+                break; \
+            }
+
+            ARITH_SIMD(add)
+            ARITH_SIMD(sub)
+            ARITH_SIMD(mul)
+            ARITH_SIMD(div)
+
+            #undef ARITH_SIMD
+
+            #define ARITH_SIMD(_op) \
+            case opcode_q ## _op: { \
+                uint8_t mode = readUint8((uint8_t*) pc); \
+                uint8_t reg1 = readUint8((uint8_t*) pc + 1); \
+                int16_t value = (int16_t) readUint16((uint8_t*) pc + 2); \
+                switch (mode) { \
+                    case 0x01: simd_i8_ ## _op ## _imm(reg1, value); break; \
+                    case 0x02: simd_i16_ ## _op ## _imm(reg1, value); break; \
+                    case 0x04: simd_i32_ ## _op ## _imm(reg1, value); break; \
+                    case 0x08: simd_i64_ ## _op ## _imm(reg1, value); break; \
+                    default: printf("Invalid SIMD mode: %02x\n", mode); break; \
+                } \
+                break; \
+            }
+
+            ARITH_SIMD(mod)
+            ARITH_SIMD(and)
+            ARITH_SIMD(or)
+            ARITH_SIMD(xor)
+            ARITH_SIMD(shl)
+            ARITH_SIMD(shr)
+
+            #undef ARITH_SIMD
+
             default:
                 printf("Unknown instruction: %02x\n", op);
                 break;
@@ -1095,6 +1104,58 @@ void exec(object_file* obj) {
             ARITH_REG_MEM(shr, >>)
 
             #undef ARITH_REG_MEM
+
+            #define ARITH_SIMD(_op) \
+            case opcode_q ## _op: { \
+                uint8_t mode = readUint8((uint8_t*) pc); \
+                uint8_t reg1 = readUint8((uint8_t*) pc + 1); \
+                uint8_t reg2 = readUint8((uint8_t*) pc + 2); \
+                int64_t value = registers[reg2].asInteger; \
+                (void) readUint16((uint8_t*) pc + 3); \
+                switch (mode) { \
+                    case 0x01: simd_i8_ ## _op ## _imm(reg1, value); break; \
+                    case 0x02: simd_i16_ ## _op ## _imm(reg1, value); break; \
+                    case 0x04: simd_i32_ ## _op ## _imm(reg1, value); break; \
+                    case 0x08: simd_i64_ ## _op ## _imm(reg1, value); break; \
+                    case 0x10: simd_f32_ ## _op ## _imm(reg1, value); break; \
+                    case 0x20: simd_f64_ ## _op ## _imm(reg1, value); break; \
+                    default: printf("Invalid SIMD mode: %02x\n", mode); break; \
+                } \
+                break; \
+            }
+
+            ARITH_SIMD(add)
+            ARITH_SIMD(sub)
+            ARITH_SIMD(mul)
+            ARITH_SIMD(div)
+
+            #undef ARITH_SIMD
+
+            #define ARITH_SIMD(_op) \
+            case opcode_q ## _op: { \
+                uint8_t mode = readUint8((uint8_t*) pc); \
+                uint8_t reg1 = readUint8((uint8_t*) pc + 1); \
+                uint8_t reg2 = readUint8((uint8_t*) pc + 2); \
+                int64_t value = registers[reg2].asInteger; \
+                (void) readUint16((uint8_t*) pc + 3); \
+                switch (mode) { \
+                    case 0x01: simd_i8_ ## _op ## _imm(reg1, value); break; \
+                    case 0x02: simd_i16_ ## _op ## _imm(reg1, value); break; \
+                    case 0x04: simd_i32_ ## _op ## _imm(reg1, value); break; \
+                    case 0x08: simd_i64_ ## _op ## _imm(reg1, value); break; \
+                    default: printf("Invalid SIMD mode: %02x\n", mode); break; \
+                } \
+                break; \
+            }
+
+            ARITH_SIMD(mod)
+            ARITH_SIMD(and)
+            ARITH_SIMD(or)
+            ARITH_SIMD(xor)
+            ARITH_SIMD(shl)
+            ARITH_SIMD(shr)
+
+            #undef ARITH_SIMD
 
             default:
                 printf("Unknown instruction: %02x\n", op);
@@ -1219,6 +1280,50 @@ void exec(object_file* obj) {
             ARITH_REG_ADDR_OFF(shr, >>)
 
             #undef ARITH_REG_ADDR_OFF
+
+            case opcode_qmov: {
+                uint8_t mode = readUint8((uint8_t*) pc);
+                uint8_t dest = readUint8((uint8_t*) pc + 1);
+                uint32_t value = readUint32((uint8_t*) pc + 2);
+                int16_t offset = (int16_t) readUint16((uint8_t*) pc + 6);
+                uint8_t* ptr = (data + value + offset);
+                switch (mode) {
+                    case 0x01: 
+                        for (int i = 0; i < 32; i++) {
+                            simd_registers[dest].i8[i] = *(uint8_t*) (ptr + i * sizeof(uint8_t));
+                        }
+                        break;
+                    case 0x02:
+                        for (int i = 0; i < 16; i++) {
+                            simd_registers[dest].i16[i] = *(uint16_t*) (ptr + (i * sizeof(uint16_t)));
+                        }
+                        break;
+                    case 0x04:
+                        for (int i = 0; i < 8; i++) {
+                            simd_registers[dest].i32[i] = *(uint32_t*) (ptr + (i * sizeof(uint32_t)));
+                        }
+                        break;
+                    case 0x08:
+                        for (int i = 0; i < 4; i++) {
+                            simd_registers[dest].i64[i] = *(uint64_t*) (ptr + (i * sizeof(uint64_t)));
+                        }
+                        break;
+                    case 0x10:
+                        for (int i = 0; i < 8; i++) {
+                            simd_registers[dest].f32[i] = *(float*) (ptr + (i * sizeof(float)));
+                        }
+                        break;
+                    case 0x20:
+                        for (int i = 0; i < 4; i++) {
+                            simd_registers[dest].f64[i] = *(double*) (ptr + (i * sizeof(double)));
+                        }
+                        break;
+                    default:
+                        printf("Invalid SIMD mode: %02x\n", mode);
+                        break;
+                }
+                break;
+            }
 
             default:
                 printf("Unknown instruction: %02x\n", op);

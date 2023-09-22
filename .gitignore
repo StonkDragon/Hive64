@@ -1,2 +1,3 @@
 dump.txt
-main.rcx
+*.rcx
+*.dump

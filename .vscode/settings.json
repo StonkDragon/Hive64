@@ -156,6 +156,7 @@
         "vector": "cpp",
         "version": "cpp",
         "jni_md.h": "c",
-        "new_ops.h": "c"
+        "new_ops.h": "c",
+        "__memory": "c"
     }
 }
