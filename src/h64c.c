@@ -222,8 +222,6 @@ object_file* compile(Token* tokens) {
                                 add_instruction(obj, instr);
                             }
                         } else if (tokens->type == RightBracket) {
-                            char* str = tokens->value;
-                            str = unquote(str);
                             instruction_t instr = (instruction_t) {
                                 .opcode = op_ldr_reg_addr_imm16,
                                 .args = {

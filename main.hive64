@@ -1,15 +1,7 @@
     ldr r0 [mystr]
-    ldr r15 4
-    irq
     qmov qword [xmm0 0] r0
-    ldr r15 4
-    irq
     ldr r0 [mystr 8]
-    ldr r15 4
-    irq
     qmov qword [xmm0 1] r0
-    ldr r15 4
-    irq
     
     ldr r15 1
     ldr r0 0

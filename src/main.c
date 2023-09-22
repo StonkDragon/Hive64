@@ -970,19 +970,15 @@ void exec(object_file* obj) {
                 uint8_t dest = readUint8((uint8_t*) pc + 1);
                 uint8_t index = readUint8((uint8_t*) pc + 2);
                 uint8_t src = readUint8((uint8_t*) pc + 3);
-                printf("qmov mode: %02x dest: %02x index: %02x src: %02x\n", mode, dest, index, src);
                 if (index != 0xFF) {
                     switch (mode) {
-                        case 0x01 /* byte   */ : simd_registers[dest].i8[index] = registers[src].asInteger & 0xFF; break;
-                        case 0x02 /* word   */ : simd_registers[dest].i16[index] = registers[src].asInteger & 0xFFFF; break;
-                        case 0x04 /* dword  */ : simd_registers[dest].i32[index] = registers[src].asInteger & 0xFFFFFFFF; break;
-                        case 0x08 /* qword  */ : simd_registers[dest].i64[index] = registers[src].asInteger; break;
-                        case 0x10 /* float  */ : simd_registers[dest].f32[index] = registers[src].asInteger; break;
-                        case 0x20 /* double */ : simd_registers[dest].f64[index] = registers[src].asInteger; break;
+                        case 0x01: simd_registers[dest].i8[index] = registers[src].asInteger & 0xFF; break;
+                        case 0x02: simd_registers[dest].i16[index] = registers[src].asInteger & 0xFFFF; break;
+                        case 0x04: simd_registers[dest].i32[index] = registers[src].asInteger & 0xFFFFFFFF; break;
+                        case 0x08: simd_registers[dest].i64[index] = registers[src].asInteger; break;
+                        case 0x10: simd_registers[dest].f32[index] = registers[src].asInteger; break;
+                        case 0x20: simd_registers[dest].f64[index] = registers[src].asInteger; break;
                         default: printf("Invalid SIMD mode: %02x\n", mode); break;
-                    }
-                    for (int i = 0; i < 32; i++) {
-                        printf("%02x ", simd_registers[dest].i8[i]);
                     }
                 } else {
                     switch (mode) {
