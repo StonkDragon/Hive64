@@ -1,0 +1,13 @@
+build: {
+  compiler: "gcc";
+  sourceDir: "src";
+  outputDir: "build";
+  target: "h64";
+  includes: [
+    "src";
+  ];
+  units: [
+    "main.c";
+    "h64c.c";
+  ];
+};

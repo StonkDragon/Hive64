@@ -1,0 +1,23 @@
+    ldr r0 2
+    ldr r1 1
+    ldr r2 message
+    ldr r3 14
+    irq
+
+    ldr r0 1
+    ldr r1 0
+    irq
+
+.data message:
+    .asciz "Hello, world!\n"
+
+    ldr r10 r0
+    mov r0 byte [r10]
+    mov r1 word [r10 1]
+    mov r2 dword [r10 3]
+    mov r3 qword [r10 7]
+
+    add r0 byte [r10]
+    add r1 word [r10 1]
+    add r2 dword [r10 3]
+    add r3 qword [r10 7]
