@@ -203,7 +203,7 @@ typedef union {
     __uint128_t imm128; // 16 bytes because that is the maximum extra size of an instruction
 } args_t;
 
-typedef void (*opc_func)(hive_register_t*[32]);
+typedef void (*opc_func)(hive_register_t*[32], void* args);
 
 #pragma region EXEC
 
@@ -211,7 +211,9 @@ typedef void (*opc_func)(hive_register_t*[32]);
 #undef OPC_ENDFUNC
 #undef OPC_FUNC
 
-#define OPC_DEF(_nargs, _opcode)    static void _opcode ## $ ## _nargs(hive_register_t* registers[32])
+
+#define ARG(_value)                 (*(typeof(((args_t*) 0) -> _value)*) ((args + hive_offsetof(args_t, _value))))
+#define OPC_DEF(_nargs, _opcode)    static void _opcode ## $ ## _nargs(hive_register_t* registers[32], void* args)
 #define CAT_(a, b)                  a ## b
 #define CAT(a, b)                   CAT_(a, b)
 #define OPC(_nargs, _opcode)        [_opcode] = _opcode ## $ ## _nargs
@@ -223,7 +225,7 @@ OPC_DEF(0, opcode_nop) {}
 OPC_DEF(0, opcode_halt) { exit(registers[0]->asInteger); }
 OPC_DEF(0, opcode_pshi) { *(sp++) = pc; }
 OPC_DEF(0, opcode_ret) {
-    pc = lr;
+    pc = (void*) lr;
     lr = *(--sp);
 }
 OPC_DEF(0, opcode_irq) {
@@ -250,122 +252,122 @@ OPC_DEF(0, opcode_irq) {
 OPC_DEF(0, opcode_svc) {
     *(sp++) = lr;
     lr = pc;
-    pc = svc_table[registers[0]->asInteger];
+    pc = (void*) svc_table[registers[0]->asInteger];
 }
 
 OPC_DEF(1, opcode_cmpz) {
-    if (registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger == 0) {
+    if (registers[ARG(reg.reg1)]->asInteger == 0) {
         flags |= FLAG_ZERO;
     } else {
         flags &= ~FLAG_ZERO;
     }
 }
 OPC_DEF(1, opcode_b) {
-    pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+    pc = (void*) registers[ARG(reg.reg1)]->asPointer;
 }
 OPC_DEF(1, opcode_bne) {
     if (!(flags & FLAG_EQUAL)) {
-        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+        pc = (void*) registers[ARG(reg.reg1)]->asPointer;
     }
 }
 OPC_DEF(1, opcode_beq) {
     if (flags & FLAG_EQUAL) {
-        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+        pc = (void*) registers[ARG(reg.reg1)]->asPointer;
     }
 }
 OPC_DEF(1, opcode_bgt) {
     if (flags & FLAG_GREATER) {
-        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+        pc = (void*) registers[ARG(reg.reg1)]->asPointer;
     }
 }
 OPC_DEF(1, opcode_blt) {
     if (flags & FLAG_LESS) {
-        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+        pc = (void*) registers[ARG(reg.reg1)]->asPointer;
     }
 }
 OPC_DEF(1, opcode_bge) {
     if (flags & (FLAG_GREATER | FLAG_EQUAL)) {
-        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+        pc = (void*) registers[ARG(reg.reg1)]->asPointer;
     }
 }
 OPC_DEF(1, opcode_ble) {
     if (flags & (FLAG_LESS | FLAG_EQUAL)) {
-        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+        pc = (void*) registers[ARG(reg.reg1)]->asPointer;
     }
 }
 OPC_DEF(1, opcode_bnz) {
     if (!(flags & FLAG_ZERO)) {
-        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+        pc = (void*) registers[ARG(reg.reg1)]->asPointer;
     }
 }
 OPC_DEF(1, opcode_bz) {
     if (flags & FLAG_ZERO) {
-        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+        pc = (void*) registers[ARG(reg.reg1)]->asPointer;
     }
 }
 OPC_DEF(1, opcode_bl) {
     *(sp++) = lr;
     lr = pc;
-    opcode_b$1(registers);
+    opcode_b$1(registers, args);
 }
 OPC_DEF(1, opcode_blne) {
     *(sp++) = lr;
     lr = pc;
-    opcode_bne$1(registers);
+    opcode_bne$1(registers, args);
 }
 OPC_DEF(1, opcode_bleq) {
     *(sp++) = lr;
     lr = pc;
-    opcode_beq$1(registers);
+    opcode_beq$1(registers, args);
 }
 OPC_DEF(1, opcode_blgt) {
     *(sp++) = lr;
     lr = pc;
-    opcode_bgt$1(registers);
+    opcode_bgt$1(registers, args);
 }
 OPC_DEF(1, opcode_bllt) {
     *(sp++) = lr;
     lr = pc;
-    opcode_blt$1(registers);
+    opcode_blt$1(registers, args);
 }
 OPC_DEF(1, opcode_blge) {
     *(sp++) = lr;
     lr = pc;
-    opcode_bge$1(registers);
+    opcode_bge$1(registers, args);
 }
 OPC_DEF(1, opcode_blle) {
     *(sp++) = lr;
     lr = pc;
-    opcode_ble$1(registers);
+    opcode_ble$1(registers, args);
 }
 OPC_DEF(1, opcode_blnz) {
     *(sp++) = lr;
     lr = pc;
-    opcode_bnz$1(registers);
+    opcode_bnz$1(registers, args);
 }
 OPC_DEF(1, opcode_blz) {
     *(sp++) = lr;
     lr = pc;
-    opcode_bz$1(registers);
+    opcode_bz$1(registers, args);
 }
 OPC_DEF(1, opcode_psh) {
-    *(sp++) = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+    *(sp++) = registers[ARG(reg.reg1)]->asPointer;
 }
 OPC_DEF(1, opcode_pp) {
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer = *(--sp);
+    registers[ARG(reg.reg1)]->asPointer = *(--sp);
 }
 OPC_DEF(1, opcode_not) {
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger = ~registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger;
+    registers[ARG(reg.reg1)]->asInteger = ~registers[ARG(reg.reg1)]->asInteger;
 }
 OPC_DEF(1, opcode_inc) {
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger++;
+    registers[ARG(reg.reg1)]->asInteger++;
 }
 OPC_DEF(1, opcode_dec) {
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger--;
+    registers[ARG(reg.reg1)]->asInteger--;
 }
 #define ARITH_X_REG(_op, _what) \
 OPC_DEF(1, opcode_ ## _op) { \
-    registers[0]->asInteger _what ## = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger; \
+    registers[0]->asInteger _what ## = registers[ARG(reg.reg1)]->asInteger; \
 }
 ARITH_X_REG(add, +)
 ARITH_X_REG(sub, -)
@@ -379,14 +381,14 @@ ARITH_X_REG(shl, <<)
 ARITH_X_REG(shr, >>)
 
 OPC_DEF(2, opcode_ldr) {
-    registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg1)))]->asInteger = registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger;
+    registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg1)))]->asInteger = registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger;
 }
 OPC_DEF(2, opcode_str) {
-    *(uint64_t*) (registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg1)))]->asPointer) = registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger;
+    *(uint64_t*) (registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg1)))]->asPointer) = registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger;
 }
 OPC_DEF(2, opcode_cmp) {
-    uint64_t a = registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg1)))]->asInteger;
-    uint64_t b = registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger;
+    uint64_t a = registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg1)))]->asInteger;
+    uint64_t b = registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger;
     int64_t as = (int64_t) a;
     int64_t bs = (int64_t) b;
     flags = 0;
@@ -409,7 +411,7 @@ OPC_DEF(2, opcode_psh) {
 }
 #define ARITH_REG_REG(_op, _what) \
 OPC_DEF(2, opcode_ ## _op) { \
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger _what ## = registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger; \
+    registers[ARG(reg.reg1)]->asInteger _what ## = registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger; \
 }
 ARITH_REG_REG(add, +)
 ARITH_REG_REG(sub, -)
@@ -423,14 +425,14 @@ ARITH_REG_REG(shl, <<)
 ARITH_REG_REG(shr, >>)
 
 OPC_DEF(3, opcode_ldr) {
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm16.reg1))]->asInteger = *(int16_t*) (pc + hive_offsetof(args_t, reg_imm16.imm));
+    registers[ARG(reg_imm16.reg1)]->asInteger = ARG(reg_imm16.imm);
 }
 OPC_DEF(3, opcode_str) {
-    *(uint64_t*) (registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm16.reg1))]->asPointer) = *(int16_t*) (pc + hive_offsetof(args_t, reg_imm16.imm));
+    *(uint64_t*) (registers[ARG(reg_imm16.reg1)]->asPointer) = ARG(reg_imm16.imm);
 }
 OPC_DEF(3, opcode_cmp) {
-    uint64_t a = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm16.reg1))]->asInteger;
-    uint64_t b = *(int16_t*) (pc + hive_offsetof(args_t, reg_imm16.imm));
+    uint64_t a = registers[ARG(reg_imm16.reg1)]->asInteger;
+    uint64_t b = ARG(reg_imm16.imm);
     int64_t as = (int64_t) a;
     int64_t bs = (int64_t) b;
     flags = 0;
@@ -451,7 +453,7 @@ OPC_DEF(3, opcode_cmp) {
 
 #define ARITH_REG_IMM(_op, _what) \
 OPC_DEF(3, opcode_ ## _op) { \
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm16.reg1))]->asInteger _what ## = *(uint16_t*) (pc + hive_offsetof(args_t, reg_imm16.imm)); \
+    registers[ARG(reg_imm16.reg1)]->asInteger _what ## = ARG(reg_imm16.imm); \
 }
 
 ARITH_REG_IMM(add, +)
@@ -467,24 +469,24 @@ ARITH_REG_IMM(shr, >>)
 
 
 OPC_DEF(4, opcode_ldr) {
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_reg_offset.reg1))]->asInteger = *(uint64_t*) (registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_reg_offset.reg2))]->asPointer + *(int16_t*) (pc + hive_offsetof(args_t, reg_reg_offset.offset)));
+    registers[ARG(reg_reg_offset.reg1)]->asInteger = *(uint64_t*) (registers[ARG(reg_reg_offset.reg2)]->asPointer + ARG(reg_reg_offset.offset));
 }
 OPC_DEF(4, opcode_mov) {
-    uint8_t* srcPtr = (uint8_t*) registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg.reg2))]->asPointer + registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg.reg2_offset_reg))]->asSignedInteger;
-    for (int i = 0; i < *(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg.nbytes)); i++) {
-        registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg.reg1))]->asInteger |= (uint64_t) (srcPtr[i] << (i * 8));
+    uint8_t* srcPtr = (uint8_t*) registers[ARG(mov_reg_n_reg_offset_reg.reg2)]->asPointer + registers[ARG(mov_reg_n_reg_offset_reg.reg2_offset_reg)]->asSignedInteger;
+    for (int i = 0; i < ARG(mov_reg_n_reg_offset_reg.nbytes); i++) {
+        registers[ARG(mov_reg_n_reg_offset_reg.reg1)]->asInteger |= (uint64_t) (srcPtr[i] << (i * 8));
     }
 }
 
 OPC_DEF(5, opcode_mov) {
-    uint8_t* ptr = registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.reg2))]->asPointer + *(int16_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.offset));
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.reg1))]->asInteger = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.nbytes)));
+    uint8_t* ptr = registers[ARG(mov_reg_n_reg_offset.reg2)]->asPointer + ARG(mov_reg_n_reg_offset.offset);
+    registers[ARG(mov_reg_n_reg_offset.reg1)]->asInteger = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset.nbytes));
 }
 #define ARITH_REG_MEM(_op, _what) \
 OPC_DEF(5, opcode_ ## _op) { \
-    uint8_t* ptr = registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.reg2))]->asPointer + *(int16_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.offset)); \
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.nbytes))); \
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.reg1))]->asInteger _what ## = value; \
+    uint8_t* ptr = registers[ARG(mov_reg_n_reg_offset.reg2)]->asPointer + ARG(mov_reg_n_reg_offset.offset); \
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset.nbytes)); \
+    registers[ARG(mov_reg_n_reg_offset.reg1)]->asInteger _what ## = value; \
 }
 
 ARITH_REG_MEM(add, +)
@@ -501,116 +503,116 @@ ARITH_REG_MEM(shr, >>)
 #undef ARITH_REG_MEM
 
 OPC_DEF(8, opcode_psh) {
-    *(sp++) = (void*) *(uint64_t*) (pc + hive_offsetof(args_t, imm64.imm));
+    *(sp++) = (void*) ARG(imm64.imm);
 }
 OPC_DEF(8, opcode_mov) {
-    uint64_t* ptr = (uint64_t*) (*(uintptr_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.addr)) + *(int16_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.offset_offset)));
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.reg1))]->asInteger = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.nbytes)));
+    uint64_t* ptr = (uint64_t*) (ARG(mov_reg_n_reg_offset_reg_offset_offset.addr) + ARG(mov_reg_n_reg_offset_reg_offset_offset.offset_offset));
+    registers[ARG(mov_reg_n_reg_offset_reg_offset_offset.reg1)]->asInteger = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset_reg_offset_offset.nbytes));
 }
 
 OPC_DEF(8, opcode_b) {
-    pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
+    pc = (void*) ARG(offset.addr);
 }
 OPC_DEF(8, opcode_bne) {
     if (!(flags & FLAG_EQUAL)) {
-        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
+        pc = (void*) ARG(offset.addr);
     }
 }
 OPC_DEF(8, opcode_beq) {
     if (flags & FLAG_EQUAL) {
-        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
+        pc = (void*) ARG(offset.addr);
     }
 }
 OPC_DEF(8, opcode_bgt) {
     if (flags & FLAG_GREATER) {
-        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
+        pc = (void*) ARG(offset.addr);
     }
 }
 OPC_DEF(8, opcode_blt) {
     if (flags & FLAG_LESS) {
-        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
+        pc = (void*) ARG(offset.addr);
     }
 }
 OPC_DEF(8, opcode_bge) {
     if (flags & (FLAG_GREATER | FLAG_EQUAL)) {
-        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
+        pc = (void*) ARG(offset.addr);
     }
 }
 OPC_DEF(8, opcode_ble) {
     if (flags & (FLAG_LESS | FLAG_EQUAL)) {
-        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
+        pc = (void*) ARG(offset.addr);
     }
 }
 OPC_DEF(8, opcode_bnz) {
     if (!(flags & FLAG_ZERO)) {
-        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
+        pc = (void*) ARG(offset.addr);
     }
 }
 OPC_DEF(8, opcode_bz) {
     if (flags & FLAG_ZERO) {
-        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
+        pc = (void*) ARG(offset.addr);
     }
 }
 OPC_DEF(8, opcode_bl) {
     *(sp++) = lr;
     lr = pc;
-    opcode_b$8(registers);
+    opcode_b$8(registers, args);
 }
 OPC_DEF(8, opcode_blne) {
     *(sp++) = lr;
     lr = pc;
-    opcode_bne$8(registers);
+    opcode_bne$8(registers, args);
 }
 OPC_DEF(8, opcode_bleq) {
     *(sp++) = lr;
     lr = pc;
-    opcode_beq$8(registers);
+    opcode_beq$8(registers, args);
 }
 OPC_DEF(8, opcode_blgt) {
     *(sp++) = lr;
     lr = pc;
-    opcode_bgt$8(registers);
+    opcode_bgt$8(registers, args);
 }
 OPC_DEF(8, opcode_bllt) {
     *(sp++) = lr;
     lr = pc;
-    opcode_blt$8(registers);
+    opcode_blt$8(registers, args);
 }
 OPC_DEF(8, opcode_blge) {
     *(sp++) = lr;
     lr = pc;
-    opcode_bge$8(registers);
+    opcode_bge$8(registers, args);
 }
 OPC_DEF(8, opcode_blle) {
     *(sp++) = lr;
     lr = pc;
-    opcode_ble$8(registers);
+    opcode_ble$8(registers, args);
 }
 OPC_DEF(8, opcode_blnz) {
     *(sp++) = lr;
     lr = pc;
-    opcode_bnz$8(registers);
+    opcode_bnz$8(registers, args);
 }
 OPC_DEF(8, opcode_blz) {
     *(sp++) = lr;
     lr = pc;
-    opcode_bz$8(registers);
+    opcode_bz$8(registers, args);
 }
 OPC_DEF(8, opcode_pp) {
-    *(*(uint64_t**) (pc + hive_offsetof(args_t, offset.addr))) = *(uint64_t*) (--sp);
+    *((uint64_t*) ARG(offset.addr)) = *(uint64_t*) (--sp);
 }
 
 OPC_DEF(9, opcode_ldr) {
-    uint64_t ptr = *(uint64_t*) (pc + hive_offsetof(args_t, reg_imm64.imm));
-    uint8_t reg = *(uint8_t*) (pc + hive_offsetof(args_t, reg_imm64.reg1));
+    uint64_t ptr = ARG(reg_imm64.imm);
+    uint8_t reg = ARG(reg_imm64.reg1);
     registers[reg]->asInteger = ptr;
 }
 OPC_DEF(9, opcode_str) {
-    *(uint64_t*) (registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm64.reg1))]->asPointer) = *(uint64_t*) (pc + hive_offsetof(args_t, reg_imm64.imm));
+    *(uint64_t*) (registers[ARG(reg_imm64.reg1)]->asPointer) = ARG(reg_imm64.imm);
 }
 OPC_DEF(9, opcode_cmp) {
-    uint64_t a = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm64.reg1))]->asInteger;
-    uint64_t b = *(uint64_t*) (pc + hive_offsetof(args_t, reg_imm64.imm));
+    uint64_t a = registers[ARG(reg_imm64.reg1)]->asInteger;
+    uint64_t b = ARG(reg_imm64.imm);
     int64_t as = (int64_t) a;
     int64_t bs = (int64_t) b;
     flags = 0;
@@ -630,7 +632,7 @@ OPC_DEF(9, opcode_cmp) {
 }
 #define ARITH_REG_IMM64(_op, _what) \
 OPC_DEF(9, opcode_ ## _op) { \
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm64.reg1))]->asInteger _what ## = *(uint64_t*) (pc + hive_offsetof(args_t, reg_imm64.imm)); \
+    registers[ARG(reg_imm64.reg1)]->asInteger _what ## = ARG(reg_imm64.imm); \
 }
 
 ARITH_REG_IMM64(add, +)
@@ -647,22 +649,22 @@ ARITH_REG_IMM64(shr, >>)
 #undef ARITH_REG_IMM64
 
 OPC_DEF(10, opcode_ldr) {
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_offset_reg.reg1))]->asInteger = *(*(uint64_t**) (pc + hive_offsetof(args_t, reg_offset_reg.addr)) + registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_offset_reg.reg2))]->asSignedInteger);
+    registers[ARG(reg_offset_reg.reg1)]->asInteger = *((uint64_t*) ARG(reg_offset_reg.addr) + registers[ARG(reg_offset_reg.reg2)]->asSignedInteger);
 }
 
 OPC_DEF(11, opcode_ldr) {
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_offset_imm.reg1))]->asInteger = *(*(uint64_t**) (pc + hive_offsetof(args_t, reg_offset_imm.addr)) + *(int16_t*) (pc + hive_offsetof(args_t, reg_offset_imm.imm_off)));
+    registers[ARG(reg_offset_imm.reg1)]->asInteger = *((uint64_t*) ARG(reg_offset_imm.addr) + ARG(reg_offset_imm.imm_off));
 }
 OPC_DEF(11, opcode_mov) {
-    uint64_t* ptr = *(uint64_t**) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.addr)) + registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.reg2))]->asSignedInteger;
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.nbytes)));
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.reg1))]->asInteger = value;
+    uint64_t* ptr = (uint64_t*) ARG(mov_reg_n_reg_offset_reg_offset.addr) + registers[ARG(mov_reg_n_reg_offset_reg_offset.reg2)]->asSignedInteger;
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset_reg_offset.nbytes));
+    registers[ARG(mov_reg_n_reg_offset_reg_offset.reg1)]->asInteger = value;
 }
 #define ARITH_REG_SYM(_op, _what) \
 OPC_DEF(11, opcode_ ## _op) { \
-    uint64_t* ptr = *(uint64_t**) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.addr)) + registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.reg2))]->asSignedInteger; \
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.nbytes))); \
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.reg1))]->asInteger _what ## = value; \
+    uint64_t* ptr = (uint64_t*) ARG(mov_reg_n_reg_offset_reg_offset.addr) + registers[ARG(mov_reg_n_reg_offset_reg_offset.reg2)]->asSignedInteger; \
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset_reg_offset.nbytes)); \
+    registers[ARG(mov_reg_n_reg_offset_reg_offset.reg1)]->asInteger _what ## = value; \
 }
 
 ARITH_REG_SYM(add, +)
@@ -680,9 +682,9 @@ ARITH_REG_SYM(shr, >>)
 
 #define ARITH_REG_ADDR_OFF(_op, _what) \
 OPC_DEF(12, opcode_ ## _op) { \
-    uint64_t* ptr = (*(uint64_t**) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.addr)) + *(int16_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.offset_offset))); \
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.nbytes))); \
-    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.reg1))]->asInteger _what ## = value; \
+    uint64_t* ptr = (uint64_t*) (ARG(mov_reg_n_reg_offset_reg_offset_offset.addr) + ARG(mov_reg_n_reg_offset_reg_offset_offset.offset_offset)); \
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset_reg_offset_offset.nbytes)); \
+    registers[ARG(mov_reg_n_reg_offset_reg_offset_offset.reg1)]->asInteger _what ## = value; \
 }
 
 ARITH_REG_ADDR_OFF(add, +)
@@ -869,19 +871,11 @@ static opc_func* funcs[16] = {
 
 OS_NOINLINE
 void exec(hive_register_t* registers[32]) {
-    struct timespec start, end;
     while (1) {
         uint16_t opcode = *(uint16_t*) pc;
-        pc += 2;
-        opc_func f = funcs[opcode >> 12][opcode & 0x0FFF];
-        printf("0x%016llx: ", (uint64_t) pc - 2);
-        printf("%01x %03x ", opcode >> 12, opcode & 0x0FFF);
-        f(registers);
-        for (int i = 0; i < (opcode >> 12); i++) {
-            printf("%02x ", *(uint8_t*) (pc + i));
-        }
-        printf("\n");
-        pc += opcode >> 12;
+        // TODO: make this less ugly
+        pc += 2 + (opcode >> 12);
+        funcs[opcode >> 12][opcode & 0x0FFF](registers, pc - (opcode >> 12));
     }
 }
 
@@ -980,10 +974,7 @@ void relocate(object_file_t* objects, uint64_t count) {
                 relocation_info_t reloc = *(relocation_info_t*) (lc->data + i);
                 uint64_t* ptr = (uint64_t*) (code_sect->data + reloc.offset);
                 uint64_t symIndex = *ptr;
-                printf("Relocating %s @ 0x%016llx ", symbols[symIndex].name, (uint64_t) ptr);
-                printf("from 0x%016llx ", *ptr);
                 *ptr = (uint64_t) symbols[symIndex].sym_addr;
-                printf("to 0x%016llx\n", *ptr);
             }
             commands++;
         }
@@ -1105,14 +1096,12 @@ int main(int argc, char **argv) {
             registers[i] = alloca(sizeof(hive_register_t));
         }
         
-        pc = find_symbol("_start", objects, sizeof(objects) / sizeof(object_file_t));
+        pc = (void*) find_symbol("_start", objects, sizeof(objects) / sizeof(object_file_t));
 
         if (pc == NULL) {
             fprintf(stderr, "Could not find _start symbol\n");
             return 1;
         }
-
-        printf("Starting at %p (%p)\n", pc, *(void**) pc);
 
         char stack[1024][1024];
         bp = sp = (void**) stack;
