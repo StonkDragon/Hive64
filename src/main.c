@@ -9,1470 +9,1000 @@
 #include <signal.h>
 #include <dlfcn.h>
 #include <execinfo.h>
+#include <fcntl.h>
+#include <stdarg.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <ffi/ffi.h>
+#include <sys/wait.h>
+#include <sys/time.h>
 
 #include "new_ops.h"
 
-tregister_t registers[37] = {0};
+void** svc_table = NULL;
 
-simd_register_t simd_registers[16] = {0};
+#define pc (registers[27]->asPointer)
+#define lr (registers[28]->asPointer)
+#define sp (registers[29]->asPointerPointer)
+#define bp (registers[30]->asPointerPointer)
+#define flags (registers[31]->bytes[0])
 
-object_file* read_object_file(char* file) {
-    FILE* f = fopen(file, "rb");
-    if (f == NULL) {
-        fprintf(stderr, "File %s not found.\n", file);
-        return NULL;
+#define FLAG_ZERO       0b00000001
+#define FLAG_NEGATIVE   0b00000010
+#define FLAG_GREATER    0b00000100
+#define FLAG_LESS       0b00001000
+#define FLAG_EQUAL      0b00010000
+
+static uint8_t bios[] = {
+    0xce, 0xfa, 0xed, 0xfe, 0x01, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
+    0x02, 0x00, 0x00, 0x00, 0x52, 0x45, 0x4c, 0x4f, 
+    0x43, 0x41, 0x54, 0x45, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0xa0, 0x00, 0x00, 0x00, 
+    0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x1e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xd8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 
+    0x1e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x5e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x26, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x2e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xd2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x36, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xd4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xd6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x83, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x97, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xb6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x01, 0x00, 0x17, 0x00, 0xd8, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x02, 0x30, 0x01, 0x00, 
+    0x00, 0x02, 0x90, 0x01, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x01, 0x20, 0x00, 0x22, 0x80, 
+    0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x02, 0x20, 0x00, 0x01, 0x01, 0x00, 
+    0x11, 0x10, 0x00, 0x11, 0x10, 0x01, 0x11, 0x10, 
+    0x0f, 0x11, 0x10, 0x10, 0x11, 0x10, 0x11, 0x11, 
+    0x10, 0x03, 0x02, 0x20, 0x0f, 0x02, 0x02, 0x20, 
+    0x11, 0x01, 0x05, 0x10, 0x03, 0x0e, 0x80, 0x05, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 
+    0x50, 0x00, 0x00, 0x10, 0x01, 0x0f, 0x05, 0x10, 
+    0x10, 0x0e, 0x80, 0x05, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x02, 0x30, 0x0e, 0x00, 0x00, 
+    0x02, 0x20, 0x01, 0x10, 0x02, 0x20, 0x02, 0x11, 
+    0x20, 0x00, 0x1e, 0x10, 0x0f, 0x1f, 0x10, 0x03, 
+    0x06, 0x80, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x12, 0x10, 0x03, 0x12, 0x10, 0x11, 
+    0x12, 0x10, 0x10, 0x12, 0x10, 0x0f, 0x12, 0x10, 
+    0x01, 0x12, 0x10, 0x00, 0x10, 0x00, 0x10, 0x00, 
+    0x10, 0x00, 0x10, 0x00, 0x02, 0x00, 0x21, 0x00, 
+    0x30, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x5f, 0x73, 0x74, 0x61, 0x72, 0x74, 0x00, 0x1e, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 
+    0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x62, 
+    0x72, 0x61, 0x6e, 0x63, 0x68, 0x74, 0x61, 0x62, 
+    0x6c, 0x65, 0x00, 0x5e, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x73, 0x79, 0x73, 0x63, 0x61, 
+    0x6c, 0x6c, 0x2e, 0x65, 0x78, 0x69, 0x74, 0x00, 
+    0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 
+    0x77, 0x72, 0x69, 0x74, 0x65, 0x00, 0x7e, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x79, 
+    0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x77, 0x72, 
+    0x69, 0x74, 0x65, 0x5f, 0x6c, 0x6f, 0x6f, 0x70, 
+    0x00, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 
+    0x2e, 0x77, 0x72, 0x69, 0x74, 0x65, 0x5f, 0x65, 
+    0x6e, 0x64, 0x00, 0xd2, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x73, 0x79, 0x73, 0x63, 0x61, 
+    0x6c, 0x6c, 0x2e, 0x72, 0x65, 0x61, 0x64, 0x00, 
+    0xd4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 
+    0x6f, 0x70, 0x65, 0x6e, 0x00, 0xd6, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x79, 0x73, 
+    0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x63, 0x6c, 0x6f, 
+    0x73, 0x65, 0x00, 0xd8, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x6d, 0x61, 0x69, 0x6e, 0x00
+};
+
+typedef union {
+    struct {
+    } none PACKED;
+    struct {
+        uint8_t reg1 PACKED;
+    } reg PACKED;
+    struct {
+        uint8_t reg1 PACKED;
+        uint8_t reg2 PACKED;
+    } reg_reg PACKED;
+    struct {
+        int16_t imm PACKED;
+    } imm16 PACKED;
+    struct {
+        int16_t imm PACKED;
+        uint8_t reg1 PACKED;
+    } reg_imm16 PACKED;
+    struct {
+        uint8_t reg1 PACKED;
+        uint8_t reg2 PACKED;
+        int16_t offset PACKED;
+    } reg_reg_offset PACKED;
+    struct {
+        uintptr_t addr PACKED;
+    } offset PACKED;
+    struct {
+        uint8_t reg1 PACKED;
+        uint8_t nbytes PACKED;
+        uint8_t reg2 PACKED;
+        uint8_t reg2_offset_reg PACKED;
+    } mov_reg_n_reg_offset_reg PACKED;
+    struct {
+        uintptr_t addr PACKED;
+        uint8_t reg PACKED;
+    } reg_offset PACKED;
+    struct {
+        int16_t offset PACKED;
+        uint8_t reg1 PACKED;
+        uint8_t nbytes PACKED;
+        uint8_t reg2 PACKED;
+    } mov_reg_n_reg_offset PACKED;
+    struct {
+        uintptr_t addr PACKED;
+        uint8_t reg1 PACKED;
+        uint8_t reg2 PACKED;
+    } reg_offset_reg PACKED;
+    struct {
+        uintptr_t addr PACKED;
+        uint8_t reg1 PACKED;
+        int16_t imm_off PACKED;
+    } reg_offset_imm PACKED;
+    struct {
+        uintptr_t addr PACKED;
+        uint8_t reg1 PACKED;
+        uint8_t nbytes PACKED;
+        uint8_t reg2 PACKED;
+    } mov_reg_n_reg_offset_reg_offset PACKED;
+    struct {
+        uint64_t imm PACKED;
+    } imm64 PACKED;
+    struct {
+        uintptr_t addr PACKED;
+        uint8_t reg1 PACKED;
+        uint8_t nbytes PACKED;
+        int16_t offset_offset PACKED;
+    } mov_reg_n_reg_offset_reg_offset_offset PACKED;
+    struct {
+        uint64_t imm PACKED;
+        uint8_t reg1 PACKED;
+    } reg_imm64 PACKED;
+
+    __uint128_t imm128; // 16 bytes because that is the maximum extra size of an instruction
+} args_t;
+
+typedef void (*opc_func)(hive_register_t*[32]);
+
+#pragma region EXEC
+
+#undef OPC
+#undef OPC_ENDFUNC
+#undef OPC_FUNC
+
+#define OPC_DEF(_nargs, _opcode)    static void _opcode ## $ ## _nargs(hive_register_t* registers[32])
+#define CAT_(a, b)                  a ## b
+#define CAT(a, b)                   CAT_(a, b)
+#define OPC(_nargs, _opcode)        [_opcode] = _opcode ## $ ## _nargs
+#define OPC_ENDFUNC                 }
+#define NBYTES_TO_BITMASK(_nbytes)  ((1ULL << (_nbytes * 8)) - 1)
+#define OPC_FUNC(_n)                opc_func opc_ ## _n[1 << 12] = {
+
+OPC_DEF(0, opcode_nop) {}
+OPC_DEF(0, opcode_halt) { exit(registers[0]->asInteger); }
+OPC_DEF(0, opcode_pshi) { *(sp++) = pc; }
+OPC_DEF(0, opcode_ret) {
+    pc = lr;
+    lr = *(--sp);
+}
+OPC_DEF(0, opcode_irq) {
+    switch (registers[0]->asInteger) {
+    case 0x01: { // set up svc table
+        svc_table = registers[1]->asPointer;
+        break;
     }
-    fseek(f, 0, SEEK_END);
-    int size = ftell(f);
-    fseek(f, 0, SEEK_SET);
+    case 0x03: { // request memory
+        registers[0]->asPointer = malloc(registers[1]->asInteger);
+        break;
+    }
+
+    case 0x0e: { // print char in r1 to r2
+        char c[2] = { registers[1]->asInteger, '\0' };
+        write(registers[2]->asInteger, c, 1);
+        break;
+    }
     
-    #define NEXT(type) ({ data += sizeof(type); *((type*) (data - sizeof(type))); })
-
-    object_file* obj = malloc(sizeof(object_file));
-
-    uint8_t* data = malloc(size);
-    fread(data, size, 1, f);
-    fclose(f);
-
-    obj->magic = NEXT(uint32_t);
-
-    if (obj->magic == 0x0DF0EDFE) {
-        fprintf(stderr, "Object file is big endian, this is not supported.\n");
-        return NULL;
+    default:
+        break;
     }
-    if (obj->magic != 0xFEEDF00D) {
-        fprintf(stderr, "Invalid magic number: %x\n", obj->magic);
-        return NULL;
-    }
-
-    obj->data = data;
-    obj->data_capacity = obj->data_size = size - sizeof(uint32_t);
-    
-    return obj;
+}
+OPC_DEF(0, opcode_svc) {
+    *(sp++) = lr;
+    lr = pc;
+    pc = svc_table[registers[0]->asInteger];
 }
 
-void write_object_file(object_file* obj, char const* file) {
-    int errnoNow = errno;
-    remove(file);
-    errno = errnoNow;
-
-    FILE* f = fopen(file, "ab");
-    uint32_t magic = 0xFEEDF00D;
-    fwrite(&magic, sizeof(uint32_t), 1, f);
-    
-    for (uint64_t i = 0; i < obj->contents_size; i++) {
-        compile_bytes_or_instr(obj, obj->contents[i]);
-    }
-    fwrite(obj->data, obj->data_size, 1, f);
-    fclose(f);
-}
-
-#define irq (registers[32].asInteger)
-#define pc (registers[33].asPointer)
-#define sp (registers[34].asPointer)
-#define bp (registers[35].asPointer)
-#define flags (registers[36].asInteger)
-
-#define FLAG_ZERO       0x00000001
-#define FLAG_NEGATIVE   0x00000002
-#define FLAG_GREATER    0x00000004
-#define FLAG_LESS       0x00000008
-#define FLAG_EQUAL      0x00000010
-
-void dump_registers(object_file* obj, int dumpToFile) {
-    if (!dumpToFile) {
-        printf("Registers:\n");
-        printf("  PC: 0x%016llx\n", (uint64_t) pc);
-        printf("  SP: 0x%016llx\n", (uint64_t) sp);
-        printf("  BP: 0x%016llx\n", (uint64_t) bp);
-        printf("  Flags: 0x%016llx\n", flags);
-        for (int i = 0; i < 32; i++) {
-            printf("  r%d: 0x%016llx %f\n", i, registers[i].asInteger, registers[i].asFloat);
-        }
-        for (int i = 0; i < 16; i++) {
-            printf("  xmm%d:\n", i);
-            printf("    ");
-            for (int j = 0; j < 4; j++) {
-                printf("0x%016llx ", simd_registers[i].i64[j]);
-            }
-            printf("\n");
-            printf("    ");
-            for (int j = 0; j < 4; j++) {
-                printf("%f ", simd_registers[i].f64[j]);
-            }
-            printf("\n");
-        }
+OPC_DEF(1, opcode_cmpz) {
+    if (registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger == 0) {
+        flags |= FLAG_ZERO;
     } else {
-        remove("memory.dump");
-        FILE* f = fopen("memory.dump", "a");
-        fprintf(f, "          |.0|.1|.2|.3|.4|.5|.6|.7|.8|.9|.A|.B|.C|.D|.E|.F|\n");
-        for (uint64_t addr = 0; addr < obj->data_size; addr += 16) {
-            fprintf(f, "0x%08llx|", addr);
-            for (int i = 0; i < 16; i++) {
-                if (addr + i < obj->data_size) {
-                    fprintf(f, "%02x|", obj->data[addr + i]);
-                } else {
-                    fprintf(f, "  |");
-                }
-            }
-            fprintf(f, "\n");
-        }
-        fprintf(f, "\n");
-        fprintf(f, "Registers:\n");
-        fprintf(f, "  PC: 0x%016llx\n", (uint64_t) pc);
-        fprintf(f, "  SP: 0x%016llx\n", (uint64_t) sp);
-        fprintf(f, "  BP: 0x%016llx\n", (uint64_t) bp);
-        fprintf(f, "  Flags: 0x%016llx\n", flags);
-        for (int i = 0; i < 32; i++) {
-            fprintf(f, "  r%d: 0x%016llx %f\n", i, registers[i].asInteger, registers[i].asFloat);
-        }
-        for (int i = 0; i < 16; i++) {
-            fprintf(f, "  xmm%d:\n", i);
-            fprintf(f, "    ");
-            for (int j = 0; j < 4; j++) {
-                fprintf(f, "0x%016llx ", simd_registers[i].i64[j]);
-            }
-            fprintf(f, "\n");
-            fprintf(f, "    ");
-            for (int j = 0; j < 4; j++) {
-                fprintf(f, "%f ", simd_registers[i].f64[j]);
-            }
-            fprintf(f, "\n");
-        }
-        fprintf(f, "\n");
-        fclose(f);
+        flags &= ~FLAG_ZERO;
+    }
+}
+OPC_DEF(1, opcode_b) {
+    pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+}
+OPC_DEF(1, opcode_bne) {
+    if (!(flags & FLAG_EQUAL)) {
+        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+    }
+}
+OPC_DEF(1, opcode_beq) {
+    if (flags & FLAG_EQUAL) {
+        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+    }
+}
+OPC_DEF(1, opcode_bgt) {
+    if (flags & FLAG_GREATER) {
+        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+    }
+}
+OPC_DEF(1, opcode_blt) {
+    if (flags & FLAG_LESS) {
+        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+    }
+}
+OPC_DEF(1, opcode_bge) {
+    if (flags & (FLAG_GREATER | FLAG_EQUAL)) {
+        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+    }
+}
+OPC_DEF(1, opcode_ble) {
+    if (flags & (FLAG_LESS | FLAG_EQUAL)) {
+        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+    }
+}
+OPC_DEF(1, opcode_bnz) {
+    if (!(flags & FLAG_ZERO)) {
+        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+    }
+}
+OPC_DEF(1, opcode_bz) {
+    if (flags & FLAG_ZERO) {
+        pc = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+    }
+}
+OPC_DEF(1, opcode_bl) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_b$1(registers);
+}
+OPC_DEF(1, opcode_blne) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_bne$1(registers);
+}
+OPC_DEF(1, opcode_bleq) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_beq$1(registers);
+}
+OPC_DEF(1, opcode_blgt) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_bgt$1(registers);
+}
+OPC_DEF(1, opcode_bllt) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_blt$1(registers);
+}
+OPC_DEF(1, opcode_blge) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_bge$1(registers);
+}
+OPC_DEF(1, opcode_blle) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_ble$1(registers);
+}
+OPC_DEF(1, opcode_blnz) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_bnz$1(registers);
+}
+OPC_DEF(1, opcode_blz) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_bz$1(registers);
+}
+OPC_DEF(1, opcode_psh) {
+    *(sp++) = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer;
+}
+OPC_DEF(1, opcode_pp) {
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asPointer = *(--sp);
+}
+OPC_DEF(1, opcode_not) {
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger = ~registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger;
+}
+OPC_DEF(1, opcode_inc) {
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger++;
+}
+OPC_DEF(1, opcode_dec) {
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger--;
+}
+#define ARITH_X_REG(_op, _what) \
+OPC_DEF(1, opcode_ ## _op) { \
+    registers[0]->asInteger _what ## = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger; \
+}
+ARITH_X_REG(add, +)
+ARITH_X_REG(sub, -)
+ARITH_X_REG(mul, *)
+ARITH_X_REG(div, /)
+ARITH_X_REG(mod, %)
+ARITH_X_REG(and, &)
+ARITH_X_REG(or, |)
+ARITH_X_REG(xor, ^)
+ARITH_X_REG(shl, <<)
+ARITH_X_REG(shr, >>)
+
+OPC_DEF(2, opcode_ldr) {
+    registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg1)))]->asInteger = registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger;
+}
+OPC_DEF(2, opcode_str) {
+    *(uint64_t*) (registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg1)))]->asPointer) = registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger;
+}
+OPC_DEF(2, opcode_cmp) {
+    uint64_t a = registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg1)))]->asInteger;
+    uint64_t b = registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger;
+    int64_t as = (int64_t) a;
+    int64_t bs = (int64_t) b;
+    flags = 0;
+    if (a == b) {
+        flags |= FLAG_EQUAL;
+    } else if (as > bs) {
+        flags |= FLAG_GREATER;
+    } else if (as < bs) {
+        flags |= FLAG_LESS;
+    }
+    if (a == 0) {
+        flags |= FLAG_ZERO;
+    }
+    if (as < 0) {
+        flags |= FLAG_NEGATIVE;
+    }
+}
+OPC_DEF(2, opcode_psh) {
+    *(sp++) = (void*) ((uint64_t) (*(uint16_t*) pc));
+}
+#define ARITH_REG_REG(_op, _what) \
+OPC_DEF(2, opcode_ ## _op) { \
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg.reg1))]->asInteger _what ## = registers[*(uint8_t*) ((pc + hive_offsetof(args_t, reg_reg.reg2)))]->asInteger; \
+}
+ARITH_REG_REG(add, +)
+ARITH_REG_REG(sub, -)
+ARITH_REG_REG(mul, *)
+ARITH_REG_REG(div, /)
+ARITH_REG_REG(mod, %)
+ARITH_REG_REG(and, &)
+ARITH_REG_REG(or, |)
+ARITH_REG_REG(xor, ^)
+ARITH_REG_REG(shl, <<)
+ARITH_REG_REG(shr, >>)
+
+OPC_DEF(3, opcode_ldr) {
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm16.reg1))]->asInteger = *(int16_t*) (pc + hive_offsetof(args_t, reg_imm16.imm));
+}
+OPC_DEF(3, opcode_str) {
+    *(uint64_t*) (registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm16.reg1))]->asPointer) = *(int16_t*) (pc + hive_offsetof(args_t, reg_imm16.imm));
+}
+OPC_DEF(3, opcode_cmp) {
+    uint64_t a = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm16.reg1))]->asInteger;
+    uint64_t b = *(int16_t*) (pc + hive_offsetof(args_t, reg_imm16.imm));
+    int64_t as = (int64_t) a;
+    int64_t bs = (int64_t) b;
+    flags = 0;
+    if (a == b) {
+        flags |= FLAG_EQUAL;
+    } else if (as > bs) {
+        flags |= FLAG_GREATER;
+    } else if (as < bs) {
+        flags |= FLAG_LESS;
+    }
+    if (a == 0) {
+        flags |= FLAG_ZERO;
+    }
+    if (as < 0) {
+        flags |= FLAG_NEGATIVE;
     }
 }
 
-void spill() {
-    for (int i = 0; i < 32; i++) {
-        *(uint64_t*) (sp++) = registers[i].asInteger;
+#define ARITH_REG_IMM(_op, _what) \
+OPC_DEF(3, opcode_ ## _op) { \
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm16.reg1))]->asInteger _what ## = *(uint16_t*) (pc + hive_offsetof(args_t, reg_imm16.imm)); \
+}
+
+ARITH_REG_IMM(add, +)
+ARITH_REG_IMM(sub, -)
+ARITH_REG_IMM(mul, *)
+ARITH_REG_IMM(div, /)
+ARITH_REG_IMM(mod, %)
+ARITH_REG_IMM(and, &)
+ARITH_REG_IMM(or, |)
+ARITH_REG_IMM(xor, ^)
+ARITH_REG_IMM(shl, <<)
+ARITH_REG_IMM(shr, >>)
+
+
+OPC_DEF(4, opcode_ldr) {
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_reg_offset.reg1))]->asInteger = *(uint64_t*) (registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_reg_offset.reg2))]->asPointer + *(int16_t*) (pc + hive_offsetof(args_t, reg_reg_offset.offset)));
+}
+OPC_DEF(4, opcode_mov) {
+    uint8_t* srcPtr = (uint8_t*) registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg.reg2))]->asPointer + registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg.reg2_offset_reg))]->asSignedInteger;
+    for (int i = 0; i < *(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg.nbytes)); i++) {
+        registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg.reg1))]->asInteger |= (uint64_t) (srcPtr[i] << (i * 8));
     }
 }
 
-void restore() {
-    for (int i = 31; i >= 0; i--) {
-        registers[i].asInteger = *(uint64_t*) (--sp);
+OPC_DEF(5, opcode_mov) {
+    uint8_t* ptr = registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.reg2))]->asPointer + *(int16_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.offset));
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.reg1))]->asInteger = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.nbytes)));
+}
+#define ARITH_REG_MEM(_op, _what) \
+OPC_DEF(5, opcode_ ## _op) { \
+    uint8_t* ptr = registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.reg2))]->asPointer + *(int16_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.offset)); \
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.nbytes))); \
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset.reg1))]->asInteger _what ## = value; \
+}
+
+ARITH_REG_MEM(add, +)
+ARITH_REG_MEM(sub, -)
+ARITH_REG_MEM(mul, *)
+ARITH_REG_MEM(div, /)
+ARITH_REG_MEM(mod, %)
+ARITH_REG_MEM(and, &)
+ARITH_REG_MEM(or, |)
+ARITH_REG_MEM(xor, ^)
+ARITH_REG_MEM(shl, <<)
+ARITH_REG_MEM(shr, >>)
+
+#undef ARITH_REG_MEM
+
+OPC_DEF(8, opcode_psh) {
+    *(sp++) = (void*) *(uint64_t*) (pc + hive_offsetof(args_t, imm64.imm));
+}
+OPC_DEF(8, opcode_mov) {
+    uint64_t* ptr = (uint64_t*) (*(uintptr_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.addr)) + *(int16_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.offset_offset)));
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.reg1))]->asInteger = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.nbytes)));
+}
+
+OPC_DEF(8, opcode_b) {
+    pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
+}
+OPC_DEF(8, opcode_bne) {
+    if (!(flags & FLAG_EQUAL)) {
+        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
     }
 }
-
-__attribute__((always_inline))
-static inline uint64_t readUint64(uint8_t* data) {
-    uint64_t value = 0;
-    value |= ((uint64_t) data[0]);
-    value |= ((uint64_t) data[1]) << 8;
-    value |= ((uint64_t) data[2]) << 16;
-    value |= ((uint64_t) data[3]) << 24;
-    value |= ((uint64_t) data[4]) << 32;
-    value |= ((uint64_t) data[5]) << 40;
-    value |= ((uint64_t) data[6]) << 48;
-    value |= ((uint64_t) data[7]) << 56;
-    return value;
-}
-
-__attribute__((always_inline))
-static inline uint32_t readUint32(uint8_t* data) {
-    uint32_t value = 0;
-    value |= ((uint32_t) data[0]);
-    value |= ((uint32_t) data[1]) << 8;
-    value |= ((uint32_t) data[2]) << 16;
-    value |= ((uint32_t) data[3]) << 24;
-    return value;
-}
-
-__attribute__((always_inline))
-static inline uint16_t readUint16(uint8_t* data) {
-    uint16_t value = 0;
-    value |= ((uint16_t) data[0]);
-    value |= ((uint16_t) data[1]) << 8;
-    return value;
-}
-
-__attribute__((always_inline))
-static inline uint8_t readUint8(uint8_t* data) {
-    return data[0];
-}
-
-#define SIMD_OP(_on, _op, _what) \
-__attribute__((always_inline)) \
-static inline void simd_ ## _on ## _ ## _op(uint8_t r1, uint8_t r2) { \
-    for (int i = 0; i < 32 / sizeof(_on ## _t); i++) { \
-        simd_registers[r1]._on[i] _what ## = simd_registers[r2]._on[i]; \
-    } \
-} \
-__attribute__((always_inline)) \
-static inline void simd_ ## _on ## _ ## _op ## _imm(uint8_t r1, int64_t imm) { \
-    for (int i = 0; i < 32 / sizeof(_on ## _t); i++) { \
-        simd_registers[r1]._on[i] _what ## = imm; \
-    } \
-}
-
-SIMD_OP(i8, add, +)
-SIMD_OP(i16, add, +)
-SIMD_OP(i32, add, +)
-SIMD_OP(i64, add, +)
-SIMD_OP(f32, add, +)
-SIMD_OP(f64, add, +)
-
-SIMD_OP(i8, sub, -)
-SIMD_OP(i16, sub, -)
-SIMD_OP(i32, sub, -)
-SIMD_OP(i64, sub, -)
-SIMD_OP(f32, sub, -)
-SIMD_OP(f64, sub, -)
-
-SIMD_OP(i8, mul, *)
-SIMD_OP(i16, mul, *)
-SIMD_OP(i32, mul, *)
-SIMD_OP(i64, mul, *)
-SIMD_OP(f32, mul, *)
-SIMD_OP(f64, mul, *)
-
-SIMD_OP(i8, div, /)
-SIMD_OP(i16, div, /)
-SIMD_OP(i32, div, /)
-SIMD_OP(i64, div, /)
-SIMD_OP(f32, div, /)
-SIMD_OP(f64, div, /)
-
-SIMD_OP(i8, mod, %)
-SIMD_OP(i16, mod, %)
-SIMD_OP(i32, mod, %)
-SIMD_OP(i64, mod, %)
-
-SIMD_OP(i8, and, &)
-SIMD_OP(i16, and, &)
-SIMD_OP(i32, and, &)
-SIMD_OP(i64, and, &)
-
-SIMD_OP(i8, or, |)
-SIMD_OP(i16, or, |)
-SIMD_OP(i32, or, |)
-SIMD_OP(i64, or, |)
-
-SIMD_OP(i8, xor, ^)
-SIMD_OP(i16, xor, ^)
-SIMD_OP(i32, xor, ^)
-SIMD_OP(i64, xor, ^)
-
-SIMD_OP(i8, shl, <<)
-SIMD_OP(i16, shl, <<)
-SIMD_OP(i32, shl, <<)
-SIMD_OP(i64, shl, <<)
-
-SIMD_OP(i8, shr, >>)
-SIMD_OP(i16, shr, >>)
-SIMD_OP(i32, shr, >>)
-SIMD_OP(i64, shr, >>)
-
-__attribute__((always_inline))
-static inline void simd_i64_addsub(uint8_t r1, uint8_t r2) {
-    for (int i = 0; i < 4; i += 2) {
-        simd_registers[r1].i64[i] += simd_registers[r2].i64[i];
-        simd_registers[r1].i64[i + 1] -= simd_registers[r2].i64[i + 1];
+OPC_DEF(8, opcode_beq) {
+    if (flags & FLAG_EQUAL) {
+        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
     }
 }
-
-__attribute__((always_inline))
-static inline void simd_i32_addsub(uint8_t r1, uint8_t r2) {
-    for (int i = 0; i < 8; i += 2) {
-        simd_registers[r1].i32[i] += simd_registers[r2].i32[i];
-        simd_registers[r1].i32[i + 1] -= simd_registers[r2].i32[i + 1];
+OPC_DEF(8, opcode_bgt) {
+    if (flags & FLAG_GREATER) {
+        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
     }
 }
-
-__attribute__((always_inline))
-static inline void simd_i16_addsub(uint8_t r1, uint8_t r2) {
-    for (int i = 0; i < 16; i += 2) {
-        simd_registers[r1].i16[i] += simd_registers[r2].i16[i];
-        simd_registers[r1].i16[i + 1] -= simd_registers[r2].i16[i + 1];
+OPC_DEF(8, opcode_blt) {
+    if (flags & FLAG_LESS) {
+        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
     }
 }
-
-__attribute__((always_inline))
-static inline void simd_i8_addsub(uint8_t r1, uint8_t r2) {
-    for (int i = 0; i < 32; i += 2) {
-        simd_registers[r1].i8[i] += simd_registers[r2].i8[i];
-        simd_registers[r1].i8[i + 1] -= simd_registers[r2].i8[i + 1];
+OPC_DEF(8, opcode_bge) {
+    if (flags & (FLAG_GREATER | FLAG_EQUAL)) {
+        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
     }
 }
-
-__attribute__((always_inline))
-static inline void simd_f64_addsub(uint8_t r1, uint8_t r2) {
-    for (int i = 0; i < 4; i += 2) {
-        simd_registers[r1].f64[i] += simd_registers[r2].f64[i];
-        simd_registers[r1].f64[i + 1] -= simd_registers[r2].f64[i + 1];
+OPC_DEF(8, opcode_ble) {
+    if (flags & (FLAG_LESS | FLAG_EQUAL)) {
+        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
     }
 }
-
-__attribute__((always_inline))
-static inline void simd_f32_addsub(uint8_t r1, uint8_t r2) {
-    for (int i = 0; i < 8; i += 2) {
-        simd_registers[r1].f32[i] += simd_registers[r2].f32[i];
-        simd_registers[r1].f32[i + 1] -= simd_registers[r2].f32[i + 1];
+OPC_DEF(8, opcode_bnz) {
+    if (!(flags & FLAG_ZERO)) {
+        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
     }
 }
-
-__attribute__((always_inline))
-static inline void simd_i64_shuf(uint8_t r1, uint8_t r2) {
-    simd_register_t tmp = simd_registers[r1];
-    for (int i = 0; i < 8; i++) {
-        simd_registers[r1].i32[i] = tmp.i32[simd_registers[r2].i32[i]];
+OPC_DEF(8, opcode_bz) {
+    if (flags & FLAG_ZERO) {
+        pc = *(void**) (pc + hive_offsetof(args_t, offset.addr));
     }
 }
-
-__attribute__((always_inline))
-static inline void simd_i32_shuf(uint8_t r1, uint8_t r2) {
-    simd_register_t tmp = simd_registers[r1];
-    for (int i = 0; i < 4; i++) {
-        simd_registers[r1].i64[i] = tmp.i64[simd_registers[r2].i64[i]];
-    }
+OPC_DEF(8, opcode_bl) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_b$8(registers);
+}
+OPC_DEF(8, opcode_blne) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_bne$8(registers);
+}
+OPC_DEF(8, opcode_bleq) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_beq$8(registers);
+}
+OPC_DEF(8, opcode_blgt) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_bgt$8(registers);
+}
+OPC_DEF(8, opcode_bllt) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_blt$8(registers);
+}
+OPC_DEF(8, opcode_blge) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_bge$8(registers);
+}
+OPC_DEF(8, opcode_blle) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_ble$8(registers);
+}
+OPC_DEF(8, opcode_blnz) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_bnz$8(registers);
+}
+OPC_DEF(8, opcode_blz) {
+    *(sp++) = lr;
+    lr = pc;
+    opcode_bz$8(registers);
+}
+OPC_DEF(8, opcode_pp) {
+    *(*(uint64_t**) (pc + hive_offsetof(args_t, offset.addr))) = *(uint64_t*) (--sp);
 }
 
-__attribute__((always_inline))
-static inline void simd_i16_shuf(uint8_t r1, uint8_t r2) {
-    simd_register_t tmp = simd_registers[r1];
-    for (int i = 0; i < 16; i++) {
-        simd_registers[r1].i16[i] = tmp.i16[simd_registers[r2].i16[i]];
+OPC_DEF(9, opcode_ldr) {
+    uint64_t ptr = *(uint64_t*) (pc + hive_offsetof(args_t, reg_imm64.imm));
+    uint8_t reg = *(uint8_t*) (pc + hive_offsetof(args_t, reg_imm64.reg1));
+    registers[reg]->asInteger = ptr;
+}
+OPC_DEF(9, opcode_str) {
+    *(uint64_t*) (registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm64.reg1))]->asPointer) = *(uint64_t*) (pc + hive_offsetof(args_t, reg_imm64.imm));
+}
+OPC_DEF(9, opcode_cmp) {
+    uint64_t a = registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm64.reg1))]->asInteger;
+    uint64_t b = *(uint64_t*) (pc + hive_offsetof(args_t, reg_imm64.imm));
+    int64_t as = (int64_t) a;
+    int64_t bs = (int64_t) b;
+    flags = 0;
+    if (a == b) {
+        flags |= FLAG_EQUAL;
+    } else if (as > bs) {
+        flags |= FLAG_GREATER;
+    } else if (as < bs) {
+        flags |= FLAG_LESS;
+    }
+    if (a == 0) {
+        flags |= FLAG_ZERO;
+    }
+    if (as < 0) {
+        flags |= FLAG_NEGATIVE;
     }
 }
-
-__attribute__((always_inline))
-static inline void simd_i8_shuf(uint8_t r1, uint8_t r2) {
-    simd_register_t tmp = simd_registers[r1];
-    for (int i = 0; i < 32; i++) {
-        simd_registers[r1].i8[i] = tmp.i8[simd_registers[r2].i8[i]];
-    }
+#define ARITH_REG_IMM64(_op, _what) \
+OPC_DEF(9, opcode_ ## _op) { \
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_imm64.reg1))]->asInteger _what ## = *(uint64_t*) (pc + hive_offsetof(args_t, reg_imm64.imm)); \
 }
 
-#define SIMD_CONVERT(_from, _to) \
-__attribute__((always_inline)) \
-static inline void simd_ ## _from ## _to_ ## _to(uint8_t r1, uint8_t r2) { \
-    static_assert(sizeof(_from ## _t) == sizeof(_to ## _t), "Invalid SIMD conversion"); \
-    for (int i = 0; i < sizeof(_from ## _t); i++) { \
-        simd_registers[r1]._to [i] = simd_registers[r2]._from [i]; \
-    } \
+ARITH_REG_IMM64(add, +)
+ARITH_REG_IMM64(sub, -)
+ARITH_REG_IMM64(mul, *)
+ARITH_REG_IMM64(div, /)
+ARITH_REG_IMM64(mod, %)
+ARITH_REG_IMM64(and, &)
+ARITH_REG_IMM64(or, |)
+ARITH_REG_IMM64(xor, ^)
+ARITH_REG_IMM64(shl, <<)
+ARITH_REG_IMM64(shr, >>)
+
+#undef ARITH_REG_IMM64
+
+OPC_DEF(10, opcode_ldr) {
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_offset_reg.reg1))]->asInteger = *(*(uint64_t**) (pc + hive_offsetof(args_t, reg_offset_reg.addr)) + registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_offset_reg.reg2))]->asSignedInteger);
 }
 
-SIMD_CONVERT(i32, f32)
-SIMD_CONVERT(i64, f64)
-SIMD_CONVERT(f32, i32)
-SIMD_CONVERT(f64, i64)
-
-__attribute__((always_inline))
-static inline void simd_conv(uint8_t srcReg, uint8_t srcMode, uint8_t destReg, uint8_t destMode) {
-    if (srcMode < 0x10 && destMode >= 0x10) {
-        switch (destMode) {
-            case 0x10: simd_i32_to_f32(destReg, srcReg); break;
-            case 0x20: simd_i64_to_f64(destReg, srcReg); break;
-            default: printf("Invalid SIMD mode: %02x\n", destMode); break;
-        }
-    } else if (srcMode >= 0x10 && destMode < 0x10) {
-        switch (srcMode) {
-            case 0x10: simd_f32_to_i32(destReg, srcReg); break;
-            case 0x20: simd_f64_to_i64(destReg, srcReg); break;
-            default: printf("Invalid SIMD mode: %02x\n", srcMode); break;
-        }
-    } else if ((srcMode < 0x10 && destMode < 0x10) || (srcMode >= 0x10 && destMode >= 0x10)) {
-        simd_registers[destReg] = simd_registers[srcReg];
-    } else {
-        printf("Invalid SIMD mode: %02x\n", srcMode);
-    }
+OPC_DEF(11, opcode_ldr) {
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, reg_offset_imm.reg1))]->asInteger = *(*(uint64_t**) (pc + hive_offsetof(args_t, reg_offset_imm.addr)) + *(int16_t*) (pc + hive_offsetof(args_t, reg_offset_imm.imm_off)));
+}
+OPC_DEF(11, opcode_mov) {
+    uint64_t* ptr = *(uint64_t**) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.addr)) + registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.reg2))]->asSignedInteger;
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.nbytes)));
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.reg1))]->asInteger = value;
+}
+#define ARITH_REG_SYM(_op, _what) \
+OPC_DEF(11, opcode_ ## _op) { \
+    uint64_t* ptr = *(uint64_t**) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.addr)) + registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.reg2))]->asSignedInteger; \
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.nbytes))); \
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset.reg1))]->asInteger _what ## = value; \
 }
 
-__attribute__((always_inline))
-static inline void branch_to(void* to) {
-    if (*(uint8_t*) to != 0x7F) {
-        pc = to;
-        return;
-    }
+ARITH_REG_SYM(add, +)
+ARITH_REG_SYM(sub, -)
+ARITH_REG_SYM(mul, *)
+ARITH_REG_SYM(div, /)
+ARITH_REG_SYM(mod, %)
+ARITH_REG_SYM(and, &)
+ARITH_REG_SYM(or, |)
+ARITH_REG_SYM(xor, ^)
+ARITH_REG_SYM(shl, <<)
+ARITH_REG_SYM(shr, >>)
 
-    static void* self = NULL;
-    if (self == NULL) {
-        self = dlopen(NULL, RTLD_LAZY);
-        if (self == NULL) {
-            printf("Failed to load self\n");
-            exit(1);
-        }
-    }
+#undef ARITH_REG_SYM
 
-    char* sym = (char*) to + 1;
-    printf("Calling foreign function %s\n", sym);
-
-    void* func = dlsym(self, sym);
-    if (func == NULL) {
-        printf("Failed to find symbol %s\n", sym);
-        exit(1);
-    }
-    
-    void* values[32] = {0};
-    for (int i = 0; i < 32; i++) {
-        if (i < 8) {
-            values[i] = (void*) registers[i].asInteger;
-        } else {
-            if (sp <= bp) {
-                break;
-            }
-            values[i] = *((void**) --sp);
-        }
-    }
-
-    void*(*funcPtr)(void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*, void*)
-        = func;
-    registers[0].asInteger = (uint64_t) funcPtr(
-        values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7],
-        values[8], values[9], values[10], values[11], values[12], values[13], values[14], values[15],
-        values[16], values[17], values[18], values[19], values[20], values[21], values[22], values[23],
-        values[24], values[25], values[26], values[27], values[28], values[29], values[30], values[31]
-    );
+#define ARITH_REG_ADDR_OFF(_op, _what) \
+OPC_DEF(12, opcode_ ## _op) { \
+    uint64_t* ptr = (*(uint64_t**) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.addr)) + *(int16_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.offset_offset))); \
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.nbytes))); \
+    registers[*(uint8_t*) (pc + hive_offsetof(args_t, mov_reg_n_reg_offset_reg_offset_offset.reg1))]->asInteger _what ## = value; \
 }
 
-void exec(object_file* obj) {
-    uint8_t* data = obj->data;
-    pc = data;
+ARITH_REG_ADDR_OFF(add, +)
+ARITH_REG_ADDR_OFF(sub, -)
+ARITH_REG_ADDR_OFF(mul, *)
+ARITH_REG_ADDR_OFF(div, /)
+ARITH_REG_ADDR_OFF(mod, %)
+ARITH_REG_ADDR_OFF(and, &)
+ARITH_REG_ADDR_OFF(or, |)
+ARITH_REG_ADDR_OFF(xor, ^)
+ARITH_REG_ADDR_OFF(shl, <<)
+ARITH_REG_ADDR_OFF(shr, >>)
+
+#undef ARITH_REG_ADDR_OFF
+
+OPC_FUNC(0)
+    OPC(0, opcode_nop),
+    OPC(0, opcode_halt),
+    OPC(0, opcode_pshi),
+    OPC(0, opcode_ret),
+    OPC(0, opcode_irq),
+    OPC(0, opcode_svc),
+OPC_ENDFUNC;
+OPC_FUNC(1)
+    OPC(1, opcode_cmpz),
+    OPC(1, opcode_b),
+    OPC(1, opcode_bne),
+    OPC(1, opcode_beq),
+    OPC(1, opcode_bgt),
+    OPC(1, opcode_blt),
+    OPC(1, opcode_bge),
+    OPC(1, opcode_ble),
+    OPC(1, opcode_bnz),
+    OPC(1, opcode_bz),
+    OPC(1, opcode_psh),
+    OPC(1, opcode_pp),
+    OPC(1, opcode_not),
+    OPC(1, opcode_inc),
+    OPC(1, opcode_dec),
+    OPC(1, opcode_bl),
+    OPC(1, opcode_blne),
+    OPC(1, opcode_bleq),
+    OPC(1, opcode_blgt),
+    OPC(1, opcode_bllt),
+    OPC(1, opcode_blge),
+    OPC(1, opcode_blle),
+    OPC(1, opcode_blnz),
+    OPC(1, opcode_blz),
+OPC_ENDFUNC;
+OPC_FUNC(2)
+    OPC(2, opcode_ldr),
+    OPC(2, opcode_str),
+    OPC(2, opcode_cmp),
+    OPC(2, opcode_psh),
+    OPC(2, opcode_add),
+    OPC(2, opcode_sub),
+    OPC(2, opcode_mul),
+    OPC(2, opcode_div),
+    OPC(2, opcode_mod),
+    OPC(2, opcode_and),
+    OPC(2, opcode_or),
+    OPC(2, opcode_xor),
+    OPC(2, opcode_shl),
+    OPC(2, opcode_shr),
+OPC_ENDFUNC;
+OPC_FUNC(3)
+    OPC(3, opcode_ldr),
+    OPC(3, opcode_str),
+    OPC(3, opcode_cmp),
+    OPC(3, opcode_add),
+    OPC(3, opcode_sub),
+    OPC(3, opcode_mul),
+    OPC(3, opcode_div),
+    OPC(3, opcode_mod),
+    OPC(3, opcode_and),
+    OPC(3, opcode_or),
+    OPC(3, opcode_xor),
+    OPC(3, opcode_shl),
+    OPC(3, opcode_shr),
+OPC_ENDFUNC;
+OPC_FUNC(4)
+    OPC(4, opcode_ldr),
+    OPC(4, opcode_mov),
+OPC_ENDFUNC;
+OPC_FUNC(5)
+    OPC(5, opcode_mov),
+    OPC(5, opcode_add),
+    OPC(5, opcode_sub),
+    OPC(5, opcode_mul),
+    OPC(5, opcode_div),
+    OPC(5, opcode_mod),
+    OPC(5, opcode_and),
+    OPC(5, opcode_or),
+    OPC(5, opcode_xor),
+    OPC(5, opcode_shl),
+    OPC(5, opcode_shr),
+OPC_ENDFUNC;
+OPC_FUNC(6)
+OPC_ENDFUNC;
+OPC_FUNC(7)
+OPC_ENDFUNC;
+OPC_FUNC(8)
+    OPC(8, opcode_psh),
+    OPC(8, opcode_mov),
+    OPC(8, opcode_b),
+    OPC(8, opcode_bne),
+    OPC(8, opcode_beq),
+    OPC(8, opcode_bgt),
+    OPC(8, opcode_blt),
+    OPC(8, opcode_bge),
+    OPC(8, opcode_ble),
+    OPC(8, opcode_bnz),
+    OPC(8, opcode_bz),
+    OPC(8, opcode_pp),
+    OPC(8, opcode_bl),
+    OPC(8, opcode_blne),
+    OPC(8, opcode_bleq),
+    OPC(8, opcode_blgt),
+    OPC(8, opcode_bllt),
+    OPC(8, opcode_blge),
+    OPC(8, opcode_blle),
+    OPC(8, opcode_blnz),
+    OPC(8, opcode_blz),
+OPC_ENDFUNC;
+OPC_FUNC(9)
+    OPC(9, opcode_ldr),
+    OPC(9, opcode_str),
+    OPC(9, opcode_cmp),
+    OPC(9, opcode_add),
+    OPC(9, opcode_sub),
+    OPC(9, opcode_mul),
+    OPC(9, opcode_div),
+    OPC(9, opcode_mod),
+    OPC(9, opcode_and),
+    OPC(9, opcode_or),
+    OPC(9, opcode_xor),
+    OPC(9, opcode_shl),
+    OPC(9, opcode_shr),
+OPC_ENDFUNC;
+OPC_FUNC(10)
+    OPC(10, opcode_ldr),
+OPC_ENDFUNC;
+OPC_FUNC(11)
+    OPC(11, opcode_ldr),
+    OPC(11, opcode_mov),
+    OPC(11, opcode_add),
+    OPC(11, opcode_sub),
+    OPC(11, opcode_mul),
+    OPC(11, opcode_div),
+    OPC(11, opcode_mod),
+    OPC(11, opcode_and),
+    OPC(11, opcode_or),
+    OPC(11, opcode_xor),
+    OPC(11, opcode_shl),
+    OPC(11, opcode_shr),
+OPC_ENDFUNC;
+OPC_FUNC(12)
+    OPC(12, opcode_add),
+    OPC(12, opcode_sub),
+    OPC(12, opcode_mul),
+    OPC(12, opcode_div),
+    OPC(12, opcode_mod),
+    OPC(12, opcode_and),
+    OPC(12, opcode_or),
+    OPC(12, opcode_xor),
+    OPC(12, opcode_shl),
+    OPC(12, opcode_shr),
+OPC_ENDFUNC;
+OPC_FUNC(13)
+OPC_ENDFUNC;
+OPC_FUNC(14)
+OPC_ENDFUNC;
+OPC_FUNC(15)
+OPC_ENDFUNC;
+
+#pragma endregion
+
+static opc_func* funcs[16] = {
+    opc_0,  opc_1,  opc_2,  opc_3,
+    opc_4,  opc_5,  opc_6,  opc_7,
+    opc_8,  opc_9,  opc_10, opc_11,
+    opc_12, opc_13, opc_14, opc_15
+};
+
+OS_NOINLINE
+void exec(hive_register_t* registers[32]) {
+    struct timespec start, end;
     while (1) {
-        uint16_t op = readUint16((uint8_t*) pc);
+        uint16_t opcode = *(uint16_t*) pc;
         pc += 2;
-        uint8_t count = (op & opcode_nbytes_mask) >> opcode_nbytes_shift;
-        uint16_t opcode = op & ~opcode_nbytes_mask;
-
-        switch (count) {
-        case 0: {
-            switch (opcode) {
-            case opcode_nop: {
-                break;
-            }
-
-            case opcode_halt: {
-                return;
-            }
-
-            case opcode_pshi: {
-                *(void**) (sp++) = pc;
-                break;
-            }
-
-            case opcode_ret: {
-                if (sp == bp) {
-                    return;
-                }
-                pc = (void**) (--sp);
-                break;
-            }
-
-            case opcode_pshx: {
-                *(uint64_t*) (sp++) = registers[0].asInteger;
-                break;
-            }
-
-            case opcode_ppx: {
-                registers[0].asInteger = *(uint64_t*) (--sp);
-                break;
-            }
-
-            case opcode_pshy: {
-                *(uint64_t*) (sp++) = registers[1].asInteger;
-                break;
-            }
-
-            case opcode_ppy: {
-                registers[1].asInteger = *(uint64_t*) (--sp);
-                break;
-            }
-
-            case opcode_irq: {
-                switch (registers[15].asInteger) {
-                    case 1:
-                        exit(registers[0].asInteger);
-                        break;
-                    case 2:
-                        registers[0].asInteger = write(registers[0].asInteger, (void*) registers[1].asPointer, registers[2].asInteger);
-                        break;
-                    case 3:
-                        registers[0].asInteger = read(registers[0].asInteger, (void*) registers[1].asPointer, registers[2].asInteger);
-                        break;
-                    case 4:
-                        dump_registers(obj, 1);
-                        break;
-                    default:
-                        printf("Unknown IRQ: %llu\n", registers[0].asInteger);
-                        break;
-                }
-                break;
-            }
-
-            default:
-                printf("Unknown instruction: %02x\n", op);
-                break;
-            }
-
-            break;
+        opc_func f = funcs[opcode >> 12][opcode & 0x0FFF];
+        printf("0x%016llx: ", (uint64_t) pc - 2);
+        printf("%01x %03x ", opcode >> 12, opcode & 0x0FFF);
+        f(registers);
+        for (int i = 0; i < (opcode >> 12); i++) {
+            printf("%02x ", *(uint8_t*) (pc + i));
         }
-
-        case 1: {
-            switch (opcode) {
-            case opcode_cmpz: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                if (registers[reg].asInteger == 0) {
-                    flags |= FLAG_ZERO;
-                } else {
-                    flags &= ~FLAG_ZERO;
-                }
-                break;
-            }
-
-            case opcode_b: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                branch_to(registers[reg].asPointer);
-                break;
-            }
-
-            case opcode_bne: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                if (!(flags & FLAG_EQUAL)) {
-                    branch_to(registers[reg].asPointer);
-                }
-                break;
-            }
-
-            case opcode_beq: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                if (flags & FLAG_EQUAL) {
-                    branch_to(registers[reg].asPointer);
-                }
-                break;
-            }
-
-            case opcode_bgt: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                if (flags & FLAG_GREATER) {
-                    branch_to(registers[reg].asPointer);
-                }
-                break;
-            }
-
-            case opcode_blt: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                if (flags & FLAG_LESS) {
-                    branch_to(registers[reg].asPointer);
-                }
-                break;
-            }
-
-            case opcode_bge: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                if (flags & (FLAG_GREATER | FLAG_EQUAL)) {
-                    branch_to(registers[reg].asPointer);
-                }
-                break;
-            }
-
-            case opcode_ble: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                if (flags & (FLAG_LESS | FLAG_EQUAL)) {
-                    branch_to(registers[reg].asPointer);
-                }
-                break;
-            }
-
-            case opcode_bnz: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                if (!(flags & FLAG_ZERO)) {
-                    branch_to(registers[reg].asPointer);
-                }
-                break;
-            }
-
-            case opcode_bz: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                if (flags & FLAG_ZERO) {
-                    branch_to(registers[reg].asPointer);
-                }
-                break;
-            }
-
-            case opcode_psh: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                *(uint64_t*) (sp++) = registers[reg].asInteger;
-                break;
-            }
-
-            case opcode_pp: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                registers[reg].asInteger = *(uint64_t*) (--sp);
-                break;
-            }
-
-            case opcode_not: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                registers[reg].asInteger = ~registers[reg].asInteger;
-                break;
-            }
-
-            case opcode_inc: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                registers[reg].asInteger++;
-                break;
-            }
-
-            case opcode_dec: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                registers[reg].asInteger--;
-                break;
-            }
-
-            default:
-                printf("Unknown instruction: %02x\n", op);
-                break;
-            }
-
-            pc += 1;
-            break;
-        }
-        
-        case 2: {
-            switch (opcode) {
-            case opcode_ldr: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint8_t reg2 = readUint8((uint8_t*) pc + 1);
-                registers[reg1].asInteger = registers[reg2].asInteger;
-                break;
-            }
-
-            case opcode_str: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint8_t reg2 = readUint8((uint8_t*) pc + 1);
-                *(uint64_t*) (registers[reg2].asPointer) = registers[reg1].asInteger;
-                break;
-            }
-
-            case opcode_cmp: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint8_t reg2 = readUint8((uint8_t*) pc + 1);
-                uint64_t a = registers[reg1].asInteger;
-                uint64_t b = registers[reg2].asInteger;
-                int64_t as = (int64_t) a;
-                int64_t bs = (int64_t) b;
-                flags = 0;
-                if (a == b) {
-                    flags |= FLAG_EQUAL;
-                } else if (as > bs) {
-                    flags |= FLAG_GREATER;
-                } else if (as < bs) {
-                    flags |= FLAG_LESS;
-                }
-                if (a == 0) {
-                    flags |= FLAG_ZERO;
-                }
-                if (as < 0) {
-                    flags |= FLAG_NEGATIVE;
-                }
-                break;
-            }
-
-            case opcode_psh: {
-                uint16_t value = readUint16((uint8_t*) pc);
-                *(uint64_t*) (sp++) = value;
-                break;
-            }
-
-            #define ARITH_REG_REG(_op, _what) \
-            case opcode_ ## _op: { \
-                uint8_t reg1 = readUint8((uint8_t*) pc); \
-                uint8_t reg2 = readUint8((uint8_t*) pc + 1); \
-                registers[reg1].asInteger _what ## = registers[reg2].asInteger; \
-                break; \
-            }
-
-            ARITH_REG_REG(add, +)
-            ARITH_REG_REG(sub, -)
-            ARITH_REG_REG(mul, *)
-            ARITH_REG_REG(div, /)
-            ARITH_REG_REG(mod, %)
-            ARITH_REG_REG(and, &)
-            ARITH_REG_REG(or, |)
-            ARITH_REG_REG(xor, ^)
-            ARITH_REG_REG(shl, <<)
-            ARITH_REG_REG(shr, >>)
-
-            default:
-                printf("Unknown instruction: %02x\n", op);
-                break;
-            }
-            pc += 2;
-
-            break;
-        }
-
-        case 3: {
-            switch (opcode) {
-            case opcode_ldr: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint16_t value = readUint16((uint8_t*) pc + 1);
-                registers[reg1].asInteger = value;
-                break;
-            }
-
-            case opcode_str: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint16_t value = readUint16((uint8_t*) pc + 1);
-                *(uint64_t*) (registers[reg1].asPointer) = value;
-                break;
-            }
-
-            case opcode_cmp: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint64_t a = registers[reg1].asInteger;
-                uint64_t b = readUint16((uint8_t*) pc + 1);
-                int64_t as = (int64_t) a;
-                int64_t bs = (int64_t) b;
-                flags = 0;
-                if (a == b) {
-                    flags |= FLAG_EQUAL;
-                } else if (as > bs) {
-                    flags |= FLAG_GREATER;
-                } else if (as < bs) {
-                    flags |= FLAG_LESS;
-                }
-                if (a == 0) {
-                    flags |= FLAG_ZERO;
-                }
-                if (as < 0) {
-                    flags |= FLAG_NEGATIVE;
-                }
-                break;
-            }
-
-            #define ARITH_REG_IMM(_op, _what) \
-            case opcode_ ## _op: { \
-                uint8_t reg1 = readUint8((uint8_t*) pc); \
-                uint16_t value = readUint16((uint8_t*) pc + 1); \
-                registers[reg1].asInteger _what ## = value; \
-                break; \
-            }
-
-            ARITH_REG_IMM(add, +)
-            ARITH_REG_IMM(sub, -)
-            ARITH_REG_IMM(mul, *)
-            ARITH_REG_IMM(div, /)
-            ARITH_REG_IMM(mod, %)
-            ARITH_REG_IMM(and, &)
-            ARITH_REG_IMM(or, |)
-            ARITH_REG_IMM(xor, ^)
-            ARITH_REG_IMM(shl, <<)
-            ARITH_REG_IMM(shr, >>)
-
-            #undef ARITH_REG_IMM
-
-            #define ARITH_SIMD(_op) \
-            case opcode_q ## _op: { \
-                uint8_t mode = readUint8((uint8_t*) pc); \
-                uint8_t reg1 = readUint8((uint8_t*) pc + 1); \
-                uint8_t reg2 = readUint8((uint8_t*) pc + 2); \
-                switch (mode) { \
-                    case 0x01: simd_i8_ ## _op(reg1, reg2); break; \
-                    case 0x02: simd_i16_ ## _op(reg1, reg2); break; \
-                    case 0x04: simd_i32_ ## _op(reg1, reg2); break; \
-                    case 0x08: simd_i64_ ## _op(reg1, reg2); break; \
-                    case 0x10: simd_f32_ ## _op(reg1, reg2); break; \
-                    case 0x20: simd_f64_ ## _op(reg1, reg2); break; \
-                    default: printf("Invalid SIMD mode: %02x\n", mode); break; \
-                } \
-                break; \
-            }
-
-            ARITH_SIMD(add)
-            ARITH_SIMD(sub)
-            ARITH_SIMD(mul)
-            ARITH_SIMD(div)
-
-            #undef ARITH_SIMD
-
-            #define ARITH_SIMD(_op) \
-            case opcode_q ## _op: { \
-                uint8_t mode = readUint8((uint8_t*) pc); \
-                uint8_t reg1 = readUint8((uint8_t*) pc + 1); \
-                uint8_t reg2 = readUint8((uint8_t*) pc + 2); \
-                switch (mode) { \
-                    case 0x01: simd_i8_ ## _op(reg1, reg2); break; \
-                    case 0x02: simd_i16_ ## _op(reg1, reg2); break; \
-                    case 0x04: simd_i32_ ## _op(reg1, reg2); break; \
-                    case 0x08: simd_i64_ ## _op(reg1, reg2); break; \
-                    default: printf("Invalid SIMD mode: %02x\n", mode); break; \
-                } \
-                break; \
-            }
-
-            ARITH_SIMD(mod)
-            ARITH_SIMD(and)
-            ARITH_SIMD(or)
-            ARITH_SIMD(xor)
-            ARITH_SIMD(shl)
-            ARITH_SIMD(shr)
-            ARITH_SIMD(addsub)
-            ARITH_SIMD(shuf)
-
-            #undef ARITH_SIMD
-
-            default:
-                printf("Unknown instruction: %02x\n", op);
-                break;
-            }
-            pc += 3;
-
-            break;
-        }
-
-        case 4: {
-            switch (opcode) {
-            case opcode_ldr: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint8_t reg2 = readUint8((uint8_t*) pc + 1);
-                int16_t offset = (int16_t) readUint16((uint8_t*) pc + 2);
-                registers[reg1].asInteger = *(uint64_t*) (registers[reg2].asPointer + offset);
-                break;
-            }
-
-            case opcode_b: {
-                uint32_t offset = readUint32((uint8_t*) pc);
-                branch_to(data + offset);
-                break;
-            }
-
-            case opcode_bne: {
-                uint32_t offset = readUint32((uint8_t*) pc);
-                if (!(flags & FLAG_EQUAL)) {
-                    branch_to(data + offset);
-                }
-                break;
-            }
-
-            case opcode_beq: {
-                uint32_t offset = readUint32((uint8_t*) pc);
-                if (flags & FLAG_EQUAL) {
-                    branch_to(data + offset);
-                }
-                break;
-            }
-
-            case opcode_bgt: {
-                uint32_t offset = readUint32((uint8_t*) pc);
-                if (flags & FLAG_GREATER) {
-                    branch_to(data + offset);
-                }
-                break;
-            }
-
-            case opcode_blt: {
-                uint32_t offset = readUint32((uint8_t*) pc);
-                if (flags & FLAG_LESS) {
-                    branch_to(data + offset);
-                }
-                break;
-            }
-
-            case opcode_bge: {
-                uint32_t offset = readUint32((uint8_t*) pc);
-                if (flags & (FLAG_GREATER | FLAG_EQUAL)) {
-                    branch_to(data + offset);
-                }
-                break;
-            }
-
-            case opcode_ble: {
-                uint32_t offset = readUint32((uint8_t*) pc);
-                if (flags & (FLAG_LESS | FLAG_EQUAL)) {
-                    branch_to(data + offset);
-                }
-                break;
-            }
-
-            case opcode_bnz: {
-                uint32_t offset = readUint32((uint8_t*) pc);
-                if (!(flags & FLAG_ZERO)) {
-                    branch_to(data + offset);
-                }
-                break;
-            }
-
-            case opcode_bz: {
-                uint32_t offset = readUint32((uint8_t*) pc);
-                if (flags & FLAG_ZERO) {
-                    branch_to(data + offset);
-                }
-                break;
-            }
-
-            case opcode_psh: {
-                uint32_t value = readUint32((uint8_t*) pc);
-                *(uint8_t**) (sp++) = (data + value);
-                break;
-            }
-
-            case opcode_pp: {
-                uint32_t value = readUint32((uint8_t*) pc);
-                *(uint64_t*) (data + value) = *(uint64_t*) (--sp);
-            }
-
-            case opcode_qconv: {
-                uint8_t destMode = readUint8((uint8_t*) pc);
-                uint8_t dest = readUint8((uint8_t*) pc + 1);
-                uint8_t srcMode = readUint8((uint8_t*) pc + 2);
-                uint8_t src = readUint8((uint8_t*) pc + 3);
-                simd_conv(src, srcMode, dest, destMode);
-            }
-
-            case opcode_qmov: {
-                uint8_t mode = readUint8((uint8_t*) pc);
-                uint8_t dest = readUint8((uint8_t*) pc + 1);
-                uint8_t index = readUint8((uint8_t*) pc + 2);
-                uint8_t src = readUint8((uint8_t*) pc + 3);
-                if (index != 0xFF) {
-                    switch (mode) {
-                        case 0x01: simd_registers[dest].i8[index] = registers[src].asInteger & 0xFF; break;
-                        case 0x02: simd_registers[dest].i16[index] = registers[src].asInteger & 0xFFFF; break;
-                        case 0x04: simd_registers[dest].i32[index] = registers[src].asInteger & 0xFFFFFFFF; break;
-                        case 0x08: simd_registers[dest].i64[index] = registers[src].asInteger; break;
-                        case 0x10: simd_registers[dest].f32[index] = registers[src].asInteger; break;
-                        case 0x20: simd_registers[dest].f64[index] = registers[src].asInteger; break;
-                        default: printf("Invalid SIMD mode: %02x\n", mode); break;
-                    }
-                } else {
-                    switch (mode) {
-                        case 0x01:
-                            for (int i = 0; i < 32; i++) {
-                                simd_registers[dest].i8[i] = registers[src].asInteger & 0xFF;
-                            }
-                            break;
-                        case 0x02:
-                            for (int i = 0; i < 16; i++) {
-                                simd_registers[dest].i16[i] = registers[src].asInteger & 0xFFFF;
-                            }
-                            break;
-                        case 0x04:
-                            for (int i = 0; i < 8; i++) {
-                                simd_registers[dest].i32[i] = registers[src].asInteger & 0xFFFFFFFF;
-                            }
-                            break;
-                        case 0x08:
-                            for (int i = 0; i < 4; i++) {
-                                simd_registers[dest].i64[i] = registers[src].asInteger;
-                            }
-                            break;
-                        case 0x10:
-                            for (int i = 0; i < 8; i++) {
-                                simd_registers[dest].f32[i] = registers[src].asInteger;
-                            }
-                            break;
-                        case 0x20:
-                            for (int i = 0; i < 4; i++) {
-                                simd_registers[dest].f64[i] = registers[src].asInteger;
-                            }
-                            break;
-                        default:
-                            printf("Invalid SIMD mode: %02x\n", mode);
-                            break;
-                    }
-
-                }
-                break;
-            }
-
-            case opcode_qmov2: {
-                uint8_t dest = readUint8((uint8_t*) pc);
-                uint8_t mode = readUint8((uint8_t*) pc + 1);
-                uint8_t index = readUint8((uint8_t*) pc + 2);
-                uint8_t src = readUint8((uint8_t*) pc + 3);
-                switch (mode) {
-                    case 0x01: registers[dest].asInteger = simd_registers[src].i8[index]; break;
-                    case 0x02: registers[dest].asInteger = simd_registers[src].i16[index]; break;
-                    case 0x04: registers[dest].asInteger = simd_registers[src].i32[index]; break;
-                    case 0x08: registers[dest].asInteger = simd_registers[src].i64[index]; break;
-                    case 0x10: registers[dest].asInteger = simd_registers[src].f32[index]; break;
-                    case 0x20: registers[dest].asInteger = simd_registers[src].f64[index]; break;
-                    default: printf("Invalid SIMD mode: %02x\n", mode); break;
-                }
-                break;
-            }
-
-            #define ARITH_SIMD(_op) \
-            case opcode_q ## _op: { \
-                uint8_t mode = readUint8((uint8_t*) pc); \
-                uint8_t reg1 = readUint8((uint8_t*) pc + 1); \
-                int16_t value = (int16_t) readUint16((uint8_t*) pc + 2); \
-                switch (mode) { \
-                    case 0x01: simd_i8_ ## _op ## _imm(reg1, value); break; \
-                    case 0x02: simd_i16_ ## _op ## _imm(reg1, value); break; \
-                    case 0x04: simd_i32_ ## _op ## _imm(reg1, value); break; \
-                    case 0x08: simd_i64_ ## _op ## _imm(reg1, value); break; \
-                    case 0x10: simd_f32_ ## _op ## _imm(reg1, value); break; \
-                    case 0x20: simd_f64_ ## _op ## _imm(reg1, value); break; \
-                    default: printf("Invalid SIMD mode: %02x\n", mode); break; \
-                } \
-                break; \
-            }
-
-            ARITH_SIMD(add)
-            ARITH_SIMD(sub)
-            ARITH_SIMD(mul)
-            ARITH_SIMD(div)
-
-            #undef ARITH_SIMD
-
-            #define ARITH_SIMD(_op) \
-            case opcode_q ## _op: { \
-                uint8_t mode = readUint8((uint8_t*) pc); \
-                uint8_t reg1 = readUint8((uint8_t*) pc + 1); \
-                int16_t value = (int16_t) readUint16((uint8_t*) pc + 2); \
-                switch (mode) { \
-                    case 0x01: simd_i8_ ## _op ## _imm(reg1, value); break; \
-                    case 0x02: simd_i16_ ## _op ## _imm(reg1, value); break; \
-                    case 0x04: simd_i32_ ## _op ## _imm(reg1, value); break; \
-                    case 0x08: simd_i64_ ## _op ## _imm(reg1, value); break; \
-                    default: printf("Invalid SIMD mode: %02x\n", mode); break; \
-                } \
-                break; \
-            }
-
-            ARITH_SIMD(mod)
-            ARITH_SIMD(and)
-            ARITH_SIMD(or)
-            ARITH_SIMD(xor)
-            ARITH_SIMD(shl)
-            ARITH_SIMD(shr)
-
-            #undef ARITH_SIMD
-
-            default:
-                printf("Unknown instruction: %02x\n", op);
-                break;
-            }
-            pc += 4;
-
-            break;
-        }
-
-        case 5: {
-            switch (opcode) {
-            case opcode_ldr: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint32_t offset = readUint32((uint8_t*) pc + 1);
-                registers[reg1].asPointer = (data + offset);
-                break;
-            }
-
-            case opcode_mov: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint8_t nbytes = readUint8((uint8_t*) pc + 1);
-                int16_t offset = (int16_t) readUint16((uint8_t*) pc + 2);
-                uint8_t reg2 = readUint8((uint8_t*) pc + 4);
-                uint8_t* ptr = registers[reg2].asPointer + offset;
-                registers[reg1].asInteger = 0;
-                for (uint8_t n = 0; n < nbytes; n++) {
-                    registers[reg1].asInteger |= ((uint64_t) ptr[n]) << (n * 8);
-                }
-                break;
-            }
-            #define ARITH_REG_MEM(_op, _what) \
-            case opcode_ ## _op: { \
-                uint8_t reg1 = readUint8((uint8_t*) pc); \
-                uint8_t nbytes = readUint8((uint8_t*) pc + 1); \
-                uint8_t reg2 = readUint8((uint8_t*) pc + 2); \
-                int16_t offset = (int16_t) readUint16((uint8_t*) pc + 3); \
-                uint8_t* ptr = registers[reg2].asPointer + offset; \
-                uint64_t value = 0; \
-                for (uint8_t n = 0; n < nbytes; n++) { \
-                    value |= ((uint64_t) ptr[n]) << (n * 8); \
-                } \
-                registers[reg1].asInteger _what ## = value; \
-                break; \
-            }
-
-            ARITH_REG_MEM(add, +)
-            ARITH_REG_MEM(sub, -)
-            ARITH_REG_MEM(mul, *)
-            ARITH_REG_MEM(div, /)
-            ARITH_REG_MEM(mod, %)
-            ARITH_REG_MEM(and, &)
-            ARITH_REG_MEM(or, |)
-            ARITH_REG_MEM(xor, ^)
-            ARITH_REG_MEM(shl, <<)
-            ARITH_REG_MEM(shr, >>)
-
-            #undef ARITH_REG_MEM
-
-            #define ARITH_SIMD(_op) \
-            case opcode_q ## _op: { \
-                uint8_t mode = readUint8((uint8_t*) pc); \
-                uint8_t reg1 = readUint8((uint8_t*) pc + 1); \
-                uint8_t reg2 = readUint8((uint8_t*) pc + 2); \
-                int64_t value = registers[reg2].asInteger; \
-                (void) readUint16((uint8_t*) pc + 3); \
-                switch (mode) { \
-                    case 0x01: simd_i8_ ## _op ## _imm(reg1, value); break; \
-                    case 0x02: simd_i16_ ## _op ## _imm(reg1, value); break; \
-                    case 0x04: simd_i32_ ## _op ## _imm(reg1, value); break; \
-                    case 0x08: simd_i64_ ## _op ## _imm(reg1, value); break; \
-                    case 0x10: simd_f32_ ## _op ## _imm(reg1, value); break; \
-                    case 0x20: simd_f64_ ## _op ## _imm(reg1, value); break; \
-                    default: printf("Invalid SIMD mode: %02x\n", mode); break; \
-                } \
-                break; \
-            }
-
-            ARITH_SIMD(add)
-            ARITH_SIMD(sub)
-            ARITH_SIMD(mul)
-            ARITH_SIMD(div)
-
-            #undef ARITH_SIMD
-
-            #define ARITH_SIMD(_op) \
-            case opcode_q ## _op: { \
-                uint8_t mode = readUint8((uint8_t*) pc); \
-                uint8_t reg1 = readUint8((uint8_t*) pc + 1); \
-                uint8_t reg2 = readUint8((uint8_t*) pc + 2); \
-                int64_t value = registers[reg2].asInteger; \
-                (void) readUint16((uint8_t*) pc + 3); \
-                switch (mode) { \
-                    case 0x01: simd_i8_ ## _op ## _imm(reg1, value); break; \
-                    case 0x02: simd_i16_ ## _op ## _imm(reg1, value); break; \
-                    case 0x04: simd_i32_ ## _op ## _imm(reg1, value); break; \
-                    case 0x08: simd_i64_ ## _op ## _imm(reg1, value); break; \
-                    default: printf("Invalid SIMD mode: %02x\n", mode); break; \
-                } \
-                break; \
-            }
-
-            ARITH_SIMD(mod)
-            ARITH_SIMD(and)
-            ARITH_SIMD(or)
-            ARITH_SIMD(xor)
-            ARITH_SIMD(shl)
-            ARITH_SIMD(shr)
-
-            #undef ARITH_SIMD
-
-            default:
-                printf("Unknown instruction: %02x\n", op);
-                break;
-            }
-            pc += 5;
-
-            break;
-        }
-
-        case 6: {
-            switch (opcode) {
-            case opcode_ldr: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint8_t reg2 = readUint8((uint8_t*) pc + 1);
-                uint32_t offset = readUint32((uint8_t*) pc + 2);
-                registers[reg1].asInteger = *(uint64_t*) (data + offset + registers[reg2].asSignedInteger);
-                break;
-            }
-
-            default:
-                printf("Unknown instruction: %02x\n", op);
-                break;
-            }
-            pc += 6;
-
-            break;
-        }
-
-        case 7: {
-            switch (opcode) {
-            case opcode_ldr: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                int16_t off2 = (int16_t) readUint16((uint8_t*) pc + 1);
-                uint32_t offset = readUint32((uint8_t*) pc + 3);
-                registers[reg1].asInteger = *(uint64_t*) (data + offset + off2);
-                break;
-            }
-
-            #define ARITH_REG_SYM(_op, _what) \
-            case opcode_ ## _op: { \
-                uint8_t reg1 = readUint8((uint8_t*) pc); \
-                uint8_t nbytes = readUint8((uint8_t*) pc + 1); \
-                int16_t off2 = (int16_t) readUint16((uint8_t*) pc + 2); \
-                uint32_t offset = readUint32((uint8_t*) pc + 4); \
-                uint8_t* ptr = data + offset + off2; \
-                uint64_t value = 0; \
-                for (uint8_t n = 0; n < nbytes; n++) { \
-                    value |= ((uint64_t) ptr[n]) << (n * 8); \
-                } \
-                registers[reg1].asInteger _what ## = value; \
-                break; \
-            }
-
-            ARITH_REG_SYM(add, +)
-            ARITH_REG_SYM(sub, -)
-            ARITH_REG_SYM(mul, *)
-            ARITH_REG_SYM(div, /)
-            ARITH_REG_SYM(mod, %)
-            ARITH_REG_SYM(and, &)
-            ARITH_REG_SYM(or, |)
-            ARITH_REG_SYM(xor, ^)
-            ARITH_REG_SYM(shl, <<)
-            ARITH_REG_SYM(shr, >>)
-
-            #undef ARITH_REG_SYM
-
-            default:
-                printf("Unknown instruction: %02x\n", op);
-                break;
-            }
-            pc += 7;
-
-            break;
-        }
-
-        case 8: {
-            switch (opcode) {
-            case opcode_psh: {
-                uint64_t value = readUint64((uint8_t*) pc);
-                *(uint64_t*) (sp++) = value;
-                break;
-            }
-
-            case opcode_mov: {
-                uint8_t reg1 = readUint8((uint8_t*) pc);
-                uint8_t nbytes = readUint8((uint8_t*) pc + 1);
-                int16_t offset = (int16_t) readUint16((uint8_t*) pc + 2);
-                uint32_t value = readUint32((uint8_t*) pc + 4);
-                uint8_t* ptr = (data + value + offset);
-                registers[reg1].asInteger = 0;
-                for (uint8_t n = 0; n < nbytes; n++) {
-                    registers[reg1].asInteger |= ((uint64_t) ptr[n]) << (n * 8);
-                }
-                break;
-            }
-
-            #define ARITH_REG_ADDR_OFF(_op, _what) \
-            case opcode_ ## _op: { \
-                uint8_t reg1 = readUint8((uint8_t*) pc); \
-                uint8_t nbytes = readUint8((uint8_t*) pc + 1); \
-                uint32_t binaryOffset = readUint32((uint8_t*) pc + 2); \
-                int16_t offset = (int16_t) readUint16((uint8_t*) pc + 6); \
-                uint8_t* ptr = (data + binaryOffset + offset); \
-                uint64_t value = 0; \
-                for (uint8_t n = 0; n < nbytes; n++) { \
-                    value |= ((uint64_t) ptr[n]) << (n * 8); \
-                } \
-                registers[reg1].asInteger _what ## = value; \
-                break; \
-            }
-
-            ARITH_REG_ADDR_OFF(add, +)
-            ARITH_REG_ADDR_OFF(sub, -)
-            ARITH_REG_ADDR_OFF(mul, *)
-            ARITH_REG_ADDR_OFF(div, /)
-            ARITH_REG_ADDR_OFF(mod, %)
-            ARITH_REG_ADDR_OFF(and, &)
-            ARITH_REG_ADDR_OFF(or, |)
-            ARITH_REG_ADDR_OFF(xor, ^)
-            ARITH_REG_ADDR_OFF(shl, <<)
-            ARITH_REG_ADDR_OFF(shr, >>)
-
-            #undef ARITH_REG_ADDR_OFF
-
-            case opcode_qmov: {
-                uint8_t mode = readUint8((uint8_t*) pc);
-                uint8_t dest = readUint8((uint8_t*) pc + 1);
-                uint32_t value = readUint32((uint8_t*) pc + 2);
-                int16_t offset = (int16_t) readUint16((uint8_t*) pc + 6);
-                uint8_t* ptr = (data + value + offset);
-                switch (mode) {
-                    case 0x01: 
-                        for (int i = 0; i < 32; i++) {
-                            simd_registers[dest].i8[i] = *(uint8_t*) (ptr + i * sizeof(uint8_t));
-                        }
-                        break;
-                    case 0x02:
-                        for (int i = 0; i < 16; i++) {
-                            simd_registers[dest].i16[i] = *(uint16_t*) (ptr + (i * sizeof(uint16_t)));
-                        }
-                        break;
-                    case 0x04:
-                        for (int i = 0; i < 8; i++) {
-                            simd_registers[dest].i32[i] = *(uint32_t*) (ptr + (i * sizeof(uint32_t)));
-                        }
-                        break;
-                    case 0x08:
-                        for (int i = 0; i < 4; i++) {
-                            simd_registers[dest].i64[i] = *(uint64_t*) (ptr + (i * sizeof(uint64_t)));
-                        }
-                        break;
-                    case 0x10:
-                        for (int i = 0; i < 8; i++) {
-                            simd_registers[dest].f32[i] = *(float*) (ptr + (i * sizeof(float)));
-                        }
-                        break;
-                    case 0x20:
-                        for (int i = 0; i < 4; i++) {
-                            simd_registers[dest].f64[i] = *(double*) (ptr + (i * sizeof(double)));
-                        }
-                        break;
-                    default:
-                        printf("Invalid SIMD mode: %02x\n", mode);
-                        break;
-                }
-                break;
-            }
-
-            default:
-                printf("Unknown instruction: %02x\n", op);
-                break;
-            }
-            pc += 8;
-
-            break;
-        }
-
-        case 9: {
-            switch (opcode) {
-            case opcode_ldr: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                uint64_t value = readUint64((uint8_t*) pc + 1);
-                registers[reg].asInteger = value;
-                break;
-            }
-
-            case opcode_str: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                uint64_t value = readUint64((uint8_t*) pc + 1);
-                *(uint64_t*) (registers[reg].asPointer) = value;
-                break;
-            }
-
-            case opcode_cmp: {
-                uint8_t reg = readUint8((uint8_t*) pc);
-                uint64_t a = registers[reg].asInteger;
-                uint64_t b = readUint64((uint8_t*) pc + 1);
-                int64_t as = (int64_t) a;
-                int64_t bs = (int64_t) b;
-                flags = 0;
-                if (a == b) {
-                    flags |= FLAG_EQUAL;
-                } else if (as > bs) {
-                    flags |= FLAG_GREATER;
-                } else if (as < bs) {
-                    flags |= FLAG_LESS;
-                }
-                if (a == 0) {
-                    flags |= FLAG_ZERO;
-                }
-                if (as < 0) {
-                    flags |= FLAG_NEGATIVE;
-                }
-                break;
-            }
-
-            #define ARITH_REG_IMM64(_op, _what) \
-            case opcode_ ## _op: { \
-                uint8_t reg = readUint8((uint8_t*) pc); \
-                uint64_t value = readUint64((uint8_t*) pc + 1); \
-                registers[reg].asInteger _what ## = value; \
-                break; \
-            }
-
-            ARITH_REG_IMM64(add, +)
-            ARITH_REG_IMM64(sub, -)
-            ARITH_REG_IMM64(mul, *)
-            ARITH_REG_IMM64(div, /)
-            ARITH_REG_IMM64(mod, %)
-            ARITH_REG_IMM64(and, &)
-            ARITH_REG_IMM64(or, |)
-            ARITH_REG_IMM64(xor, ^)
-            ARITH_REG_IMM64(shl, <<)
-            ARITH_REG_IMM64(shr, >>)
-
-            #undef ARITH_REG_IMM64
-
-            default:
-                printf("Unknown instruction: %02x\n", op);
-                break;
-            }
-            pc += 9;
-
-            break;
-        }
-
-        default:
-            printf("Unknown instruction: %02x\n", op);
-            break;
-        }
+        printf("\n");
+        pc += opcode >> 12;
     }
 }
 
-size_t symbol_size(symbol* sym) {
-    return sizeof(uint8_t) + sizeof(uint16_t) + strlen((char*) sym->name) + sizeof(uint32_t);
-}
+int add_symbol(section_t* obj, const char* name) {
+    obj->symbols = realloc(obj->symbols, sizeof(symbol_t) * (obj->symbols_size + 1));
 
-int add_symbol(object_file* obj, char* name) {
-    obj->symbols = realloc(obj->symbols, sizeof(symbol) * (obj->symbols_size + 1));
+    symbol_t* sym = &obj->symbols[obj->symbols_size];
+    sym->name = malloc(strlen(name) + 1);
+    strcpy((char*) sym->name, name);
 
-    symbol* sym = &obj->symbols[obj->symbols_size];
-    sym->name = (int8_t*) name;
-
-    sym->offset = obj->comp_size;
-
-    printf("symbol %s at %llu\n", name, sym->offset);
+    sym->sym_addr = obj->comp_size;
 
     obj->symbols_size++;
     return 0;
 }
 
-uint64_t symbol_offset(object_file* obj, const char* name) {
+uint64_t symbol_offset(section_t* obj, const char* name) {
     for (uint32_t i = 0; i < obj->symbols_size; i++) {
         if (strcmp((char*) obj->symbols[i].name, name) == 0) {
-            return obj->symbols[i].offset;
+            return i;
         }
     }
 
-    return 0;
+    add_symbol(obj, (char*) name);
+    obj->symbols[obj->symbols_size - 1].sym_addr |= 0x8000000000000000;
+
+    return obj->symbols_size - 1;
 }
 
-object_file* create_object() {
-    object_file* obj = malloc(sizeof(object_file));
-    obj->magic = 0xFEEDF00D;
-    obj->data_capacity = 64;
-    obj->data = malloc(obj->data_capacity);
-    obj->data_size = 0;
+section_t** run_compile(const char* file_name);
 
-    // compiler info
-    obj->symbols = NULL;
-    obj->symbols_size = 0;
-
-    return obj;
-}
-
-object_file* run_compile(const char* file_name);
-
-void sig_handler(int sig) {
-    void* callstack[1024];
-	int frames = backtrace(callstack, 1024);
-    if (pc) {
-        printf("Last instruction: %02x%02x%02x%02x\n", *(uint8_t*) (pc - 4), *(uint8_t*) (pc - 3), *(uint8_t*) (pc - 2), *(uint8_t*) (pc - 1));
-    }
-    printf("Signal %d\n", sig);
-    dump_registers(NULL, 0);
-	write(STDERR_FILENO, "Backtrace:\n", 11);
-	backtrace_symbols_fd(callstack, frames, STDERR_FILENO);
-	write(STDERR_FILENO, "\n", 1);
+void sig_handler(int sig, siginfo_t* info, void* ucontext) {
+    char* string = strsignal(sig);
+    fprintf(stderr, "%s at %p\n", string, info->si_addr);
+    void* bt[32];
+    size_t size = backtrace(bt, 32);
+    backtrace_symbols_fd(bt, size, STDERR_FILENO);
     exit(1);
 }
 
+void* find_symbol_in(object_file_t* tu, char* sym) {
+    section_t** symtab = find_sections(tu, SECTION_TYPE_DATA);
+    if (!symtab || !symtab[0]) {
+        return NULL;
+    }
+    symbol_t* symbols = (symbol_t*) symtab[0]->data;
+    uint64_t symbols_count = symtab[0]->size / sizeof(symbol_t);
+
+    for (uint64_t i = 0; i < symbols_count; i++) {
+        if (strcmp(symbols[i].name, sym) == 0 && ((int64_t) symbols[i].sym_addr) >= 0) {
+            return (void*) symbols[i].sym_addr;
+        }
+    }
+
+    return NULL;
+}
+
+void* find_symbol(char* sym, object_file_t* objects, uint64_t count) {
+    for (uint64_t i = 0; i < count; i++) {
+        void* addr = find_symbol_in(&objects[i], sym);
+        if (addr && (((uint64_t) addr) & 0x8000000000000000) == 0) {
+            return addr;
+        }
+    }
+
+    return NULL;
+}
+
+void relocate(object_file_t* objects, uint64_t count) {
+    for (uint64_t i = 0; i < count; i++) {
+        object_file_t* obj = &objects[i];
+        section_t** symtab = find_sections(obj, SECTION_TYPE_DATA);
+        if (!symtab || !symtab[0]) {
+            continue;
+        }
+        symbol_t* symbols = (symbol_t*) symtab[0]->data;
+        uint64_t symbols_count = symtab[0]->size / sizeof(symbol_t);
+
+        for (uint64_t j = 0; j < symbols_count; j++) {
+            uint64_t addr = symbols[j].sym_addr;
+            if ((addr & 0x8000000000000000)) {
+                addr = (uint64_t) find_symbol(symbols[j].name, objects, count);
+                if (addr) {
+                    symbols[j].sym_addr = addr;
+                    continue;
+                }
+                fprintf(stderr, "Failed to find symbol %s\n", symbols[j].name);
+            }
+        }
+
+        load_command_t** commands = find_load_commands(obj, "RELOCATE");
+        while (*commands) {
+            load_command_t* lc = *commands;
+            section_t* code_sect = obj->sections[lc->section];
+            for (uint64_t i = 0; i < lc->size; i += sizeof(relocation_info_t)) {
+                relocation_info_t reloc = *(relocation_info_t*) (lc->data + i);
+                uint64_t* ptr = (uint64_t*) (code_sect->data + reloc.offset);
+                uint64_t symIndex = *ptr;
+                printf("Relocating %s @ 0x%016llx ", symbols[symIndex].name, (uint64_t) ptr);
+                printf("from 0x%016llx ", *ptr);
+                *ptr = (uint64_t) symbols[symIndex].sym_addr;
+                printf("to 0x%016llx\n", *ptr);
+            }
+            commands++;
+        }
+    }
+}
+
 int main(int argc, char **argv) {
-    signal(SIGSEGV, sig_handler);
-    signal(SIGILL, sig_handler);
-    signal(SIGFPE, sig_handler);
-    signal(SIGABRT, sig_handler);
+    static struct sigaction act = {
+		.sa_sigaction = (void(*)(int, siginfo_t*, void*)) sig_handler,
+		.sa_flags = SA_SIGINFO,
+		.sa_mask = sigmask(SIGINT) | sigmask(SIGILL) | sigmask(SIGTRAP) | sigmask(SIGABRT) | sigmask(SIGBUS) | sigmask(SIGSEGV)
+	};
+	#define SIGACTION(_sig) if (sigaction(_sig, &act, NULL) == -1) { fprintf(stderr, "Failed to set up signal handler\n"); fprintf(stderr, "Error: %s (%d)\n", strerror(errno), errno); }
+    SIGACTION(SIGINT);
+    SIGACTION(SIGILL);
+    SIGACTION(SIGTRAP);
+    SIGACTION(SIGABRT);
+    SIGACTION(SIGBUS);
+    SIGACTION(SIGSEGV);
 
     if (argc < 3) {
         fprintf(stderr, "Usage: %s run <objfile>\n", argv[0]);
@@ -1484,17 +1014,110 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Usage: %s comp <srcfile> <objfile>\n", argv[0]);
             return 1;
         }
-        write_object_file(run_compile(argv[2]), argv[3]);
+        
+        object_file_t tu = create_translation_unit();
+        section_t** objs = run_compile(argv[2]);
+        
+        symbol_t* symbols = NULL;
+        uint64_t symbols_size = 0;
+        uint64_t symbols_count = 0;
+
+        size_t index = 0;
+        while (objs[index]) {
+            section_t* obj = objs[index];
+            for (uint64_t i = 0; i < obj->contents_size; i++) {
+                compile_bytes_or_instr(obj, obj->contents[i]);
+            }
+            load_command_t* lc = new_load_command(&tu, "RELOCATE");
+
+            symbols_size += obj->symbols_size;
+            symbols = realloc(symbols, sizeof(symbol_t) * symbols_size);
+
+            for (uint64_t i = 0; i < obj->symbols_size; i++) {
+                symbols_count++;
+                symbols[symbols_count - 1] = obj->symbols[i];
+                symbols[symbols_count - 1].section = index;
+            }
+
+            lc->size = obj->symbol_relocs_size * sizeof(relocation_info_t);
+            lc->data = malloc(lc->size);
+            lc->section = tu.sections_count;
+
+            for (uint64_t i = 0; i < obj->symbol_relocs_size; i++) {
+                relocation_info_t* reloc = &((relocation_info_t*) lc->data)[i];
+                reloc->offset = obj->symbol_relocs[i];
+                uint64_t* ptr = (uint64_t*) (obj->data + reloc->offset);
+                uint64_t symIndex = *ptr;
+                reloc->symbol = obj->symbols[symIndex].sym_addr;
+            }
+
+            obj->sect_flags = SECTION_FLAG_EXEC | SECTION_FLAG_READ | SECTION_FLAG_WRITE | SECTION_FLAG_RELOCATE;
+
+            add_section(&tu, obj);
+
+            index++;
+        }
+
+        section_t* symtab = new_section(&tu, SECTION_TYPE_DATA, 0, NULL);
+        symtab->sect_flags = SECTION_FLAG_SYMBOLS | SECTION_FLAG_READ;
+
+        symtab->data = malloc(8);
+        symtab->size = 8;
+        uint64_t* symtab_size = (uint64_t*) symtab->data;
+        *symtab_size = symbols_count;
+
+        for (uint64_t i = 0; i < symbols_count; i++) {
+            size_t len = strlen((char*) symbols[i].name) + 1;
+            size_t size = len + (sizeof(symbol_t) - sizeof(char*));
+            
+            symtab->data = realloc(symtab->data, symtab->size + size);
+            
+            symbol_t* sym = (symbol_t*) (symtab->data + symtab->size);
+            sym->sym_addr = symbols[i].sym_addr;
+            sym->section = symbols[i].section;
+            strncpy((char*) sym + hive_offsetof(symbol_t, name), symbols[i].name, len);
+
+            symtab->size += size;
+        }
+
+        FILE* f = fopen(argv[3], "wb");
+        write_translation_unit(&tu, f);
+        fclose(f);
         return 0;
     } else if (strcmp(argv[1], "run") == 0) {
-        object_file* obj = read_object_file(argv[2]);
+        
+        FILE* f = fopen(argv[2], "rb");
+        if (!f) {
+            fprintf(stderr, "Could not open file '%s'\n", argv[2]);
+            return 1;
+        }
+        object_file_t objects[] = {
+            read_translation_unit_bytes(bios, sizeof(bios)),
+            read_translation_unit(f),
+        };
+        fclose(f);
 
-        bp = sp = malloc(sizeof(uint64_t) * 1024);
-        registers[0].asInteger = argc - 2;
-        registers[1].asInteger = (uint64_t) (argv + 2);
+        relocate(objects, sizeof(objects) / sizeof(object_file_t));
+        
+        hive_register_t* registers[32];
+        memset(registers, 0, sizeof(registers));
+        for (int i = 0; i < 32; i++) {
+            registers[i] = alloca(sizeof(hive_register_t));
+        }
+        
+        pc = find_symbol("_start", objects, sizeof(objects) / sizeof(object_file_t));
 
-        exec(obj);
-        return registers[0].asInteger;
+        if (pc == NULL) {
+            fprintf(stderr, "Could not find _start symbol\n");
+            return 1;
+        }
+
+        printf("Starting at %p (%p)\n", pc, *(void**) pc);
+
+        char stack[1024][1024];
+        bp = sp = (void**) stack;
+        exec(registers);
+        return registers[0]->asInteger;
     } else {
         fprintf(stderr, "Unknown command '%s'\n", argv[1]);
         return 1;

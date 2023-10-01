@@ -1,0 +1,26 @@
+{
+  "name": "hive64",
+  "displayName": "Hive64",
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.82.0"
+  },
+  "repository": {},
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "hive64",
+      "aliases": ["Hive64 Assembly", "hive64"],
+      "extensions": [".hive64"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "hive64",
+      "scopeName": "source.hive64",
+      "path": "./syntaxes/hive64.tmLanguage.json"
+    }]
+  }
+}

@@ -1,0 +1,113 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "Hive64 Assembly",
+	"patterns": [
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#mnemonics"
+		},
+		{
+			"include": "#mnemonics-simd"
+		},
+		{
+			"include": "#sizes"
+		},
+		{
+			"include": "#directives"
+		},
+		{
+			"include": "#registers"
+		},
+		{
+			"include": "#labels"
+		},
+		{
+			"include": "#numbers"
+		},
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#characters"
+		}
+	],
+	"repository": {
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.line.semicolon.hive64",
+					"match": "(;|@|#).*$"
+				}
+			]
+		},
+		"mnemonics": {
+			"patterns": [{
+				"name": "entity.name.function",
+				"match": "\\b(nop|ha?lt|ldr|str|cmp|cmpz|b|bne|beq|bgt|blt|bge|ble|bnz|bz|pshi|ret|pshx|ppx|pshy|ppy|psh|pp|add|sub|mul|div|mod|and|or|xor|shl|shr|not|inc|dec|irq|mov|bl|blne|bleq|blgt|bllt|blge|blle|blnz|blz)\\b"
+			}]
+		},
+		"mnemonics-simd": {
+			"patterns": [{
+				"name": "entity.name.function",
+				"match": "\\b(qadd|qsub|qmul|qdiv|qmod|qand|qor|qxor|qshl|qshr|qconv|qaddsub|qshuf|qmov|qmov2)\\b"
+			}]
+		},
+		"registers": {
+			"patterns": [{
+				"name": "storage.register",
+				"match": "\\b(r([1-2][0-9]|3[0-1]|[0-9])|xmm(1[0-5]|[0-9])|x|y|sp|bp|lr|pc)\\b"
+			}]
+		},
+		"sizes": {
+			"patterns": [{
+				"name": "storage.register",
+				"match": "\\b(byte|(d|q)?word|float|double)\\b"
+			}]
+		},
+		"labels": {
+			"patterns": [{
+				"name": "variable.name",
+				"match": "\\b([a-zA-Z_][a-zA-Z0-9_\\.\\$\\{\\}\\(\\)]*):?"
+			}]
+		},
+		"directives": {
+			"patterns": [{
+				"name": "entity.name.tag",
+				"match": "(\\.(ascii|asciz|extern|byte|word|dword|qword|float|double|offset))\\b"
+			}]
+		},
+		"numbers": {
+			"patterns": [
+				{
+					"name": "constant.numeric",
+					"match": "\\b(0x[0-9a-fA-F]+|[0-9]+|0b[01]+|0o[0-7]+)\\b"
+				}
+			]
+		},
+		"strings": {
+			"name": "string.quoted.double",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape",
+					"match": "\\\\."
+				}
+			]
+		},
+		"characters": {
+			"name": "string.quoted.single",
+			"begin": "'",
+			"end": "'",
+			"patterns": [
+				{
+					"name": "constant.character.escape",
+					"match": "\\\\."
+				}
+			]
+		}
+	},
+	"scopeName": "source.hive64"
+}
