@@ -20,21 +20,18 @@ syscall.exit:
     ldr r0 r1 ; exit code
     halt
 
-syscall.write: ; r1 = fd, r2 = buf, r3 = len
+syscall.write: ; r1 = fd, r2 = buf
     pshx
     pshy
+    psh r2
     psh r15
     psh r16
     psh r17
-    psh r3
 
     ldr r15 r2
     ldr r17 r1
     
     syscall.write_loop:
-        cmpz r3
-        bz syscall.write_end
-
         mov r16 byte [r15]
         cmpz r16
         bz syscall.write_end
@@ -44,14 +41,13 @@ syscall.write: ; r1 = fd, r2 = buf, r3 = len
             irq
 
             inc r15
-            dec r3
         b syscall.write_loop
 
     syscall.write_end:
-    pp r3
     pp r17
     pp r16
     pp r15
+    pp r2
     ppy
     ppx
     ret

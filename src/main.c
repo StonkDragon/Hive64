@@ -33,33 +33,31 @@ void** svc_table = NULL;
 #define FLAG_LESS       0b00001000
 #define FLAG_EQUAL      0b00010000
 
-static uint8_t bios[] = {
+static uint8_t kernel[] = {
     0xce, 0xfa, 0xed, 0xfe, 0x01, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
     0x02, 0x00, 0x00, 0x00, 0x52, 0x45, 0x4c, 0x4f, 
     0x43, 0x41, 0x54, 0x45, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0xa0, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x90, 0x00, 0x00, 0x00, 
     0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x1e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xd8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 
+    0xc8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 
     0x1e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x5e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x26, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x2e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xd2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xc2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x36, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xd4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xc4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xd6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x83, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x97, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xb6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xc6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x8a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xae, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xa6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x01, 0x00, 0x17, 0x00, 0xd8, 0x00, 0x00, 0x00, 
+    0x01, 0x00, 0x17, 0x00, 0xc8, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x02, 0x30, 0x01, 0x00, 
     0x00, 0x02, 0x90, 0x01, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x01, 0x20, 0x00, 0x22, 0x80, 
@@ -74,18 +72,16 @@ static uint8_t bios[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x02, 0x20, 0x00, 0x01, 0x01, 0x00, 
     0x11, 0x10, 0x00, 0x11, 0x10, 0x01, 0x11, 0x10, 
-    0x0f, 0x11, 0x10, 0x10, 0x11, 0x10, 0x11, 0x11, 
-    0x10, 0x03, 0x02, 0x20, 0x0f, 0x02, 0x02, 0x20, 
-    0x11, 0x01, 0x05, 0x10, 0x03, 0x0e, 0x80, 0x05, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x21, 
-    0x50, 0x00, 0x00, 0x10, 0x01, 0x0f, 0x05, 0x10, 
-    0x10, 0x0e, 0x80, 0x05, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x02, 0x30, 0x0e, 0x00, 0x00, 
-    0x02, 0x20, 0x01, 0x10, 0x02, 0x20, 0x02, 0x11, 
-    0x20, 0x00, 0x1e, 0x10, 0x0f, 0x1f, 0x10, 0x03, 
+    0x02, 0x11, 0x10, 0x0f, 0x11, 0x10, 0x10, 0x11, 
+    0x10, 0x11, 0x02, 0x20, 0x0f, 0x02, 0x02, 0x20, 
+    0x11, 0x01, 0x21, 0x50, 0x00, 0x00, 0x10, 0x01, 
+    0x0f, 0x05, 0x10, 0x10, 0x0e, 0x80, 0x05, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x30, 
+    0x0e, 0x00, 0x00, 0x02, 0x20, 0x01, 0x10, 0x02, 
+    0x20, 0x02, 0x11, 0x20, 0x00, 0x1e, 0x10, 0x0f, 
     0x06, 0x80, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x12, 0x10, 0x03, 0x12, 0x10, 0x11, 
-    0x12, 0x10, 0x10, 0x12, 0x10, 0x0f, 0x12, 0x10, 
+    0x00, 0x00, 0x12, 0x10, 0x11, 0x12, 0x10, 0x10, 
+    0x12, 0x10, 0x0f, 0x12, 0x10, 0x02, 0x12, 0x10, 
     0x01, 0x12, 0x10, 0x00, 0x10, 0x00, 0x10, 0x00, 
     0x10, 0x00, 0x10, 0x00, 0x02, 0x00, 0x21, 0x00, 
     0x30, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -109,22 +105,22 @@ static uint8_t bios[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x79, 
     0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x77, 0x72, 
     0x69, 0x74, 0x65, 0x5f, 0x6c, 0x6f, 0x6f, 0x70, 
-    0x00, 0xbe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0xae, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 
     0x2e, 0x77, 0x72, 0x69, 0x74, 0x65, 0x5f, 0x65, 
-    0x6e, 0x64, 0x00, 0xd2, 0x00, 0x00, 0x00, 0x00, 
+    0x6e, 0x64, 0x00, 0xc2, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x73, 0x79, 0x73, 0x63, 0x61, 
     0x6c, 0x6c, 0x2e, 0x72, 0x65, 0x61, 0x64, 0x00, 
-    0xd4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xc4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 
-    0x6f, 0x70, 0x65, 0x6e, 0x00, 0xd6, 0x00, 0x00, 
+    0x6f, 0x70, 0x65, 0x6e, 0x00, 0xc6, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x79, 0x73, 
     0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x63, 0x6c, 0x6f, 
-    0x73, 0x65, 0x00, 0xd8, 0x00, 0x00, 0x00, 0x00, 
+    0x73, 0x65, 0x00, 0xc8, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x6d, 0x61, 0x69, 0x6e, 0x00
 };
@@ -203,7 +199,7 @@ typedef union {
     __uint128_t imm128; // 16 bytes because that is the maximum extra size of an instruction
 } args_t;
 
-typedef void (*opc_func)(hive_register_t[32], void* args);
+typedef void (*opc_func)(register hive_register_t* const restrict, register const args_t* const restrict args);
 
 #pragma region EXEC
 
@@ -211,9 +207,8 @@ typedef void (*opc_func)(hive_register_t[32], void* args);
 #undef OPC_ENDFUNC
 #undef OPC_FUNC
 
-
-#define ARG(_value)                 (*(typeof(((args_t*) 0) -> _value)*) ((args + hive_offsetof(args_t, _value))))
-#define OPC_DEF(_nargs, _opcode)    static void _opcode ## $ ## _nargs(hive_register_t registers[32], void* args)
+#define OPC_DEF(_nargs, _opcode)    static void _opcode ## $ ## _nargs(register hive_register_t* const restrict registers, register const args_t* const restrict args)
+#define OPC_UTIL(_name)             static void opc_util_ ## _name(register hive_register_t* const restrict registers, register const args_t* const restrict args)
 #define CAT_(a, b)                  a ## b
 #define CAT(a, b)                   CAT_(a, b)
 #define OPC(_nargs, _opcode)        [_opcode] = _opcode ## $ ## _nargs
@@ -228,26 +223,26 @@ OPC_DEF(0, opcode_ret) {
     pc = (void*) lr;
     lr = *(--sp);
 }
-OPC_DEF(0, opcode_irq) {
-    switch (registers[0].asInteger) {
-    case 0x01: { // set up svc table
-        svc_table = registers[1].asPointer;
-        break;
-    }
-    case 0x03: { // request memory
-        registers[0].asPointer = malloc(registers[1].asInteger);
-        break;
-    }
 
-    case 0x0e: { // print char in r1 to r2
-        char c[2] = { registers[1].asInteger, '\0' };
-        write(registers[2].asInteger, c, 1);
-        break;
-    }
-    
-    default:
-        break;
-    }
+OPC_UTIL(irq_svc_set) {
+    svc_table = registers[1].asPointer;
+}
+OPC_UTIL(malloc) {
+    registers[0].asPointer = malloc(registers[1].asInteger);
+}
+OPC_UTIL(print_char) {
+    char c[2] = { registers[1].asInteger, '\0' };
+    write(registers[2].asInteger, c, 1);
+}
+
+static void(*irq_table[256])(hive_register_t* const restrict, const args_t* const restrict) = {
+    [0x01] = opc_util_irq_svc_set,
+    [0x03] = opc_util_malloc,
+    [0x0e] = opc_util_print_char,
+};
+
+OPC_DEF(0, opcode_irq) {
+    irq_table[registers[0].asInteger](registers, args);
 }
 OPC_DEF(0, opcode_svc) {
     *(sp++) = lr;
@@ -256,53 +251,53 @@ OPC_DEF(0, opcode_svc) {
 }
 
 OPC_DEF(1, opcode_cmpz) {
-    if (registers[ARG(reg.reg1)].asInteger == 0) {
+    if (registers[args->reg.reg1].asInteger == 0) {
         flags |= FLAG_ZERO;
     } else {
         flags &= ~FLAG_ZERO;
     }
 }
 OPC_DEF(1, opcode_b) {
-    pc = (void*) registers[ARG(reg.reg1)].asPointer;
+    pc = (void*) registers[args->reg.reg1].asPointer;
 }
 OPC_DEF(1, opcode_bne) {
     if (!(flags & FLAG_EQUAL)) {
-        pc = (void*) registers[ARG(reg.reg1)].asPointer;
+        pc = (void*) registers[args->reg.reg1].asPointer;
     }
 }
 OPC_DEF(1, opcode_beq) {
     if (flags & FLAG_EQUAL) {
-        pc = (void*) registers[ARG(reg.reg1)].asPointer;
+        pc = (void*) registers[args->reg.reg1].asPointer;
     }
 }
 OPC_DEF(1, opcode_bgt) {
     if (flags & FLAG_GREATER) {
-        pc = (void*) registers[ARG(reg.reg1)].asPointer;
+        pc = (void*) registers[args->reg.reg1].asPointer;
     }
 }
 OPC_DEF(1, opcode_blt) {
     if (flags & FLAG_LESS) {
-        pc = (void*) registers[ARG(reg.reg1)].asPointer;
+        pc = (void*) registers[args->reg.reg1].asPointer;
     }
 }
 OPC_DEF(1, opcode_bge) {
     if (flags & (FLAG_GREATER | FLAG_EQUAL)) {
-        pc = (void*) registers[ARG(reg.reg1)].asPointer;
+        pc = (void*) registers[args->reg.reg1].asPointer;
     }
 }
 OPC_DEF(1, opcode_ble) {
     if (flags & (FLAG_LESS | FLAG_EQUAL)) {
-        pc = (void*) registers[ARG(reg.reg1)].asPointer;
+        pc = (void*) registers[args->reg.reg1].asPointer;
     }
 }
 OPC_DEF(1, opcode_bnz) {
     if (!(flags & FLAG_ZERO)) {
-        pc = (void*) registers[ARG(reg.reg1)].asPointer;
+        pc = (void*) registers[args->reg.reg1].asPointer;
     }
 }
 OPC_DEF(1, opcode_bz) {
     if (flags & FLAG_ZERO) {
-        pc = (void*) registers[ARG(reg.reg1)].asPointer;
+        pc = (void*) registers[args->reg.reg1].asPointer;
     }
 }
 OPC_DEF(1, opcode_bl) {
@@ -351,23 +346,23 @@ OPC_DEF(1, opcode_blz) {
     opcode_bz$1(registers, args);
 }
 OPC_DEF(1, opcode_psh) {
-    *(sp++) = registers[ARG(reg.reg1)].asPointer;
+    *(sp++) = registers[args->reg.reg1].asPointer;
 }
 OPC_DEF(1, opcode_pp) {
-    registers[ARG(reg.reg1)].asPointer = *(--sp);
+    registers[args->reg.reg1].asPointer = *(--sp);
 }
 OPC_DEF(1, opcode_not) {
-    registers[ARG(reg.reg1)].asInteger = ~registers[ARG(reg.reg1)].asInteger;
+    registers[args->reg.reg1].asInteger = ~registers[args->reg.reg1].asInteger;
 }
 OPC_DEF(1, opcode_inc) {
-    registers[ARG(reg.reg1)].asInteger++;
+    registers[args->reg.reg1].asInteger++;
 }
 OPC_DEF(1, opcode_dec) {
-    registers[ARG(reg.reg1)].asInteger--;
+    registers[args->reg.reg1].asInteger--;
 }
 #define ARITH_X_REG(_op, _what) \
 OPC_DEF(1, opcode_ ## _op) { \
-    registers[0].asInteger _what ## = registers[ARG(reg.reg1)].asInteger; \
+    registers[0].asInteger _what ## = registers[args->reg.reg1].asInteger; \
 }
 ARITH_X_REG(add, +)
 ARITH_X_REG(sub, -)
@@ -381,14 +376,14 @@ ARITH_X_REG(shl, <<)
 ARITH_X_REG(shr, >>)
 
 OPC_DEF(2, opcode_ldr) {
-    registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg1)))].asInteger = registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg2)))].asInteger;
+    registers[args->reg_reg.reg1].asInteger = registers[args->reg_reg.reg2].asInteger;
 }
 OPC_DEF(2, opcode_str) {
-    *(uint64_t*) (registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg1)))].asPointer) = registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg2)))].asInteger;
+    *(uint64_t*) (registers[args->reg_reg.reg1].asPointer) = registers[args->reg_reg.reg2].asInteger;
 }
 OPC_DEF(2, opcode_cmp) {
-    uint64_t a = registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg1)))].asInteger;
-    uint64_t b = registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg2)))].asInteger;
+    uint64_t a = registers[args->reg_reg.reg1].asInteger;
+    uint64_t b = registers[args->reg_reg.reg2].asInteger;
     int64_t as = (int64_t) a;
     int64_t bs = (int64_t) b;
     flags = 0;
@@ -411,7 +406,7 @@ OPC_DEF(2, opcode_psh) {
 }
 #define ARITH_REG_REG(_op, _what) \
 OPC_DEF(2, opcode_ ## _op) { \
-    registers[ARG(reg.reg1)].asInteger _what ## = registers[*(uint8_t*) ((args + hive_offsetof(args_t, reg_reg.reg2)))].asInteger; \
+    registers[args->reg.reg1].asInteger _what ## = registers[args->reg_reg.reg2].asInteger; \
 }
 ARITH_REG_REG(add, +)
 ARITH_REG_REG(sub, -)
@@ -425,14 +420,14 @@ ARITH_REG_REG(shl, <<)
 ARITH_REG_REG(shr, >>)
 
 OPC_DEF(3, opcode_ldr) {
-    registers[ARG(reg_imm16.reg1)].asInteger = ARG(reg_imm16.imm);
+    registers[args->reg_imm16.reg1].asInteger = args->reg_imm16.imm;
 }
 OPC_DEF(3, opcode_str) {
-    *(uint64_t*) (registers[ARG(reg_imm16.reg1)].asPointer) = ARG(reg_imm16.imm);
+    *(uint64_t*) (registers[args->reg_imm16.reg1].asPointer) = args->reg_imm16.imm;
 }
 OPC_DEF(3, opcode_cmp) {
-    uint64_t a = registers[ARG(reg_imm16.reg1)].asInteger;
-    uint64_t b = ARG(reg_imm16.imm);
+    uint64_t a = registers[args->reg_imm16.reg1].asInteger;
+    uint64_t b = args->reg_imm16.imm;
     int64_t as = (int64_t) a;
     int64_t bs = (int64_t) b;
     flags = 0;
@@ -453,7 +448,7 @@ OPC_DEF(3, opcode_cmp) {
 
 #define ARITH_REG_IMM(_op, _what) \
 OPC_DEF(3, opcode_ ## _op) { \
-    registers[ARG(reg_imm16.reg1)].asInteger _what ## = ARG(reg_imm16.imm); \
+    registers[args->reg_imm16.reg1].asInteger _what ## = args->reg_imm16.imm; \
 }
 
 ARITH_REG_IMM(add, +)
@@ -469,24 +464,24 @@ ARITH_REG_IMM(shr, >>)
 
 
 OPC_DEF(4, opcode_ldr) {
-    registers[ARG(reg_reg_offset.reg1)].asInteger = *(uint64_t*) (registers[ARG(reg_reg_offset.reg2)].asPointer + ARG(reg_reg_offset.offset));
+    registers[args->reg_reg_offset.reg1].asInteger = *(uint64_t*) (registers[args->reg_reg_offset.reg2].asPointer + args->reg_reg_offset.offset);
 }
 OPC_DEF(4, opcode_mov) {
-    uint8_t* srcPtr = (uint8_t*) registers[ARG(mov_reg_n_reg_offset_reg.reg2)].asPointer + registers[ARG(mov_reg_n_reg_offset_reg.reg2_offset_reg)].asSignedInteger;
-    for (int i = 0; i < ARG(mov_reg_n_reg_offset_reg.nbytes); i++) {
-        registers[ARG(mov_reg_n_reg_offset_reg.reg1)].asInteger |= (uint64_t) (srcPtr[i] << (i * 8));
+    uint8_t* srcPtr = (uint8_t*) registers[args->mov_reg_n_reg_offset_reg.reg2].asPointer + registers[args->mov_reg_n_reg_offset_reg.reg2_offset_reg].asSignedInteger;
+    for (int i = 0; i < args->mov_reg_n_reg_offset_reg.nbytes; i++) {
+        registers[args->mov_reg_n_reg_offset_reg.reg1].asInteger |= (uint64_t) (srcPtr[i] << (i * 8));
     }
 }
 
 OPC_DEF(5, opcode_mov) {
-    uint8_t* ptr = registers[ARG(mov_reg_n_reg_offset.reg2)].asPointer + ARG(mov_reg_n_reg_offset.offset);
-    registers[ARG(mov_reg_n_reg_offset.reg1)].asInteger = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset.nbytes));
+    uint64_t* ptr = registers[args->mov_reg_n_reg_offset.reg2].asPointer + args->mov_reg_n_reg_offset.offset;
+    registers[args->mov_reg_n_reg_offset.reg1].asInteger = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset.nbytes);
 }
 #define ARITH_REG_MEM(_op, _what) \
 OPC_DEF(5, opcode_ ## _op) { \
-    uint8_t* ptr = registers[ARG(mov_reg_n_reg_offset.reg2)].asPointer + ARG(mov_reg_n_reg_offset.offset); \
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset.nbytes)); \
-    registers[ARG(mov_reg_n_reg_offset.reg1)].asInteger _what ## = value; \
+    uint64_t* ptr = registers[args->mov_reg_n_reg_offset.reg2].asPointer + args->mov_reg_n_reg_offset.offset; \
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset.nbytes); \
+    registers[args->mov_reg_n_reg_offset.reg1].asInteger _what ## = value; \
 }
 
 ARITH_REG_MEM(add, +)
@@ -503,54 +498,54 @@ ARITH_REG_MEM(shr, >>)
 #undef ARITH_REG_MEM
 
 OPC_DEF(8, opcode_psh) {
-    *(sp++) = (void*) ARG(imm64.imm);
+    *(sp++) = (void*) args->imm64.imm;
 }
 OPC_DEF(8, opcode_mov) {
-    uint64_t* ptr = (uint64_t*) (ARG(mov_reg_n_reg_offset_reg_offset_offset.addr) + ARG(mov_reg_n_reg_offset_reg_offset_offset.offset_offset));
-    registers[ARG(mov_reg_n_reg_offset_reg_offset_offset.reg1)].asInteger = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset_reg_offset_offset.nbytes));
+    uint64_t* ptr = (uint64_t*) (args->mov_reg_n_reg_offset_reg_offset_offset.addr + args->mov_reg_n_reg_offset_reg_offset_offset.offset_offset);
+    registers[args->mov_reg_n_reg_offset_reg_offset_offset.reg1].asInteger = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset_reg_offset_offset.nbytes);
 }
 
 OPC_DEF(8, opcode_b) {
-    pc = (void*) ARG(offset.addr);
+    pc = (void*) args->offset.addr;
 }
 OPC_DEF(8, opcode_bne) {
     if (!(flags & FLAG_EQUAL)) {
-        pc = (void*) ARG(offset.addr);
+        pc = (void*) args->offset.addr;
     }
 }
 OPC_DEF(8, opcode_beq) {
     if (flags & FLAG_EQUAL) {
-        pc = (void*) ARG(offset.addr);
+        pc = (void*) args->offset.addr;
     }
 }
 OPC_DEF(8, opcode_bgt) {
     if (flags & FLAG_GREATER) {
-        pc = (void*) ARG(offset.addr);
+        pc = (void*) args->offset.addr;
     }
 }
 OPC_DEF(8, opcode_blt) {
     if (flags & FLAG_LESS) {
-        pc = (void*) ARG(offset.addr);
+        pc = (void*) args->offset.addr;
     }
 }
 OPC_DEF(8, opcode_bge) {
     if (flags & (FLAG_GREATER | FLAG_EQUAL)) {
-        pc = (void*) ARG(offset.addr);
+        pc = (void*) args->offset.addr;
     }
 }
 OPC_DEF(8, opcode_ble) {
     if (flags & (FLAG_LESS | FLAG_EQUAL)) {
-        pc = (void*) ARG(offset.addr);
+        pc = (void*) args->offset.addr;
     }
 }
 OPC_DEF(8, opcode_bnz) {
     if (!(flags & FLAG_ZERO)) {
-        pc = (void*) ARG(offset.addr);
+        pc = (void*) args->offset.addr;
     }
 }
 OPC_DEF(8, opcode_bz) {
     if (flags & FLAG_ZERO) {
-        pc = (void*) ARG(offset.addr);
+        pc = (void*) args->offset.addr;
     }
 }
 OPC_DEF(8, opcode_bl) {
@@ -599,20 +594,20 @@ OPC_DEF(8, opcode_blz) {
     opcode_bz$8(registers, args);
 }
 OPC_DEF(8, opcode_pp) {
-    *((uint64_t*) ARG(offset.addr)) = *(uint64_t*) (--sp);
+    *((uint64_t*) args->offset.addr) = *(uint64_t*) (--sp);
 }
 
 OPC_DEF(9, opcode_ldr) {
-    uint64_t ptr = ARG(reg_imm64.imm);
-    uint8_t reg = ARG(reg_imm64.reg1);
+    uint64_t ptr = args->reg_imm64.imm;
+    uint8_t reg = args->reg_imm64.reg1;
     registers[reg].asInteger = ptr;
 }
 OPC_DEF(9, opcode_str) {
-    *(uint64_t*) (registers[ARG(reg_imm64.reg1)].asPointer) = ARG(reg_imm64.imm);
+    *(uint64_t*) (registers[args->reg_imm64.reg1].asPointer) = args->reg_imm64.imm;
 }
 OPC_DEF(9, opcode_cmp) {
-    uint64_t a = registers[ARG(reg_imm64.reg1)].asInteger;
-    uint64_t b = ARG(reg_imm64.imm);
+    uint64_t a = registers[args->reg_imm64.reg1].asInteger;
+    uint64_t b = args->reg_imm64.imm;
     int64_t as = (int64_t) a;
     int64_t bs = (int64_t) b;
     flags = 0;
@@ -632,7 +627,7 @@ OPC_DEF(9, opcode_cmp) {
 }
 #define ARITH_REG_IMM64(_op, _what) \
 OPC_DEF(9, opcode_ ## _op) { \
-    registers[ARG(reg_imm64.reg1)].asInteger _what ## = ARG(reg_imm64.imm); \
+    registers[args->reg_imm64.reg1].asInteger _what ## = args->reg_imm64.imm; \
 }
 
 ARITH_REG_IMM64(add, +)
@@ -649,22 +644,22 @@ ARITH_REG_IMM64(shr, >>)
 #undef ARITH_REG_IMM64
 
 OPC_DEF(10, opcode_ldr) {
-    registers[ARG(reg_offset_reg.reg1)].asInteger = *((uint64_t*) ARG(reg_offset_reg.addr) + registers[ARG(reg_offset_reg.reg2)].asSignedInteger);
+    registers[args->reg_offset_reg.reg1].asInteger = *((uint64_t*) args->reg_offset_reg.addr + registers[args->reg_offset_reg.reg2].asSignedInteger);
 }
 
 OPC_DEF(11, opcode_ldr) {
-    registers[ARG(reg_offset_imm.reg1)].asInteger = *((uint64_t*) ARG(reg_offset_imm.addr) + ARG(reg_offset_imm.imm_off));
+    registers[args->reg_offset_imm.reg1].asInteger = *((uint64_t*) args->reg_offset_imm.addr + args->reg_offset_imm.imm_off);
 }
 OPC_DEF(11, opcode_mov) {
-    uint64_t* ptr = (uint64_t*) ARG(mov_reg_n_reg_offset_reg_offset.addr) + registers[ARG(mov_reg_n_reg_offset_reg_offset.reg2)].asSignedInteger;
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset_reg_offset.nbytes));
-    registers[ARG(mov_reg_n_reg_offset_reg_offset.reg1)].asInteger = value;
+    uint64_t* ptr = (uint64_t*) args->mov_reg_n_reg_offset_reg_offset.addr + registers[args->mov_reg_n_reg_offset_reg_offset.reg2].asSignedInteger;
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset_reg_offset.nbytes);
+    registers[args->mov_reg_n_reg_offset_reg_offset.reg1].asInteger = value;
 }
 #define ARITH_REG_SYM(_op, _what) \
 OPC_DEF(11, opcode_ ## _op) { \
-    uint64_t* ptr = (uint64_t*) ARG(mov_reg_n_reg_offset_reg_offset.addr) + registers[ARG(mov_reg_n_reg_offset_reg_offset.reg2)].asSignedInteger; \
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset_reg_offset.nbytes)); \
-    registers[ARG(mov_reg_n_reg_offset_reg_offset.reg1)].asInteger _what ## = value; \
+    uint64_t* ptr = (uint64_t*) args->mov_reg_n_reg_offset_reg_offset.addr + registers[args->mov_reg_n_reg_offset_reg_offset.reg2].asSignedInteger; \
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset_reg_offset.nbytes); \
+    registers[args->mov_reg_n_reg_offset_reg_offset.reg1].asInteger _what ## = value; \
 }
 
 ARITH_REG_SYM(add, +)
@@ -682,9 +677,9 @@ ARITH_REG_SYM(shr, >>)
 
 #define ARITH_REG_ADDR_OFF(_op, _what) \
 OPC_DEF(12, opcode_ ## _op) { \
-    uint64_t* ptr = (uint64_t*) (ARG(mov_reg_n_reg_offset_reg_offset_offset.addr) + ARG(mov_reg_n_reg_offset_reg_offset_offset.offset_offset)); \
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(ARG(mov_reg_n_reg_offset_reg_offset_offset.nbytes)); \
-    registers[ARG(mov_reg_n_reg_offset_reg_offset_offset.reg1)].asInteger _what ## = value; \
+    uint64_t* ptr = (uint64_t*) (args->mov_reg_n_reg_offset_reg_offset_offset.addr + args->mov_reg_n_reg_offset_reg_offset_offset.offset_offset); \
+    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset_reg_offset_offset.nbytes); \
+    registers[args->mov_reg_n_reg_offset_reg_offset_offset.reg1].asInteger _what ## = value; \
 }
 
 ARITH_REG_ADDR_OFF(add, +)
@@ -869,11 +864,10 @@ static opc_func* funcs[16] = {
     opc_12, opc_13, opc_14, opc_15
 };
 
-OS_NOINLINE
-void exec(hive_register_t registers[32]) {
+__attribute__((noreturn))
+void exec(register hive_register_t* const restrict registers) {
     while (1) {
-        uint16_t opcode = *(uint16_t*) pc;
-        // TODO: make this less ugly
+        register uint16_t opcode = *(uint16_t*) pc;
         pc += 2 + (opcode >> 12);
         funcs[opcode >> 12][opcode & 0x0FFF](registers, pc - (opcode >> 12));
     }
@@ -1083,27 +1077,26 @@ int main(int argc, char **argv) {
             return 1;
         }
         object_file_t objects[] = {
-            read_translation_unit_bytes(bios, sizeof(bios)),
+            read_translation_unit_bytes(kernel, sizeof(kernel)),
             read_translation_unit(f),
         };
         fclose(f);
+        f = NULL;
 
         relocate(objects, sizeof(objects) / sizeof(object_file_t));
         
         hive_register_t registers[32];
-        memset(registers, 0, sizeof(registers));
-
         pc = (void*) find_symbol("_start", objects, sizeof(objects) / sizeof(object_file_t));
 
-        if (pc == NULL) {
-            fprintf(stderr, "Could not find _start symbol\n");
-            return 1;
+        if (pc) {
+            char stack[1024][1024];
+            bp = sp = (void**) stack;
+            exec(registers);
+            return registers[0].asInteger;
         }
-
-        char stack[1024][1024];
-        bp = sp = (void**) stack;
-        exec(registers);
-        return registers[0].asInteger;
+        
+        fprintf(stderr, "Could not find _start symbol\n");
+        return 1;
     } else {
         fprintf(stderr, "Unknown command '%s'\n", argv[1]);
         return 1;
