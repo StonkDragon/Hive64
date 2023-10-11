@@ -16,6 +16,9 @@ typedef enum _TokenType {
     LeftBracket,
     RightBracket,
     SimdRegister,
+    Comma,
+    Plus,
+    Minus,
 } TokenType;
 
 typedef struct _Token {
@@ -85,7 +88,7 @@ int isValidBegin(int c) {
 }
 
 int isValid(int c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '$' || c == '{' || c == '}' || c == '(' || c == ')';
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '$' || c == '{' || c == '}' || c == '(' || c == ')';
 }
 
 char* lower(char* str) {
@@ -98,7 +101,7 @@ char* lower(char* str) {
 }
 
 #define eq(s1, s2) (strcmp(s1, s2) == 0)
-#define ins(s) eq(tokens->value, (s))
+#define ins(s) eq(instruction_token->value, (s))
 
 char* unquote(const char* str);
 
@@ -150,6 +153,17 @@ uint8_t parse8(char* s) {
     }
 }
 
+uint8_t is_conditional(uint8_t opcode) {
+    return  opcode == opcode_dot_eq ||
+            opcode == opcode_dot_ne ||
+            opcode == opcode_dot_cs ||
+            opcode == opcode_dot_cc ||
+            opcode == opcode_dot_ge ||
+            opcode == opcode_dot_lt ||
+            opcode == opcode_dot_gt ||
+            opcode == opcode_dot_le;
+}
+
 section_t** compile(Token* tokens) {
     uint32_t section_count = 1;
     section_t** objs = NULL;
@@ -159,874 +173,141 @@ section_t** compile(Token* tokens) {
     obj->type = SECTION_TYPE_CODE;
     for (;tokens->type != EOF; tokens++) {
         if (tokens->type == Identifier) {
+            char* mnemonic = lower(tokens->value);
+            
+            uint64_t flags = 0;
+            #define ADDRESSING_BYTE         0x0001
+            #define ADDRESSING_WORD         0x0002
+            #define ADDRESSING_DWORD        0x0004
+            #define ADDRESSING_QWORD        0x0008
+
+            Token* instruction_token = tokens;
+            tokens++;
+            instruction_t cond[16] = {0};
+            int cond_count = 0;
+            int extra_dwords = 0;
+            while (tokens->type == Directive && cond_count < 16) {
+                char* cond_str = lower(tokens->value);
+                
+                if (eq(cond_str, "eq")) {
+                    cond[cond_count++] = op_dot_eq(
+                        ARG_8BIT(0)
+                    );
+                } else if (eq(cond_str, "ne")) {
+                    cond[cond_count++] = op_dot_ne(
+                        ARG_8BIT(0)
+                    );
+                } else if (eq(cond_str, "cs")) {
+                    cond[cond_count++] = op_dot_cs(
+                        ARG_8BIT(0)
+                    );
+                } else if (eq(cond_str, "cc")) {
+                    cond[cond_count++] = op_dot_cc(
+                        ARG_8BIT(0)
+                    );
+                } else if (eq(cond_str, "ge")) {
+                    cond[cond_count++] = op_dot_ge(
+                        ARG_8BIT(0)
+                    );
+                } else if (eq(cond_str, "lt")) {
+                    cond[cond_count++] = op_dot_lt(
+                        ARG_8BIT(0)
+                    );
+                } else if (eq(cond_str, "gt")) {
+                    cond[cond_count++] = op_dot_gt(
+                        ARG_8BIT(0)
+                    );
+                } else if (eq(cond_str, "le")) {
+                    cond[cond_count++] = op_dot_le(
+                        ARG_8BIT(0)
+                    );
+                } else if (eq(cond_str, "byte")) {
+                    cond[cond_count++] = op_dot_addressing_override(
+                        ARG_8BIT(1)
+                    );
+                    flags |= ADDRESSING_BYTE;
+                } else if (eq(cond_str, "word")) {
+                    cond[cond_count++] = op_dot_addressing_override(
+                        ARG_8BIT(2)
+                    );
+                    flags |= ADDRESSING_WORD;
+                } else if (eq(cond_str, "dword")) {
+                    cond[cond_count++] = op_dot_addressing_override(
+                        ARG_8BIT(3)
+                    );
+                    flags |= ADDRESSING_DWORD;
+                } else if (eq(cond_str, "qword")) {
+                    cond[cond_count++] = op_dot_addressing_override(
+                        ARG_8BIT(4)
+                    );
+                    flags |= ADDRESSING_QWORD;
+                } else {
+                    printf("%s:%d: Unknown condition: %s\n", tokens->file, tokens->line, tokens->value);
+                    return NULL;
+                }
+                tokens++;
+            }
+            tokens--;
+
+            instruction_t instr = {0};
+
+            #define EXPECT(_type, _diag) \
+                if (tokens->type != _type) { \
+                    printf("%s:%d: " _diag, tokens->file, tokens->line, tokens->value); \
+                    return NULL; \
+                }
+
             if (ins("nop")) {
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_nop
-                };
-                add_instruction(obj, instr);
-            } else if (ins("halt") || ins("hlt")) {
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_halt
-                };
-                add_instruction(obj, instr);
-            } else if (ins("ldr")) {
-                tokens++;
-                if (tokens->type != Register) {
-                    printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-                uint8_t reg1 = parse8(tokens->value + 1);
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg2 = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_ldr_reg_reg,
-                        .args = {
-                            ARG_8BIT(reg1),
-                            ARG_8BIT(reg2),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Number) {
-                    int64_t num = parse64(tokens->value);
-                    if (num > 32767 || num < -32768) {
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_ldr_reg_imm,
-                            .args = {
-                                ARG_64BIT(num),
-                                ARG_8BIT(reg1),
-                            }
-                        };
-                        add_instruction(obj, instr);
-                    } else {
-                        int16_t num16 = num;
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_ldr_reg_imm16,
-                            .args = {
-                                ARG_16BIT(num16),
-                                ARG_8BIT(reg1),
-                            }
-                        };
-                        add_instruction(obj, instr);
-                    }
-                } else if (tokens->type == Identifier) {
-                    char* str = tokens->value;
-                    str = unquote(str);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_ldr_reg_imm,
-                        .args = {
-                            ARG_64SYM(str),
-                            ARG_8BIT(reg1),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == LeftBracket) {
-                    tokens++;
-                    if (tokens->type == Register) {
-                        uint8_t reg2 = parse8(tokens->value + 1);
-                        tokens++;
-                        if (tokens->type == RightBracket) {
-                            instruction_t instr = (instruction_t) {
-                                .opcode = op_ldr_reg_mem,
-                                .args = {
-                                    ARG_8BIT(reg1),
-                                    ARG_8BIT(reg2),
-                                    ARG_16BIT(0),
-                                }
-                            };
-                            add_instruction(obj, instr);
-                        } else if (tokens->type == Number) {
-                            int64_t num = parse64(tokens->value);
-                            int16_t num16 = num;
-                            if (num > 32767 || num < -32768) {
-                                printf("%s:%d: Number too large\n", tokens->file, tokens->line);
-                                return NULL;
-                            } else {
-                                instruction_t instr = (instruction_t) {
-                                    .opcode = op_ldr_reg_mem,
-                                    .args = {
-                                        ARG_8BIT(reg1),
-                                        ARG_8BIT(reg2),
-                                        ARG_16BIT(num16),
-                                    }
-                                };
-                                add_instruction(obj, instr);
-                            }
-                        } else {
-                            printf("%s:%d: Expected register, number, or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                            return NULL;
-                        }
-                    } else if (tokens->type == Identifier) {
-                        char* str = tokens->value;
-                        str = unquote(str);
-                        tokens++;
-                        if (tokens->type == Register) {
-                            uint8_t reg2 = parse8(tokens->value + 1);
-                            tokens++;
-                            if (tokens->type != RightBracket) {
-                                printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
-                                return NULL;
-                            }
-                            instruction_t instr = (instruction_t) {
-                                .opcode = op_ldr_reg_addr_reg,
-                                .args = {
-                                    ARG_64SYM(str),
-                                    ARG_8BIT(reg1),
-                                    ARG_8BIT(reg2),
-                                }
-                            };
-                        } else if (tokens->type == Number) {
-                            int64_t num = parse64(tokens->value);
-                            if (num > 32767 || num < -32768) {
-                                printf("%s:%d: Number too large\n", tokens->file, tokens->line);
-                                return NULL;
-                            } else {
-                                tokens++;
-                                if (tokens->type != RightBracket) {
-                                    printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
-                                    return NULL;
-                                }
-                                int16_t num16 = num;
-                                instruction_t instr = (instruction_t) {
-                                    .opcode = op_ldr_reg_addr_imm16,
-                                    .args = {
-                                        ARG_64SYM(str),
-                                        ARG_8BIT(reg1),
-                                        ARG_16BIT(num16),
-                                    }
-                                };
-                                add_instruction(obj, instr);
-                            }
-                        } else if (tokens->type == RightBracket) {
-                            instruction_t instr = (instruction_t) {
-                                .opcode = op_ldr_reg_addr_imm16,
-                                .args = {
-                                    ARG_64SYM(str),
-                                    ARG_8BIT(reg1),
-                                    ARG_16BIT(0),
-                                }
-                            };
-                            add_instruction(obj, instr);
-                        } else {
-                            printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                            return NULL;
-                        }
-                    } else {
-                        printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                        return NULL;
-                    }
-                } else {
-                    printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("str")) {
-                tokens++;
-                if (tokens->type != Register) {
-                    printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-                uint8_t reg1 = parse8(tokens->value + 1);
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg2 = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_str_reg_reg,
-                        .args = {
-                            ARG_8BIT(reg1),
-                            ARG_8BIT(reg2)
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Number) {
-                    int64_t num = parse64(tokens->value);
-                    int16_t num16 = num;
-                    if (num > 32767 || num < -32768) {
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_str_reg_imm64,
-                            .args = {
-                                ARG_64BIT(num),
-                                ARG_8BIT(reg1),
-                            }
-                        };
-                        add_instruction(obj, instr);
-                    } else {
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_str_reg_imm16,
-                            .args = {
-                                ARG_16BIT(num16),
-                                ARG_8BIT(reg1),
-                            }
-                        };
-                        add_instruction(obj, instr);
-                    }
-                } else {
-                    printf("%s:%d: Expected register or number, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("cmp")) {
-                tokens++;
-                if (tokens->type != Register) {
-                    printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-                uint8_t reg1 = parse8(tokens->value + 1);
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg2 = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_cmp_reg_reg,
-                        .args = {
-                            ARG_8BIT(reg1),
-                            ARG_8BIT(reg2),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Number) {
-                    int64_t num = parse64(tokens->value);
-                    int16_t num16 = num;
-                    if (num > 32767 || num < -32768) {
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_cmp_reg_imm64,
-                            .args = {
-                                ARG_64BIT(num),
-                                ARG_8BIT(reg1),
-                            }
-                        };
-                        add_instruction(obj, instr);
-                    } else {
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_cmp_reg_imm16,
-                            .args = {
-                                ARG_16BIT(num16),
-                                ARG_8BIT(reg1),
-                            }
-                        };
-                        add_instruction(obj, instr);
-                    }
-                } else {
-                    printf("%s:%d: Expected register or number, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("cmpz")) {
-                tokens++;
-                if (tokens->type != Register) {
-                    printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-                uint8_t reg1 = parse8(tokens->value + 1);
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_cmpz_reg,
-                    .args = {
-                        ARG_8BIT(reg1),
-                    }
-                };
-                add_instruction(obj, instr);
+                instr = op_nop();
+            } else if (ins("ret")) {
+                instr = op_ret();
+            } else if (ins("irq")) {
+                instr = op_irq();
+            } else if (ins("svc")) {
+                instr = op_svc();
             } else if (ins("b")) {
                 tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_b_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_b_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("bne")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bne_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bne_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("beq")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_beq_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_beq_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("bgt")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bgt_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bgt_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("blt")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blt_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blt_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("bge")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bge_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bge_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("ble")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_ble_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_ble_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("bnz")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bnz_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bnz_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("bz")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bz_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bz_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
+                EXPECT(Identifier, "Expected identifier, got %s\n");
+                instr = op_b_addr(
+                    ARG_SYM(tokens->value)
+                );
             } else if (ins("bl")) {
                 tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bl_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bl_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("blne")) {
+                EXPECT(Identifier, "Expected identifier, got %s\n");
+                instr = op_bl_addr(
+                    ARG_SYM(tokens->value)
+                );
+            } else if (ins("br")) {
                 tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blne_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blne_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("bleq")) {
+                EXPECT(Register, "Expected register, got %s\n");
+                instr = op_br_reg(
+                    ARG_8BIT(parse8(tokens->value + 1))
+                );
+            } else if (ins("blr")) {
                 tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bleq_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bleq_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("blgt")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blgt_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blgt_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("bllt")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bllt_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_bllt_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("blge")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blge_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blge_addr,
-                        .args = {
-                            ARG_64SYM(sym)
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("blle")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blle_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blle_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("blnz")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blnz_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blnz_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("blz")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blz_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* sym = tokens->value;
-                    sym = unquote(sym);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_blz_addr,
-                        .args = {
-                            ARG_64SYM(sym),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("pshi")) {
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_pshi
-                };
-                add_instruction(obj, instr);
-            } else if (ins("ret")) {
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_ret
-                };
-                add_instruction(obj, instr);
-            } else if (ins("pshx")) {
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_psh_reg,
-                    .args = {
-                        ARG_8BIT(0),
-                    }
-                };
-                add_instruction(obj, instr);
-            } else if (ins("ppx")) {
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_pp_reg,
-                    .args = {
-                        ARG_8BIT(0),
-                    }
-                };
-                add_instruction(obj, instr);
-            } else if (ins("pshy")) {
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_psh_reg,
-                    .args = {
-                        ARG_8BIT(1),
-                    }
-                };
-                add_instruction(obj, instr);
-            } else if (ins("ppy")) {
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_pp_reg,
-                    .args = {
-                        ARG_8BIT(1),
-                    }
-                };
-                add_instruction(obj, instr);
-            } else if (ins("svc")) {
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_svc,
-                };
-                add_instruction(obj, instr);
-            } else if (ins("psh")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_psh_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Number) {
-                    uint64_t num = parse64(tokens->value);
-                    if (num > 0xFFFF) {
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_psh_imm64,
-                            .args = {
-                                ARG_64BIT(num),
-                            }
-                        };
-                    } else {
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_psh_imm16,
-                            .args = {
-                                ARG_16BIT(num),
-                            }
-                        };
-                        add_instruction(obj, instr);
-                    }
-                } else if (tokens->type == Identifier) {
-                    char* str = tokens->value;
-                    str = unquote(str);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_psh_addr,
-                        .args = {
-                            ARG_64SYM(str),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register, number, or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-            } else if (ins("pp")) {
-                tokens++;
-                if (tokens->type == Register) {
-                    uint8_t reg = parse8(tokens->value + 1);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_pp_reg,
-                        .args = {
-                            ARG_8BIT(reg),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else if (tokens->type == Identifier) {
-                    char* str = tokens->value;
-                    str = unquote(str);
-                    instruction_t instr = (instruction_t) {
-                        .opcode = op_pp_addr,
-                        .args = {
-                            ARG_64SYM(str),
-                        }
-                    };
-                    add_instruction(obj, instr);
-                } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-        #define ARITH(_type) \
-            } else if (ins(#_type)) { \
+                EXPECT(Register, "Expected register, got %s\n");
+                instr = op_blr_reg(
+                    ARG_8BIT(parse8(tokens->value + 1))
+                );
+            #define ARITH(_what) \
+            } else if (ins(#_what)) { \
                 tokens++; \
-                if (tokens->type != Register) { \
-                    printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value); \
-                    return NULL; \
-                } \
-                uint8_t reg1 = parse8(tokens->value + 1); \
+                EXPECT(Register, "Expected register, got %s\n"); \
+                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1)); \
+                tokens++; \
+                EXPECT(Comma, "Expected comma, got %s\n"); \
                 tokens++; \
                 if (tokens->type == Register) { \
-                    uint8_t reg2 = parse8(tokens->value + 1); \
-                    instruction_t instr = (instruction_t) { \
-                        .opcode = op_ ##_type ## _reg_reg, \
-                        .args = { \
-                            ARG_8BIT(reg1), \
-                            ARG_8BIT(reg2), \
-                        } \
-                    }; \
-                    add_instruction(obj, instr); \
+                    instr_arg lhs = ARG_8BIT(parse8(tokens->value + 1)); \
+                    tokens++; \
+                    EXPECT(Comma, "Expected comma, got %s\n"); \
+                    tokens++; \
+                    EXPECT(Register, "Expected register, got %s\n"); \
+                    instr_arg rhs = ARG_8BIT(parse8(tokens->value + 1)); \
+                    instr = op_ ## _what ## _reg_reg_reg(dest, lhs, rhs); \
                 } else if (tokens->type == Number) { \
-                    int64_t num = parse64(tokens->value); \
-                    int16_t num16 = num; \
-                    if (num > 32767 || num < -32768) { \
-                        instruction_t instr = (instruction_t) { \
-                            .opcode = op_ ##_type ## _reg_imm64, \
-                            .args = { \
-                                ARG_64BIT(num), \
-                                ARG_8BIT(reg1), \
-                            } \
-                        }; \
-                        add_instruction(obj, instr); \
-                    } else { \
-                        instruction_t instr = (instruction_t) { \
-                            .opcode = op_ ##_type ## _reg_imm16, \
-                            .args = { \
-                                ARG_16BIT(num16), \
-                                ARG_8BIT(reg1), \
-                            } \
-                        }; \
-                        add_instruction(obj, instr); \
-                    } \
+                    instr_arg imm16 = ARG_16BIT(parse16(tokens->value)); \
+                    instr = op_ ## _what ## _reg_imm(dest, imm16); \
                 } else { \
                     printf("%s:%d: Expected register or number, got %s\n", tokens->file, tokens->line, tokens->value); \
                     return NULL; \
@@ -1041,210 +322,169 @@ section_t** compile(Token* tokens) {
             ARITH(xor)
             ARITH(shl)
             ARITH(shr)
-            } else if (ins("not")) {
-                tokens++;
-                if (tokens->type != Register) {
-                    printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-                uint8_t reg = parse8(tokens->value + 1);
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_not_reg,
-                    .args = {
-                        ARG_8BIT(reg),
-                    }
-                };
-                add_instruction(obj, instr);
+            ARITH(rol)
+            ARITH(ror)
             } else if (ins("inc")) {
                 tokens++;
-                if (tokens->type != Register) {
-                    printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-                uint8_t reg = parse8(tokens->value + 1);
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_inc_reg,
-                    .args = {
-                        ARG_8BIT(reg),
-                    }
-                };
-                add_instruction(obj, instr);
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg what = ARG_8BIT(parse8(tokens->value + 1));
+                instr = op_inc_reg(what);
             } else if (ins("dec")) {
                 tokens++;
-                if (tokens->type != Register) {
-                    printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-                uint8_t reg = parse8(tokens->value + 1);
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_dec_reg,
-                    .args = {
-                        ARG_8BIT(reg),
-                    }
-                };
-                add_instruction(obj, instr);
-            } else if (ins("irq")) {
-                instruction_t instr = (instruction_t) {
-                    .opcode = op_irq
-                };
-                add_instruction(obj, instr);
-            } else if (ins("mov")) {
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg what = ARG_8BIT(parse8(tokens->value + 1));
+                instr = op_dec_reg(what);
+            } else if (ins("psh")) {
                 tokens++;
-                if (tokens->type != Register) {
-                    printf("%s:%d: Expected register, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-                uint8_t reg1 = parse8(tokens->value + 1);
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg what = ARG_8BIT(parse8(tokens->value + 1));
+                instr = op_psh_reg(what);
+            } else if (ins("pp")) {
                 tokens++;
-                if (tokens->type != Identifier) {
-                    printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-                if (!ins("byte") && !ins("word") && !ins("dword") && !ins("qword")) {
-                    printf("%s:%d: Expected byte, word, dword, or qword, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
-                uint8_t size = 0;
-                if (ins("byte")) {
-                    size = 1;
-                } else if (ins("word")) {
-                    size = 2;
-                } else if (ins("dword")) {
-                    size = 4;
-                } else if (ins("qword")) {
-                    size = 8;
-                }
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg what = ARG_8BIT(parse8(tokens->value + 1));
+                instr = op_pp_reg(what);
+            } else if (ins("ldr")) {
                 tokens++;
-                if (tokens->type != LeftBracket) {
-                    printf("%s:%d: Expected [, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
-                }
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
                 tokens++;
                 if (tokens->type == Register) {
-                    uint8_t reg2 = parse8(tokens->value + 1);
+                    instr_arg addr = ARG_8BIT(parse8(tokens->value + 1));
+                    instr = op_ldr_reg_reg(dest, addr);
+                } else if (tokens->type == LeftBracket) {
                     tokens++;
-                    if (tokens->type == RightBracket) {
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_mov_reg_reg,
-                            .args = {
-                                ARG_16BIT(0),
-                                ARG_8BIT(reg1),
-                                ARG_8BIT(size),
-                                ARG_8BIT(reg2),
-                            }
-                        };
-                        add_instruction(obj, instr);
-                    } else if (tokens->type == Number) {
-                        int64_t num = parse64(tokens->value);
-                        if (num > 32767 || num < -32768) {
-                            printf("%s:%d: Number too large\n", tokens->file, tokens->line);
-                            return NULL;
-                        } else {
+                    EXPECT(Register, "Expected register, got %s\n");
+                    instr_arg src = ARG_8BIT(parse8(tokens->value + 1));
+                    tokens++;
+                    if (tokens->type != RightBracket) {
+                        int8_t offset = 0;
+                        int8_t sign = 1;
+                        if (tokens->type == Minus) {
+                            sign = -1;
                             tokens++;
-                            if (tokens->type != RightBracket) {
-                                printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
+                        } else if (tokens->type == Plus) {
+                            tokens++;
+                        } else {
+                            printf("%s:%d: Expected plus or minus, got %s\n", tokens->file, tokens->line, tokens->value);
+                            return NULL;
+                        }
+                        if (tokens->type == Number) {
+                            offset = parse8(tokens->value);
+                            tokens++;
+                            EXPECT(RightBracket, "Expected right bracket, got %s\n");
+                            instr = op_ldr_reg_addr_imm(dest, src, offset * sign);
+                        } else if (tokens->type == Register) {
+                            instr_arg offset_reg = ARG_8BIT(parse8(tokens->value + 1));
+                            tokens++;
+                            EXPECT(RightBracket, "Expected right bracket, got %s\n");
+                            if (sign == -1) {
+                                printf("%s:%d: Cannot use minus with register offset\n", tokens->file, tokens->line);
                                 return NULL;
                             }
-                            int16_t num16 = num;
-                            instruction_t instr = (instruction_t) {
-                                .opcode = op_mov_reg_reg,
-                                .args = {
-                                    ARG_16BIT(num16),
-                                    ARG_8BIT(reg1),
-                                    ARG_8BIT(size),
-                                    ARG_8BIT(reg2),
-                                }
-                            };
-                            add_instruction(obj, instr);
-                        }
-                    } else if (tokens->type == Register) {
-                        uint8_t reg3 = parse8(tokens->value + 1);
-                        tokens++;
-                        if (tokens->type != RightBracket) {
-                            printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
-                            return NULL;
-                        }
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_mov_reg_reg_reg,
-                            .args = {
-                                ARG_8BIT(reg1),
-                                ARG_8BIT(size),
-                                ARG_8BIT(reg2),
-                                ARG_8BIT(reg3),
-                            }
-                        };
-                        add_instruction(obj, instr);
-                    } else {
-                        printf("%s:%d: Expected register or number, got %s\n", tokens->file, tokens->line, tokens->value);
-                        return NULL;
-                    }
-                } else if (tokens->type == Identifier) {
-                    char* str = tokens->value;
-                    str = unquote(str);
-                    tokens++;
-                    if (tokens->type == RightBracket) {
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_mov_reg_addr,
-                            .args = {
-                                ARG_64SYM(str),
-                                ARG_8BIT(reg1),
-                                ARG_8BIT(size),
-                                ARG_16BIT(0),
-                            }
-                        };
-                        add_instruction(obj, instr);
-                    } else if (tokens->type == Number) {
-                        int64_t num = parse64(tokens->value);
-                        if (num > 32767 || num < -32768) {
-                            printf("%s:%d: Number too large\n", tokens->file, tokens->line);
-                            return NULL;
+                            instr = op_ldr_reg_addr_reg(dest, src, offset_reg);
                         } else {
-                            tokens++;
-                            if (tokens->type != RightBracket) {
-                                printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
-                                return NULL;
-                            }
-                            int16_t num16 = num;
-                            instruction_t instr = (instruction_t) {
-                                .opcode = op_mov_reg_addr,
-                                .args = {
-                                    ARG_64SYM(str),
-                                    ARG_8BIT(reg1),
-                                    ARG_8BIT(size),
-                                    ARG_16BIT(num16),
-                                }
-                            };
-                            add_instruction(obj, instr);
-                        }
-                    } else if (tokens->type == Register) {
-                        uint8_t reg3 = parse8(tokens->value + 1);
-                        tokens++;
-                        if (tokens->type != RightBracket) {
-                            printf("%s:%d: Expected ], got %s\n", tokens->file, tokens->line, tokens->value);
+                            printf("%s:%d: Expected number or register, got %s\n", tokens->file, tokens->line, tokens->value);
                             return NULL;
                         }
-                        instruction_t instr = (instruction_t) {
-                            .opcode = op_mov_reg_addr_reg,
-                            .args = {
-                                ARG_64SYM(str),
-                                ARG_8BIT(reg1),
-                                ARG_8BIT(size),
-                                ARG_8BIT(reg3),
-                            }
-                        };
-                        add_instruction(obj, instr);
                     } else {
-                        printf("%s:%d: Expected register or number, got %s\n", tokens->file, tokens->line, tokens->value);
-                        return NULL;
+                        instr = op_ldr_reg_addr(dest, src);
                     }
                 } else {
-                    printf("%s:%d: Expected register or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
+                    printf("%s:%d: Expected register or left bracket, got %s\n", tokens->file, tokens->line, tokens->value);
                     return NULL;
                 }
+            } else if (ins("movl")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
+                tokens++;
+                EXPECT(Number, "Expected number, got %s\n");
+                instr = op_movl(dest, ARG_16BIT(parse16(tokens->value)));
+            } else if (ins("movh")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
+                tokens++;
+                EXPECT(Number, "Expected number, got %s\n");
+                instr = op_movh(dest, ARG_16BIT(parse16(tokens->value)));
+            } else if (ins("movql")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
+                tokens++;
+                EXPECT(Number, "Expected number, got %s\n");
+                instr = op_movql(dest, ARG_16BIT(parse16(tokens->value)));
+            } else if (ins("movqh")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
+                tokens++;
+                EXPECT(Number, "Expected number, got %s\n");
+                instr = op_movqh(dest, ARG_16BIT(parse16(tokens->value)));
+            } else if (ins("lea")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
+                tokens++;
+                EXPECT(Identifier, "Expected identifier, got %s\n");
+                instr = op_lea_reg_addr(dest, ARG_SYM(tokens->value));
+            } else if (ins("cmp")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg op1 = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg op2 = ARG_8BIT(parse8(tokens->value + 1));
+                instr = op_cmp_reg_reg(op1, op2);
+            } else if (ins("xchg")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg op1 = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg op2 = ARG_8BIT(parse8(tokens->value + 1));
+                instr = op_xchg_reg_reg(op1, op2);
+            } else if (ins("movz")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
+                tokens++;
+                EXPECT(Number, "Expected number, got %s\n");
+                instr = op_movz(dest, ARG_16BIT(parse16(tokens->value)));
+            } else if (ins("not")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr = op_not_reg(ARG_8BIT(parse8(tokens->value + 1)));
             } else {
                 printf("%s:%d: Unknown instruction: %s\n", tokens->file, tokens->line, tokens->value);
                 return NULL;
             }
+            for (int i = 0; i < cond_count; i++) {
+                if (is_conditional(cond[i].opcode)) {
+                    cond[i].args[0].imm8 += cond_count - i - 1 + extra_dwords;
+                }
+                add_instruction(obj, cond[i]);
+            }
+            add_instruction(obj, instr);
         } else if (tokens->type == Directive) {
             if (eq(tokens->value, "asciz") || eq(tokens->value, "ascii")) {
                 tokens++;
@@ -1285,12 +525,14 @@ section_t** compile(Token* tokens) {
                 add_imm_dword(obj, num);
             } else if (eq(tokens->value, "qword")) {
                 tokens++;
-                if (tokens->type != Number) {
-                    printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
+                if (tokens->type == Number) {
+                    uint64_t num = parse64(tokens->value);
+                    add_imm_qword(obj, num);
+                } else if (tokens->type == Identifier) {
+                    add_symbol_offset(obj, tokens->value);
+                } else {
+                    printf("%s:%d: Expected number or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
                 }
-                uint64_t num = parse64(tokens->value);
-                add_imm_qword(obj, num);
             } else if (eq(tokens->value, "float")) {
                 tokens++;
                 if (tokens->type != NumberFloat) {
@@ -1314,8 +556,6 @@ section_t** compile(Token* tokens) {
                     return NULL;
                 }
                 add_symbol_offset(obj, tokens->value);
-            // } else if (eq(tokens->value, "section")) {
-            //     SECTION_FLAG
             } else {
                 printf("%s:%d: Unknown directive: %s\n", tokens->file, tokens->line, tokens->value);
                 return NULL;
@@ -1422,22 +662,6 @@ Token nextToken() {
             }
             src--;
         }
-        if (strncmp(src, "xmm", 3) == 0) {
-            src += 3;
-            if (isnumber(*src)) {
-                while (isnumber(*src))
-                    src++;
-                
-                s[src - start] = 0;
-                return (Token) {
-                    .file = file,
-                    .line = line,
-                    .value = s,
-                    .type = SimdRegister
-                };
-            }
-            src -= 3;
-        }
         while (isValid(*src))
             src++;
         
@@ -1471,28 +695,42 @@ Token nextToken() {
             return (Token) {
                 .file = file,
                 .line = line,
-                .value = "r27",
+                .value = "r32",
                 .type = Register
             };
         } else if (eq(s, "lr")) {
             return (Token) {
                 .file = file,
                 .line = line,
-                .value = "r28",
+                .value = "r33",
                 .type = Register
             };
         } else if (eq(s, "sp")) {
             return (Token) {
                 .file = file,
                 .line = line,
-                .value = "r29",
+                .value = "r34",
                 .type = Register
             };
-        } else if (eq(s, "bp")) {
+        } else if (eq(s, "fr")) {
             return (Token) {
                 .file = file,
                 .line = line,
-                .value = "r30",
+                .value = "r35",
+                .type = Register
+            };
+        } else if (eq(s, "zero")) {
+            return (Token) {
+                .file = file,
+                .line = line,
+                .value = "r48",
+                .type = Register
+            };
+        } else if (eq(s, "one")) {
+            return (Token) {
+                .file = file,
+                .line = line,
+                .value = "r49",
                 .type = Register
             };
         }
@@ -1652,6 +890,30 @@ Token nextToken() {
             .line = line,
             .value = "]",
             .type = RightBracket
+        };
+    } else if (*src == ',') {
+        src++;
+        return (Token) {
+            .file = file,
+            .line = line,
+            .value = ",",
+            .type = Comma
+        };
+    } else if (*src == '+') {
+        src++;
+        return (Token) {
+            .file = file,
+            .line = line,
+            .value = "+",
+            .type = Plus
+        };
+    } else if (*src == '-') {
+        src++;
+        return (Token) {
+            .file = file,
+            .line = line,
+            .value = "-",
+            .type = Minus
         };
     } else if (*src == 0) {
         return (Token) {

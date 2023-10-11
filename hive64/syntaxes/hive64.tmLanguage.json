@@ -9,12 +9,6 @@
 			"include": "#mnemonics"
 		},
 		{
-			"include": "#mnemonics-simd"
-		},
-		{
-			"include": "#sizes"
-		},
-		{
 			"include": "#directives"
 		},
 		{
@@ -45,25 +39,13 @@
 		"mnemonics": {
 			"patterns": [{
 				"name": "entity.name.function",
-				"match": "\\b(nop|ha?lt|ldr|str|cmp|cmpz|b|bne|beq|bgt|blt|bge|ble|bnz|bz|pshi|ret|pshx|ppx|pshy|ppy|psh|pp|add|sub|mul|div|mod|and|or|xor|shl|shr|not|inc|dec|irq|mov|bl|blne|bleq|blgt|bllt|blge|blle|blnz|blz)\\b"
-			}]
-		},
-		"mnemonics-simd": {
-			"patterns": [{
-				"name": "entity.name.function",
-				"match": "\\b(qadd|qsub|qmul|qdiv|qmod|qand|qor|qxor|qshl|qshr|qconv|qaddsub|qshuf|qmov|qmov2)\\b"
+				"match": "\\b(nop|ret|irq|svc|br?|blr?|add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|inc|dec|psh|pp|ldr|str|mov((q?(l|h))|z)|lea|cmp|xchg|not)(\\.(byte|(d|q)?word|eq|ne|lt|gt|le|ge|cs|cc))*\\b"
 			}]
 		},
 		"registers": {
 			"patterns": [{
 				"name": "storage.register",
 				"match": "\\b(r([1-2][0-9]|3[0-1]|[0-9])|xmm(1[0-5]|[0-9])|x|y|sp|bp|lr|pc)\\b"
-			}]
-		},
-		"sizes": {
-			"patterns": [{
-				"name": "storage.register",
-				"match": "\\b(byte|(d|q)?word|float|double)\\b"
 			}]
 		},
 		"labels": {
@@ -74,8 +56,8 @@
 		},
 		"directives": {
 			"patterns": [{
-				"name": "entity.name.tag",
-				"match": "(\\.(ascii|asciz|extern|byte|word|dword|qword|float|double|offset))\\b"
+				"name": "storage.register",
+				"match": "(\\.(ascii|asciz|extern|byte|word|dword|qword|offset))\\b"
 			}]
 		},
 		"numbers": {

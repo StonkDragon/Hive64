@@ -1,62 +1,65 @@
 _start:
-    ldr r0 0x1
-    ldr r1 syscall.branchtable
+    movz r0, 0x1
+    lea r1, Lsyscall$branchtable
     irq
 
     bl main
-    halt
+    ldr r1, r0
+    movz r0, 0x2
+    irq
 
-syscall.branchtable:
-    .offset syscall.exit
-    .offset syscall.write
-    .offset syscall.read
-    .offset syscall.open
-    .offset syscall.close
+Lsyscall$branchtable:
+    .offset Lsyscall$exit
+    .offset Lsyscall$write
+    .offset Lsyscall$read
+    .offset Lsyscall$open
+    .offset Lsyscall$close
     .qword 0
     .qword 0
     .qword 0
 
-syscall.exit:
-    ldr r0 r1 ; exit code
-    halt
+Lsyscall$exit:
+    movl r0, 0x2
+    irq
 
-syscall.write: ; r1 = fd, r2 = buf
-    pshx
-    pshy
+Lsyscall$write: ; r1 = fd, r2 = buf
+    psh x
+    psh y
     psh r2
     psh r15
     psh r16
     psh r17
 
-    ldr r15 r2
-    ldr r17 r1
+    ldr r15, r2
+    ldr r17, r1
     
-    syscall.write_loop:
-        mov r16 byte [r15]
-        cmpz r16
-        bz syscall.write_end
-            ldr r0 0x0e
-            ldr r1 r16
-            ldr r2 r17
+    Lsyscall$write_loop:
+        ldr.byte r16, [r15]
+
+        cmp r16, zero
+        b.eq Lsyscall$write_end
+            movz r0, 0x0e
+            ldr r1, r16
+            ldr r2, r17
             irq
 
             inc r15
-        b syscall.write_loop
+        b Lsyscall$write_loop
 
-    syscall.write_end:
+    Lsyscall$write_end:
     pp r17
     pp r16
     pp r15
     pp r2
-    ppy
-    ppx
+    pp y
+    pp x
     ret
 
-syscall.read:
+Lsyscall$read:
     ret
 
-syscall.open:
+Lsyscall$open:
     ret
 
-syscall.close:
+Lsyscall$close:
     ret

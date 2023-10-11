@@ -1,10 +1,10 @@
 main:
-    ldr r0 1 ; syscall 1 (write)
-    ldr r1 1 ; stdout
-    ldr r2 msg ; address of message (must be 0 terminated)
-    svc ; syscall
+    movz r0, 1
+    movz r1, 1
+    lea r2, msg
+    svc
 
-    ldr r0 0 ; syscall 0 (exit)
+    movz r0, 0xFF
     ret
 
 msg: .asciz "Hello, world!\n"

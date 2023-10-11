@@ -19,111 +19,165 @@
 
 #include "new_ops.h"
 
-void** svc_table = NULL;
+#define PC (registers[32].asPointer)
+#define LR (registers[33].asPointer)
+#define SP (registers[34].asPointerPointer)
+#define FR (registers[35].bytes[0])
 
-#define pc (registers[27].asPointer)
-#define lr (registers[28].asPointer)
-#define sp (registers[29].asPointerPointer)
-#define bp (registers[30].asPointerPointer)
-#define flags (registers[31].bytes[0])
+#define CR0 (registers[36].asQWord)
+#define CR1 (registers[37].asQWord)
+#define CR2 (registers[38].asQWord)
+#define CR3 (registers[39].asQWord)
+#define CR4 (registers[40].asQWord)
+#define CR5 (registers[41].asQWord)
+#define CR6 (registers[42].asQWord)
+#define CR7 (registers[43].asQWord)
+#define CR8 (registers[44].asQWord)
+#define CR9 (registers[45].asQWord)
+// svc table
+#define CR10 (registers[46].asQWord)
+// current addressing mode
+#define CR11 (registers[47].asQWord)
 
-#define FLAG_ZERO       0b00000001
-#define FLAG_NEGATIVE   0b00000010
-#define FLAG_GREATER    0b00000100
-#define FLAG_LESS       0b00001000
-#define FLAG_EQUAL      0b00010000
+#define ZERO (registers[48].asQWord)
+#define ONE (registers[49].asQWord)
+
+#define R0 (registers[0].asQWord)
+#define R1 (registers[1].asQWord)
+#define R2 (registers[2].asQWord)
+#define R3 (registers[3].asQWord)
+#define R4 (registers[4].asQWord)
+#define R5 (registers[5].asQWord)
+#define R6 (registers[6].asQWord)
+#define R7 (registers[7].asQWord)
+#define R8 (registers[8].asQWord)
+#define R9 (registers[9].asQWord)
+#define R10 (registers[10].asQWord)
+#define R11 (registers[11].asQWord)
+#define R12 (registers[12].asQWord)
+#define R13 (registers[13].asQWord)
+#define R14 (registers[14].asQWord)
+#define R15 (registers[15].asQWord)
+#define R16 (registers[16].asQWord)
+#define R17 (registers[17].asQWord)
+#define R18 (registers[18].asQWord)
+#define R19 (registers[19].asQWord)
+#define R20 (registers[20].asQWord)
+#define R21 (registers[21].asQWord)
+#define R22 (registers[22].asQWord)
+#define R23 (registers[23].asQWord)
+#define R24 (registers[24].asQWord)
+#define R25 (registers[25].asQWord)
+#define R26 (registers[26].asQWord)
+#define R27 (registers[27].asQWord)
+#define R28 (registers[28].asQWord)
+#define R29 (registers[29].asQWord)
+#define R30 (registers[30].asQWord)
+#define R31 (registers[31].asQWord)
+
+#define FLAG_ZERO           0b0001
+#define ZERO_FLAG_SET       (FR & FLAG_ZERO)
+#define FLAG_NEGATIVE       0b0010
+#define NEGATIVE_FLAG_SET   (FR & FLAG_NEGATIVE)
+#define FLAG_CARRY          0b0100
+#define CARRY_FLAG_SET      (FR & FLAG_CARRY)
 
 static uint8_t kernel[] = {
     0xce, 0xfa, 0xed, 0xfe, 0x01, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
     0x02, 0x00, 0x00, 0x00, 0x52, 0x45, 0x4c, 0x4f, 
     0x43, 0x41, 0x54, 0x45, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x90, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x60, 0x00, 0x00, 0x00, 
+    0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x5c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x2c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xcc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x34, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x3c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xd4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0xdc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 
+    0x01, 0x00, 0x17, 0x00, 0xe4, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x2f, 
+    0x05, 0x00, 0x01, 0x2c, 0x00, 0x00, 0x00, 0x02, 
+    0x32, 0x00, 0x00, 0x05, 0x00, 0x01, 0x00, 0x20, 
+    0x02, 0x00, 0x00, 0x2f, 0x00, 0x00, 0x00, 0x02, 
+    0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x1e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xc8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 
-    0x1e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x5e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x26, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x2e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xc2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x36, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xc4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xc6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x8a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xae, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0xa6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x01, 0x00, 0x17, 0x00, 0xc8, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x02, 0x30, 0x01, 0x00, 
-    0x00, 0x02, 0x90, 0x01, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x01, 0x20, 0x00, 0x22, 0x80, 
+    0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x02, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0x02, 
+    0x00, 0x00, 0x00, 0x1e, 0x01, 0x00, 0x00, 0x1e, 
+    0x02, 0x00, 0x00, 0x1e, 0x0f, 0x00, 0x00, 0x1e, 
+    0x10, 0x00, 0x00, 0x1e, 0x11, 0x00, 0x00, 0x1e, 
+    0x02, 0x0f, 0x00, 0x20, 0x01, 0x11, 0x00, 0x20, 
+    0x01, 0x00, 0x00, 0x48, 0x0f, 0x10, 0x00, 0x21, 
+    0x30, 0x10, 0x00, 0x2d, 0x00, 0x00, 0x00, 0x08, 
+    0x06, 0x00, 0x00, 0x04, 0x0e, 0x00, 0x00, 0x2f, 
+    0x10, 0x01, 0x00, 0x20, 0x11, 0x02, 0x00, 0x20, 
+    0x00, 0x00, 0x00, 0x02, 0x0f, 0x00, 0x00, 0x1c, 
+    0xf5, 0xff, 0x00, 0x04, 0x11, 0x00, 0x00, 0x1f, 
+    0x10, 0x00, 0x00, 0x1f, 0x0f, 0x00, 0x00, 0x1f, 
+    0x02, 0x00, 0x00, 0x1f, 0x01, 0x00, 0x00, 0x1f, 
+    0x00, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x00, 0x01, 
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x49, 
     0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x02, 0x00, 0x21, 0x00, 0x59, 0x01, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x0b, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x5f, 0x73, 0x74, 0x61, 
+    0x72, 0x74, 0x00, 0x00, 0x1c, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x02, 0x20, 0x00, 0x01, 0x01, 0x00, 
-    0x11, 0x10, 0x00, 0x11, 0x10, 0x01, 0x11, 0x10, 
-    0x02, 0x11, 0x10, 0x0f, 0x11, 0x10, 0x10, 0x11, 
-    0x10, 0x11, 0x02, 0x20, 0x0f, 0x02, 0x02, 0x20, 
-    0x11, 0x01, 0x21, 0x50, 0x00, 0x00, 0x10, 0x01, 
-    0x0f, 0x05, 0x10, 0x10, 0x0e, 0x80, 0x05, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x30, 
-    0x0e, 0x00, 0x00, 0x02, 0x20, 0x01, 0x10, 0x02, 
-    0x20, 0x02, 0x11, 0x20, 0x00, 0x1e, 0x10, 0x0f, 
-    0x06, 0x80, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x12, 0x10, 0x11, 0x12, 0x10, 0x10, 
-    0x12, 0x10, 0x0f, 0x12, 0x10, 0x02, 0x12, 0x10, 
-    0x01, 0x12, 0x10, 0x00, 0x10, 0x00, 0x10, 0x00, 
-    0x10, 0x00, 0x10, 0x00, 0x02, 0x00, 0x21, 0x00, 
-    0x30, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x0a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x4c, 0x73, 0x79, 0x73, 
+    0x63, 0x61, 0x6c, 0x6c, 0x24, 0x62, 0x72, 0x61, 
+    0x6e, 0x63, 0x68, 0x74, 0x61, 0x62, 0x6c, 0x65, 
+    0x00, 0x00, 0x5c, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x4c, 0x73, 0x79, 0x73, 0x63, 0x61, 
+    0x6c, 0x6c, 0x24, 0x65, 0x78, 0x69, 0x74, 0x00, 
+    0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x5f, 0x73, 0x74, 0x61, 0x72, 0x74, 0x00, 0x1e, 
+    0x00, 0x4c, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 
+    0x6c, 0x24, 0x77, 0x72, 0x69, 0x74, 0x65, 0x00, 
+    0x00, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 
-    0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x62, 
-    0x72, 0x61, 0x6e, 0x63, 0x68, 0x74, 0x61, 0x62, 
-    0x6c, 0x65, 0x00, 0x5e, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x4c, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 
+    0x6c, 0x24, 0x77, 0x72, 0x69, 0x74, 0x65, 0x5f, 
+    0x6c, 0x6f, 0x6f, 0x70, 0x00, 0x00, 0xb0, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x73, 0x79, 0x73, 0x63, 0x61, 
-    0x6c, 0x6c, 0x2e, 0x65, 0x78, 0x69, 0x74, 0x00, 
-    0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4c, 0x73, 
+    0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x24, 0x77, 
+    0x72, 0x69, 0x74, 0x65, 0x5f, 0x65, 0x6e, 0x64, 
+    0x00, 0x00, 0xcc, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 
-    0x77, 0x72, 0x69, 0x74, 0x65, 0x00, 0x7e, 0x00, 
+    0x00, 0x00, 0x4c, 0x73, 0x79, 0x73, 0x63, 0x61, 
+    0x6c, 0x6c, 0x24, 0x72, 0x65, 0x61, 0x64, 0x00, 
+    0x00, 0xd0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x79, 
-    0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x77, 0x72, 
-    0x69, 0x74, 0x65, 0x5f, 0x6c, 0x6f, 0x6f, 0x70, 
-    0x00, 0xae, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x00, 0x4c, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 
+    0x6c, 0x24, 0x6f, 0x70, 0x65, 0x6e, 0x00, 0x00, 
+    0xd4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 
-    0x2e, 0x77, 0x72, 0x69, 0x74, 0x65, 0x5f, 0x65, 
-    0x6e, 0x64, 0x00, 0xc2, 0x00, 0x00, 0x00, 0x00, 
+    0x4c, 0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 
+    0x24, 0x63, 0x6c, 0x6f, 0x73, 0x65, 0x00, 0x00, 
+    0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x73, 0x79, 0x73, 0x63, 0x61, 
-    0x6c, 0x6c, 0x2e, 0x72, 0x65, 0x61, 0x64, 0x00, 
-    0xc4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    0x6d, 0x61, 0x69, 0x6e, 0x00, 0x00, 0xd8, 0x00, 
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x73, 0x79, 0x73, 0x63, 0x61, 0x6c, 0x6c, 0x2e, 
-    0x6f, 0x70, 0x65, 0x6e, 0x00, 0xc6, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x73, 0x79, 0x73, 
-    0x63, 0x61, 0x6c, 0x6c, 0x2e, 0x63, 0x6c, 0x6f, 
-    0x73, 0x65, 0x00, 0xc8, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 
-    0x00, 0x00, 0x00, 0x6d, 0x61, 0x69, 0x6e, 0x00
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2e, 0x6d, 
+    0x61, 0x69, 0x6e, 0x00, 0x00
 };
+
+#define RESET_ADDRESSING_MODE() CR11 = 4
 
 typedef union {
     struct {
@@ -199,7 +253,7 @@ typedef union {
     __uint128_t imm128; // 16 bytes because that is the maximum extra size of an instruction
 } args_t;
 
-typedef void (*opc_func)(register hive_register_t* const restrict, register const args_t* const restrict args);
+typedef void (*opc_func)(register hive_register_t* const restrict, register const opcode_t args);
 
 #pragma region EXEC
 
@@ -207,669 +261,830 @@ typedef void (*opc_func)(register hive_register_t* const restrict, register cons
 #undef OPC_ENDFUNC
 #undef OPC_FUNC
 
-#define OPC_DEF(_nargs, _opcode)    static void _opcode ## $ ## _nargs(register hive_register_t* const restrict registers, register const args_t* const restrict args)
-#define OPC_UTIL(_name)             static void opc_util_ ## _name(register hive_register_t* const restrict registers, register const args_t* const restrict args)
 #define CAT_(a, b)                  a ## b
 #define CAT(a, b)                   CAT_(a, b)
-#define OPC(_nargs, _opcode)        [_opcode] = _opcode ## $ ## _nargs
-#define OPC_ENDFUNC                 }
+
+#define OPC_DEF(_opcode)            static void execute_ ## _opcode(register hive_register_t* const restrict registers, register const opcode_t args)
+#define OPC(_opcode)                [_opcode] = execute_ ## _opcode
+#define OPC_FUNCS                   const opc_func opcs[] = {
+#define OPC_END                     }
 #define NBYTES_TO_BITMASK(_nbytes)  ((1ULL << (_nbytes * 8)) - 1)
-#define OPC_FUNC(_n)                opc_func opc_ ## _n[1 << 12] = {
 
-OPC_DEF(0, opcode_nop) {}
-OPC_DEF(0, opcode_halt) { exit(registers[0].asInteger); }
-OPC_DEF(0, opcode_pshi) { *(sp++) = pc; }
-OPC_DEF(0, opcode_ret) {
-    pc = (void*) lr;
-    lr = *(--sp);
+OPC_DEF(opcode_nop) {
+    (void) args;
+    (void) registers;
 }
 
-OPC_UTIL(irq_svc_set) {
-    svc_table = registers[1].asPointer;
-}
-OPC_UTIL(malloc) {
-    registers[0].asPointer = malloc(registers[1].asInteger);
-}
-OPC_UTIL(print_char) {
-    char c[2] = { registers[1].asInteger, '\0' };
-    write(registers[2].asInteger, c, 1);
+OPC_DEF(opcode_ret) {
+    if (LR) {
+        PC = LR;
+        LR = *(--SP);
+        return;
+    }
+    exit(R0);
 }
 
-static void(*irq_table[256])(hive_register_t* const restrict, const args_t* const restrict) = {
-    [0x01] = opc_util_irq_svc_set,
-    [0x03] = opc_util_malloc,
-    [0x0e] = opc_util_print_char,
-};
-
-OPC_DEF(0, opcode_irq) {
-    irq_table[registers[0].asInteger](registers, args);
-}
-OPC_DEF(0, opcode_svc) {
-    *(sp++) = lr;
-    lr = pc;
-    pc = (void*) svc_table[registers[0].asInteger];
-}
-
-OPC_DEF(1, opcode_cmpz) {
-    if (registers[args->reg.reg1].asInteger == 0) {
-        flags |= FLAG_ZERO;
-    } else {
-        flags &= ~FLAG_ZERO;
-    }
-}
-OPC_DEF(1, opcode_b) {
-    pc = (void*) registers[args->reg.reg1].asPointer;
-}
-OPC_DEF(1, opcode_bne) {
-    if (!(flags & FLAG_EQUAL)) {
-        pc = (void*) registers[args->reg.reg1].asPointer;
-    }
-}
-OPC_DEF(1, opcode_beq) {
-    if (flags & FLAG_EQUAL) {
-        pc = (void*) registers[args->reg.reg1].asPointer;
-    }
-}
-OPC_DEF(1, opcode_bgt) {
-    if (flags & FLAG_GREATER) {
-        pc = (void*) registers[args->reg.reg1].asPointer;
-    }
-}
-OPC_DEF(1, opcode_blt) {
-    if (flags & FLAG_LESS) {
-        pc = (void*) registers[args->reg.reg1].asPointer;
-    }
-}
-OPC_DEF(1, opcode_bge) {
-    if (flags & (FLAG_GREATER | FLAG_EQUAL)) {
-        pc = (void*) registers[args->reg.reg1].asPointer;
-    }
-}
-OPC_DEF(1, opcode_ble) {
-    if (flags & (FLAG_LESS | FLAG_EQUAL)) {
-        pc = (void*) registers[args->reg.reg1].asPointer;
-    }
-}
-OPC_DEF(1, opcode_bnz) {
-    if (!(flags & FLAG_ZERO)) {
-        pc = (void*) registers[args->reg.reg1].asPointer;
-    }
-}
-OPC_DEF(1, opcode_bz) {
-    if (flags & FLAG_ZERO) {
-        pc = (void*) registers[args->reg.reg1].asPointer;
-    }
-}
-OPC_DEF(1, opcode_bl) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_b$1(registers, args);
-}
-OPC_DEF(1, opcode_blne) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_bne$1(registers, args);
-}
-OPC_DEF(1, opcode_bleq) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_beq$1(registers, args);
-}
-OPC_DEF(1, opcode_blgt) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_bgt$1(registers, args);
-}
-OPC_DEF(1, opcode_bllt) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_blt$1(registers, args);
-}
-OPC_DEF(1, opcode_blge) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_bge$1(registers, args);
-}
-OPC_DEF(1, opcode_blle) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_ble$1(registers, args);
-}
-OPC_DEF(1, opcode_blnz) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_bnz$1(registers, args);
-}
-OPC_DEF(1, opcode_blz) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_bz$1(registers, args);
-}
-OPC_DEF(1, opcode_psh) {
-    *(sp++) = registers[args->reg.reg1].asPointer;
-}
-OPC_DEF(1, opcode_pp) {
-    registers[args->reg.reg1].asPointer = *(--sp);
-}
-OPC_DEF(1, opcode_not) {
-    registers[args->reg.reg1].asInteger = ~registers[args->reg.reg1].asInteger;
-}
-OPC_DEF(1, opcode_inc) {
-    registers[args->reg.reg1].asInteger++;
-}
-OPC_DEF(1, opcode_dec) {
-    registers[args->reg.reg1].asInteger--;
-}
-#define ARITH_X_REG(_op, _what) \
-OPC_DEF(1, opcode_ ## _op) { \
-    registers[0].asInteger _what ## = registers[args->reg.reg1].asInteger; \
-}
-ARITH_X_REG(add, +)
-ARITH_X_REG(sub, -)
-ARITH_X_REG(mul, *)
-ARITH_X_REG(div, /)
-ARITH_X_REG(mod, %)
-ARITH_X_REG(and, &)
-ARITH_X_REG(or, |)
-ARITH_X_REG(xor, ^)
-ARITH_X_REG(shl, <<)
-ARITH_X_REG(shr, >>)
-
-OPC_DEF(2, opcode_ldr) {
-    registers[args->reg_reg.reg1].asInteger = registers[args->reg_reg.reg2].asInteger;
-}
-OPC_DEF(2, opcode_str) {
-    *(uint64_t*) (registers[args->reg_reg.reg1].asPointer) = registers[args->reg_reg.reg2].asInteger;
-}
-OPC_DEF(2, opcode_cmp) {
-    uint64_t a = registers[args->reg_reg.reg1].asInteger;
-    uint64_t b = registers[args->reg_reg.reg2].asInteger;
-    int64_t as = (int64_t) a;
-    int64_t bs = (int64_t) b;
-    flags = 0;
-    if (a == b) {
-        flags |= FLAG_EQUAL;
-    } else if (as > bs) {
-        flags |= FLAG_GREATER;
-    } else if (as < bs) {
-        flags |= FLAG_LESS;
-    }
-    if (a == 0) {
-        flags |= FLAG_ZERO;
-    }
-    if (as < 0) {
-        flags |= FLAG_NEGATIVE;
-    }
-}
-OPC_DEF(2, opcode_psh) {
-    *(sp++) = (void*) ((uint64_t) (*(uint16_t*) pc));
-}
-#define ARITH_REG_REG(_op, _what) \
-OPC_DEF(2, opcode_ ## _op) { \
-    registers[args->reg.reg1].asInteger _what ## = registers[args->reg_reg.reg2].asInteger; \
-}
-ARITH_REG_REG(add, +)
-ARITH_REG_REG(sub, -)
-ARITH_REG_REG(mul, *)
-ARITH_REG_REG(div, /)
-ARITH_REG_REG(mod, %)
-ARITH_REG_REG(and, &)
-ARITH_REG_REG(or, |)
-ARITH_REG_REG(xor, ^)
-ARITH_REG_REG(shl, <<)
-ARITH_REG_REG(shr, >>)
-
-OPC_DEF(3, opcode_ldr) {
-    registers[args->reg_imm16.reg1].asInteger = args->reg_imm16.imm;
-}
-OPC_DEF(3, opcode_str) {
-    *(uint64_t*) (registers[args->reg_imm16.reg1].asPointer) = args->reg_imm16.imm;
-}
-OPC_DEF(3, opcode_cmp) {
-    uint64_t a = registers[args->reg_imm16.reg1].asInteger;
-    uint64_t b = args->reg_imm16.imm;
-    int64_t as = (int64_t) a;
-    int64_t bs = (int64_t) b;
-    flags = 0;
-    if (a == b) {
-        flags |= FLAG_EQUAL;
-    } else if (as > bs) {
-        flags |= FLAG_GREATER;
-    } else if (as < bs) {
-        flags |= FLAG_LESS;
-    }
-    if (a == 0) {
-        flags |= FLAG_ZERO;
-    }
-    if (as < 0) {
-        flags |= FLAG_NEGATIVE;
+OPC_DEF(opcode_irq) {
+    switch (R0) {
+        case 0x1: {
+            CR10 = R1;
+            break;
+        }
+        case 0x2: {
+            exit(R1);
+        }
+        case 0xe: {
+            uint8_t s[2] = {registers[1].asByte, 0};
+            write(R2, (char*) s, 1);
+            break;
+        }
     }
 }
 
-#define ARITH_REG_IMM(_op, _what) \
-OPC_DEF(3, opcode_ ## _op) { \
-    registers[args->reg_imm16.reg1].asInteger _what ## = args->reg_imm16.imm; \
+OPC_DEF(opcode_svc) {
+    *(SP++) = LR;
+    LR = PC;
+    PC = ((void**) CR10)[R0];
 }
 
-ARITH_REG_IMM(add, +)
-ARITH_REG_IMM(sub, -)
-ARITH_REG_IMM(mul, *)
-ARITH_REG_IMM(div, /)
-ARITH_REG_IMM(mod, %)
-ARITH_REG_IMM(and, &)
-ARITH_REG_IMM(or, |)
-ARITH_REG_IMM(xor, ^)
-ARITH_REG_IMM(shl, <<)
-ARITH_REG_IMM(shr, >>)
-
-
-OPC_DEF(4, opcode_ldr) {
-    registers[args->reg_reg_offset.reg1].asInteger = *(uint64_t*) (registers[args->reg_reg_offset.reg2].asPointer + args->reg_reg_offset.offset);
-}
-OPC_DEF(4, opcode_mov) {
-    uint8_t* srcPtr = (uint8_t*) registers[args->mov_reg_n_reg_offset_reg.reg2].asPointer + registers[args->mov_reg_n_reg_offset_reg.reg2_offset_reg].asSignedInteger;
-    for (int i = 0; i < args->mov_reg_n_reg_offset_reg.nbytes; i++) {
-        registers[args->mov_reg_n_reg_offset_reg.reg1].asInteger |= (uint64_t) (srcPtr[i] << (i * 8));
+static inline void check_branch_target(register hive_register_t* const restrict registers) {
+    opcode_t opcode = *(opcode_t*) PC;
+    if (opcode.opcode == opcode_dot_symbol) {
+        PC += sizeof(opcode_t);
+        uint64_t address = *(uint64_t*) PC;
+        PC = address;
     }
 }
 
-OPC_DEF(5, opcode_mov) {
-    uint64_t* ptr = registers[args->mov_reg_n_reg_offset.reg2].asPointer + args->mov_reg_n_reg_offset.offset;
-    registers[args->mov_reg_n_reg_offset.reg1].asInteger = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset.nbytes);
-}
-#define ARITH_REG_MEM(_op, _what) \
-OPC_DEF(5, opcode_ ## _op) { \
-    uint64_t* ptr = registers[args->mov_reg_n_reg_offset.reg2].asPointer + args->mov_reg_n_reg_offset.offset; \
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset.nbytes); \
-    registers[args->mov_reg_n_reg_offset.reg1].asInteger _what ## = value; \
+OPC_DEF(opcode_b_addr) {
+    int offset = args.args.i16 * sizeof(opcode_t);
+
+    PC += offset;
+    check_branch_target(registers);
 }
 
-ARITH_REG_MEM(add, +)
-ARITH_REG_MEM(sub, -)
-ARITH_REG_MEM(mul, *)
-ARITH_REG_MEM(div, /)
-ARITH_REG_MEM(mod, %)
-ARITH_REG_MEM(and, &)
-ARITH_REG_MEM(or, |)
-ARITH_REG_MEM(xor, ^)
-ARITH_REG_MEM(shl, <<)
-ARITH_REG_MEM(shr, >>)
+OPC_DEF(opcode_bl_addr) {
+    int offset = args.args.i16 * sizeof(opcode_t);
 
-#undef ARITH_REG_MEM
-
-OPC_DEF(8, opcode_psh) {
-    *(sp++) = (void*) args->imm64.imm;
-}
-OPC_DEF(8, opcode_mov) {
-    uint64_t* ptr = (uint64_t*) (args->mov_reg_n_reg_offset_reg_offset_offset.addr + args->mov_reg_n_reg_offset_reg_offset_offset.offset_offset);
-    registers[args->mov_reg_n_reg_offset_reg_offset_offset.reg1].asInteger = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset_reg_offset_offset.nbytes);
+    *(SP++) = LR;
+    LR = PC;
+    PC += offset;
+    check_branch_target(registers);
 }
 
-OPC_DEF(8, opcode_b) {
-    pc = (void*) args->offset.addr;
+OPC_DEF(opcode_br_reg) {
+    PC = registers[args.args.r].asPointer;
+    check_branch_target(registers);
 }
-OPC_DEF(8, opcode_bne) {
-    if (!(flags & FLAG_EQUAL)) {
-        pc = (void*) args->offset.addr;
+
+OPC_DEF(opcode_blr_reg) {
+    *(SP++) = LR;
+    LR = PC;
+    PC = registers[args.args.r].asPointer;
+    check_branch_target(registers);
+}
+
+OPC_DEF(opcode_dot_eq) {
+    if (!(ZERO_FLAG_SET)) {
+        PC += sizeof(opcode_t) * (args.args.u8 + 1);
     }
 }
-OPC_DEF(8, opcode_beq) {
-    if (flags & FLAG_EQUAL) {
-        pc = (void*) args->offset.addr;
+
+OPC_DEF(opcode_dot_ne) {
+    if (ZERO_FLAG_SET) {
+        PC += sizeof(opcode_t) * (args.args.u8 + 1);
     }
 }
-OPC_DEF(8, opcode_bgt) {
-    if (flags & FLAG_GREATER) {
-        pc = (void*) args->offset.addr;
+
+OPC_DEF(opcode_dot_lt) {
+    if (!(NEGATIVE_FLAG_SET)) {
+        PC += sizeof(opcode_t) * (args.args.u8 + 1);
     }
 }
-OPC_DEF(8, opcode_blt) {
-    if (flags & FLAG_LESS) {
-        pc = (void*) args->offset.addr;
+
+OPC_DEF(opcode_dot_gt) {
+    if (NEGATIVE_FLAG_SET || ZERO_FLAG_SET) {
+        PC += sizeof(opcode_t) * (args.args.u8 + 1);
     }
 }
-OPC_DEF(8, opcode_bge) {
-    if (flags & (FLAG_GREATER | FLAG_EQUAL)) {
-        pc = (void*) args->offset.addr;
+
+OPC_DEF(opcode_dot_le) {
+    if (!(NEGATIVE_FLAG_SET) && !(ZERO_FLAG_SET)) {
+        PC += sizeof(opcode_t) * (args.args.u8 + 1);
     }
 }
-OPC_DEF(8, opcode_ble) {
-    if (flags & (FLAG_LESS | FLAG_EQUAL)) {
-        pc = (void*) args->offset.addr;
+
+OPC_DEF(opcode_dot_ge) {
+    if (ZERO_FLAG_SET || NEGATIVE_FLAG_SET) {
+        PC += sizeof(opcode_t) * (args.args.u8 + 1);
     }
 }
-OPC_DEF(8, opcode_bnz) {
-    if (!(flags & FLAG_ZERO)) {
-        pc = (void*) args->offset.addr;
+
+OPC_DEF(opcode_dot_cs) {
+    if (!(CARRY_FLAG_SET)) {
+        PC += sizeof(opcode_t) * (args.args.u8 + 1);
     }
 }
-OPC_DEF(8, opcode_bz) {
-    if (flags & FLAG_ZERO) {
-        pc = (void*) args->offset.addr;
+
+OPC_DEF(opcode_dot_cc) {
+    if (CARRY_FLAG_SET) {
+        PC += sizeof(opcode_t) * (args.args.u8 + 1);
     }
 }
-OPC_DEF(8, opcode_bl) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_b$8(registers, args);
-}
-OPC_DEF(8, opcode_blne) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_bne$8(registers, args);
-}
-OPC_DEF(8, opcode_bleq) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_beq$8(registers, args);
-}
-OPC_DEF(8, opcode_blgt) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_bgt$8(registers, args);
-}
-OPC_DEF(8, opcode_bllt) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_blt$8(registers, args);
-}
-OPC_DEF(8, opcode_blge) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_bge$8(registers, args);
-}
-OPC_DEF(8, opcode_blle) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_ble$8(registers, args);
-}
-OPC_DEF(8, opcode_blnz) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_bnz$8(registers, args);
-}
-OPC_DEF(8, opcode_blz) {
-    *(sp++) = lr;
-    lr = pc;
-    opcode_bz$8(registers, args);
-}
-OPC_DEF(8, opcode_pp) {
-    *((uint64_t*) args->offset.addr) = *(uint64_t*) (--sp);
-}
 
-OPC_DEF(9, opcode_ldr) {
-    uint64_t ptr = args->reg_imm64.imm;
-    uint8_t reg = args->reg_imm64.reg1;
-    registers[reg].asInteger = ptr;
-}
-OPC_DEF(9, opcode_str) {
-    *(uint64_t*) (registers[args->reg_imm64.reg1].asPointer) = args->reg_imm64.imm;
-}
-OPC_DEF(9, opcode_cmp) {
-    uint64_t a = registers[args->reg_imm64.reg1].asInteger;
-    uint64_t b = args->reg_imm64.imm;
-    int64_t as = (int64_t) a;
-    int64_t bs = (int64_t) b;
-    flags = 0;
-    if (a == b) {
-        flags |= FLAG_EQUAL;
-    } else if (as > bs) {
-        flags |= FLAG_GREATER;
-    } else if (as < bs) {
-        flags |= FLAG_LESS;
+OPC_DEF(opcode_ldr_reg_reg) {
+    uint8_t dest = args.args.rr.reg1;
+    uint8_t src = args.args.rr.reg2;
+
+    switch (CR11) {
+        case 1: registers[dest].asByte = registers[src].asByte; break;
+        case 2: registers[dest].asWord = registers[src].asWord; break;
+        case 3: registers[dest].asDWord = registers[src].asDWord; break;
+        default: registers[dest].asQWord = registers[src].asQWord; break;
     }
-    if (a == 0) {
-        flags |= FLAG_ZERO;
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_ldr_reg_addr) {
+    uint8_t dest = args.args.rr.reg1;
+    uint8_t src = args.args.rr.reg2;
+
+    switch (CR11) {
+        case 1: registers[dest].asByte = *(uint8_t*) registers[src].asPointer; break;
+        case 2: registers[dest].asWord = *(uint16_t*) registers[src].asPointer; break;
+        case 3: registers[dest].asDWord = *(uint32_t*) registers[src].asPointer; break;
+        default: registers[dest].asQWord = *(uint64_t*) registers[src].asPointer; break;
     }
-    if (as < 0) {
-        flags |= FLAG_NEGATIVE;
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_ldr_reg_addr_reg) {
+    uint8_t dest = args.args.rrr.reg1;
+    uint8_t src = args.args.rrr.reg2;
+    uint8_t offset_reg = args.args.rrr.reg3;
+
+    switch (CR11) {
+        case 1: registers[dest].asByte = *(uint8_t*) (registers[src].asPointer + registers[offset_reg].asSQWord); break;
+        case 2: registers[dest].asWord = *(uint16_t*) (registers[src].asPointer + registers[offset_reg].asSQWord); break;
+        case 3: registers[dest].asDWord = *(uint32_t*) (registers[src].asPointer + registers[offset_reg].asSQWord); break;
+        default: registers[dest].asQWord = *(uint64_t*) (registers[src].asPointer + registers[offset_reg].asSQWord); break;
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_ldr_reg_addr_imm) {
+    uint8_t dest = args.args.rri.reg1;
+    uint8_t src = args.args.rri.reg2;
+    int8_t offset_imm = args.args.rri.imm;
+
+    switch (CR11) {
+        case 1: registers[dest].asByte = *(uint8_t*) (registers[src].asPointer + offset_imm); break;
+        case 2: registers[dest].asWord = *(uint16_t*) (registers[src].asPointer + offset_imm); break;
+        case 3: registers[dest].asDWord = *(uint32_t*) (registers[src].asPointer + offset_imm); break;
+        default: registers[dest].asQWord = *(uint64_t*) (registers[src].asPointer + offset_imm); break;
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_str_reg_reg) {
+    uint8_t dest = args.args.rr.reg1;
+    uint8_t src = args.args.rr.reg2;
+
+    switch (CR11) {
+        case 1: *(uint8_t*) registers[dest].asPointer = registers[src].asByte; break;
+        case 2: *(uint16_t*) registers[dest].asPointer = registers[src].asWord; break;
+        case 3: *(uint32_t*) registers[dest].asPointer = registers[src].asDWord; break;
+        default: *(uint64_t*) registers[dest].asPointer = registers[src].asQWord; break;
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_str_reg_addr_reg) {
+    uint8_t dest = args.args.rrr.reg1;
+    uint8_t dest_offset_reg = args.args.rrr.reg2;
+    uint8_t src = args.args.rrr.reg3;
+
+    switch (CR11) {
+        case 1: *(uint8_t*) (registers[dest].asPointer + registers[dest_offset_reg].asSQWord) = registers[src].asByte; break;
+        case 2: *(uint16_t*) (registers[dest].asPointer + registers[dest_offset_reg].asSQWord) = registers[src].asWord; break;
+        case 3: *(uint32_t*) (registers[dest].asPointer + registers[dest_offset_reg].asSQWord) = registers[src].asDWord; break;
+        default: *(uint64_t*) (registers[dest].asPointer + registers[dest_offset_reg].asSQWord) = registers[src].asQWord; break;
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+#define HIGHEST_BIT(_type) (1ULL << (sizeof(_type) * 8 - 1))
+
+#define ARITH(_op, _what) \
+OPC_DEF(opcode_ ## _op ## _reg_reg_reg) { \
+    uint8_t dest = args.args.rrr.reg1; \
+    uint8_t src1 = args.args.rrr.reg2; \
+    uint8_t src2 = args.args.rrr.reg3; \
+    switch (CR11) { \
+        case 1: { \
+            registers[dest].asByte = registers[src1].asByte _what registers[src2].asByte; \
+            if (registers[dest].asByte < registers[src1].asByte) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
+            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
+            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
+            break; \
+        } \
+        case 2: { \
+            registers[dest].asWord = registers[src1].asWord _what registers[src2].asWord; \
+            if (registers[dest].asWord < registers[src1].asWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
+            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
+            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
+            break; \
+        } \
+        case 3: { \
+            registers[dest].asDWord = registers[src1].asDWord _what registers[src2].asDWord; \
+            if (registers[dest].asDWord < registers[src1].asDWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
+            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
+            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
+            break; \
+        } \
+        default: { \
+            registers[dest].asQWord = registers[src1].asQWord _what registers[src2].asQWord; \
+            if (registers[dest].asQWord < registers[src1].asQWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
+            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
+            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
+            break; \
+        } \
+    } \
+    RESET_ADDRESSING_MODE(); \
+}
+
+ARITH(add, +)
+ARITH(sub, -)
+ARITH(mul, *)
+ARITH(div, /)
+ARITH(mod, %)
+ARITH(and, &)
+ARITH(or, |)
+ARITH(xor, ^)
+ARITH(shl, <<)
+ARITH(shr, >>)
+
+#define ROTATE_LEFT(_val, _n, _type)  ((_val << _n) | (_val >> (sizeof(_type) * 8 - _n)))
+#define ROTATE_RIGHT(_val, _n, _type) ((_val >> _n) | (_val << (sizeof(_type) * 8 - _n)))
+
+OPC_DEF(opcode_rol_reg_reg_reg) {
+    uint8_t dest = args.args.rrr.reg1;
+    uint8_t src1 = args.args.rrr.reg2;
+    uint8_t src2 = args.args.rrr.reg3;
+
+    switch (CR11) {
+        case 1: {
+            registers[dest].asByte = ROTATE_LEFT(registers[src1].asByte, registers[src2].asByte, uint8_t);
+            if (registers[dest].asByte < registers[src1].asByte) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 2: {
+            registers[dest].asWord = ROTATE_LEFT(registers[src1].asWord, registers[src2].asWord, uint16_t);
+            if (registers[dest].asWord < registers[src1].asWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 3: {
+            registers[dest].asDWord = ROTATE_LEFT(registers[src1].asDWord, registers[src2].asDWord, uint32_t);
+            if (registers[dest].asDWord < registers[src1].asDWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        default: {
+            registers[dest].asQWord = ROTATE_LEFT(registers[src1].asQWord, registers[src2].asQWord, uint64_t);
+            if (registers[dest].asQWord < registers[src1].asQWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_ror_reg_reg_reg) {
+    uint8_t dest = args.args.rrr.reg1;
+    uint8_t src1 = args.args.rrr.reg2;
+    uint8_t src2 = args.args.rrr.reg3;
+
+    switch (CR11) {
+        case 1: {
+            registers[dest].asByte = ROTATE_RIGHT(registers[src1].asByte, registers[src2].asByte, uint8_t);
+            if (registers[dest].asByte < registers[src1].asByte) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 2: {
+            registers[dest].asWord = ROTATE_RIGHT(registers[src1].asWord, registers[src2].asWord, uint16_t);
+            if (registers[dest].asWord < registers[src1].asWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 3: {
+            registers[dest].asDWord = ROTATE_RIGHT(registers[src1].asDWord, registers[src2].asDWord, uint32_t);
+            if (registers[dest].asDWord < registers[src1].asDWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        default: {
+            registers[dest].asQWord = ROTATE_RIGHT(registers[src1].asQWord, registers[src2].asQWord, uint64_t);
+            if (registers[dest].asQWord < registers[src1].asQWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+#undef ARITH
+
+OPC_DEF(opcode_inc_reg) {
+    uint8_t dest = args.args.r;
+
+    switch (CR11) {
+        case 1: {
+            registers[dest].asByte++;
+            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 2: {
+            registers[dest].asWord++;
+            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 3: {
+            registers[dest].asDWord++;
+            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        default: {
+            registers[dest].asQWord++;
+            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_dec_reg) {
+    uint8_t dest = args.args.r;
+
+    switch (CR11) {
+        case 1: {
+            registers[dest].asByte--;
+            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 2: {
+            registers[dest].asWord--;
+            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 3: {
+            registers[dest].asDWord--;
+            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        default: {
+            registers[dest].asQWord--;
+            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_psh_reg) {
+    uint8_t src = args.args.r;
+
+    switch (CR11) {
+        case 1: *(uint8_t*) (SP++) = registers[src].asByte; break;
+        case 2: *(uint16_t*) (SP++) = registers[src].asWord; break;
+        case 3: *(uint32_t*) (SP++) = registers[src].asDWord; break;
+        default: *(uint64_t*) (SP++) = registers[src].asQWord; break;
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_pp_reg) {
+    uint8_t dest = args.args.r;
+
+    switch (CR11) {
+        case 1: registers[dest].asByte = *(uint8_t*) (--SP); break;
+        case 2: registers[dest].asWord = *(uint16_t*) (--SP); break;
+        case 3: registers[dest].asDWord = *(uint32_t*) (--SP); break;
+        default: registers[dest].asQWord = *(uint64_t*) (--SP); break;
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_movl) {
+    uint8_t dest = args.args.ri.reg1;
+    uint16_t imm = args.args.ri.imm;
+
+    registers[dest].asQWord &= 0xFFFFFFFFFFFF0000;
+    registers[dest].asQWord |= imm;
+}
+
+OPC_DEF(opcode_movh) {
+    uint8_t dest = args.args.ri.reg1;
+    uint32_t imm = args.args.ri.imm;
+
+    registers[dest].asQWord &= 0xFFFFFFFF0000FFFF;
+    registers[dest].asQWord |= imm << 16;
+}
+
+OPC_DEF(opcode_movql) {
+    uint8_t dest = args.args.ri.reg1;
+    uint64_t imm = args.args.ri.imm;
+
+    registers[dest].asQWord &= 0xFFFF0000FFFFFFFF;
+    registers[dest].asQWord |= imm << 32;
+}
+
+OPC_DEF(opcode_movqh) {
+    uint8_t dest = args.args.ri.reg1;
+    uint64_t imm = args.args.ri.imm;
+
+    registers[dest].asQWord &= 0x0000FFFFFFFFFFFF;
+    registers[dest].asQWord |= imm << 48;
+}
+
+OPC_DEF(opcode_lea_reg_addr) {
+    uint8_t dest = args.args.ri.reg1;
+    int16_t offset = args.args.ri.imm * sizeof(opcode_t);
+
+    registers[dest].asPointer = (void*) (PC + offset);
+}
+
+OPC_DEF(opcode_cmp_reg_reg) {
+    uint8_t reg1 = args.args.rr.reg1;
+    uint8_t reg2 = args.args.rr.reg2;
+
+    switch (CR11) {
+        case 1: {
+            if (registers[reg1].asByte < registers[reg2].asByte) {
+                FR |= FLAG_CARRY;
+            } else {
+                FR &= ~FLAG_CARRY;
+            }
+            if (registers[reg1].asByte == 0) {
+                FR |= FLAG_ZERO;
+            } else {
+                FR &= ~FLAG_ZERO;
+            }
+            if (registers[reg1].asByte & 0x8000000000000000) {
+                FR |= FLAG_NEGATIVE;
+            } else {
+                FR &= ~FLAG_NEGATIVE;
+            }
+            break;
+        }
+        case 2: {
+            if (registers[reg1].asWord < registers[reg2].asWord) {
+                FR |= FLAG_CARRY;
+            } else {
+                FR &= ~FLAG_CARRY;
+            }
+            if (registers[reg1].asWord == 0) {
+                FR |= FLAG_ZERO;
+            } else {
+                FR &= ~FLAG_ZERO;
+            }
+            if (registers[reg1].asWord & 0x8000000000000000) {
+                FR |= FLAG_NEGATIVE;
+            } else {
+                FR &= ~FLAG_NEGATIVE;
+            }
+            break;
+        }
+        case 3: {
+            if (registers[reg1].asDWord < registers[reg2].asDWord) {
+                FR |= FLAG_CARRY;
+            } else {
+                FR &= ~FLAG_CARRY;
+            }
+            if (registers[reg1].asDWord == 0) {
+                FR |= FLAG_ZERO;
+            } else {
+                FR &= ~FLAG_ZERO;
+            }
+            if (registers[reg1].asDWord & 0x8000000000000000) {
+                FR |= FLAG_NEGATIVE;
+            } else {
+                FR &= ~FLAG_NEGATIVE;
+            }
+            break;
+        }
+        default: {
+            if (registers[reg1].asQWord < registers[reg2].asQWord) {
+                FR |= FLAG_CARRY;
+            } else {
+                FR &= ~FLAG_CARRY;
+            }
+            if (registers[reg1].asQWord == 0) {
+                FR |= FLAG_ZERO;
+            } else {
+                FR &= ~FLAG_ZERO;
+            }
+            if (registers[reg1].asQWord & 0x8000000000000000) {
+                FR |= FLAG_NEGATIVE;
+            } else {
+                FR &= ~FLAG_NEGATIVE;
+            }
+            break;
+        }
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_xchg_reg_reg) {
+    uint8_t reg1 = args.args.rr.reg1;
+    uint8_t reg2 = args.args.rr.reg2;
+
+    switch (CR11) {
+        case 1: {
+            uint8_t tmp = registers[reg1].asByte;
+            registers[reg1].asByte = registers[reg2].asByte;
+            registers[reg2].asByte = tmp;
+            break;
+        }
+        case 2: {
+            uint16_t tmp = registers[reg1].asWord;
+            registers[reg1].asWord = registers[reg2].asWord;
+            registers[reg2].asWord = tmp;
+            break;
+        }
+        case 3: {
+            uint32_t tmp = registers[reg1].asDWord;
+            registers[reg1].asDWord = registers[reg2].asDWord;
+            registers[reg2].asDWord = tmp;
+            break;
+        }
+        default: {
+            uint64_t tmp = registers[reg1].asQWord;
+            registers[reg1].asQWord = registers[reg2].asQWord;
+            registers[reg2].asQWord = tmp;
+            break;
+        }
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_movz) {
+    uint8_t dest = args.args.ri.reg1;
+    uint64_t imm = args.args.ri.imm;
+
+    registers[dest].asQWord = imm;
+}
+
+
+#define ARITH(_op, _what) \
+OPC_DEF(opcode_ ## _op ## _reg_imm) { \
+    uint8_t dest = args.args.ri.reg1; \
+    int16_t imm = args.args.ri.imm; \
+    switch (CR11) { \
+        case 1: { \
+            registers[dest].asByte _what ## = imm; \
+            if (registers[dest].asByte < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
+            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
+            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
+            break; \
+        } \
+        case 2: { \
+            registers[dest].asWord _what ## = imm; \
+            if (registers[dest].asWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
+            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
+            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
+            break; \
+        } \
+        case 3: { \
+            registers[dest].asDWord _what ## = imm; \
+            if (registers[dest].asDWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
+            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
+            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
+            break; \
+        } \
+        default: { \
+            registers[dest].asQWord _what ## = imm; \
+            if (registers[dest].asQWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
+            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
+            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
+            break; \
+        } \
+    } \
+    RESET_ADDRESSING_MODE(); \
+}
+
+ARITH(add, +)
+ARITH(sub, -)
+ARITH(mul, *)
+ARITH(div, /)
+ARITH(mod, %)
+ARITH(and, &)
+ARITH(or, |)
+ARITH(xor, ^)
+ARITH(shl, <<)
+ARITH(shr, >>)
+
+#define ROTATE_LEFT(_val, _n, _type)  ((_val << _n) | (_val >> (sizeof(_type) * 8 - _n)))
+#define ROTATE_RIGHT(_val, _n, _type) ((_val >> _n) | (_val << (sizeof(_type) * 8 - _n)))
+
+OPC_DEF(opcode_rol_reg_imm) {
+    uint8_t dest = args.args.ri.reg1;
+    int16_t imm = args.args.ri.imm;
+
+    switch (CR11) {
+        case 1: {
+            registers[dest].asByte = ROTATE_LEFT(registers[dest].asByte, imm, uint8_t);
+            if (registers[dest].asByte < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 2: {
+            registers[dest].asWord = ROTATE_LEFT(registers[dest].asWord, imm, uint16_t);
+            if (registers[dest].asWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 3: {
+            registers[dest].asDWord = ROTATE_LEFT(registers[dest].asDWord, imm, uint32_t);
+            if (registers[dest].asDWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        default: {
+            registers[dest].asQWord = ROTATE_LEFT(registers[dest].asQWord, imm, uint64_t);
+            if (registers[dest].asQWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_ror_reg_imm) {
+    uint8_t dest = args.args.ri.reg1;
+    int16_t imm = args.args.ri.imm;
+
+    switch (CR11) {
+        case 1: {
+            registers[dest].asByte = ROTATE_RIGHT(registers[dest].asByte, imm, uint8_t);
+            if (registers[dest].asByte < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 2: {
+            registers[dest].asWord = ROTATE_RIGHT(registers[dest].asWord, imm, uint16_t);
+            if (registers[dest].asWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        case 3: {
+            registers[dest].asDWord = ROTATE_RIGHT(registers[dest].asDWord, imm, uint32_t);
+            if (registers[dest].asDWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+        default: {
+            registers[dest].asQWord = ROTATE_RIGHT(registers[dest].asQWord, imm, uint64_t);
+            if (registers[dest].asQWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
+            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
+            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+            break;
+        }
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_not_reg) {
+    uint8_t reg = args.args.r;
+
+    switch (CR11) {
+        case 1: {
+            registers[reg].asByte = ~registers[reg].asByte;
+            break;
+        }
+        case 2: {
+            registers[reg].asWord = ~registers[reg].asWord;
+            break;
+        }
+        case 3: {
+            registers[reg].asDWord = ~registers[reg].asDWord;
+            break;
+        }
+        default: {
+            registers[reg].asQWord = ~registers[reg].asQWord;
+            break;
+        }
+    }
+    RESET_ADDRESSING_MODE();
+}
+
+OPC_DEF(opcode_dot_addressing_override) {
+    CR11 = args.args.r;
+    if (CR11 < 1 || CR11 > 4) {
+        CR11 = 4;
     }
 }
-#define ARITH_REG_IMM64(_op, _what) \
-OPC_DEF(9, opcode_ ## _op) { \
-    registers[args->reg_imm64.reg1].asInteger _what ## = args->reg_imm64.imm; \
-}
 
-ARITH_REG_IMM64(add, +)
-ARITH_REG_IMM64(sub, -)
-ARITH_REG_IMM64(mul, *)
-ARITH_REG_IMM64(div, /)
-ARITH_REG_IMM64(mod, %)
-ARITH_REG_IMM64(and, &)
-ARITH_REG_IMM64(or, |)
-ARITH_REG_IMM64(xor, ^)
-ARITH_REG_IMM64(shl, <<)
-ARITH_REG_IMM64(shr, >>)
-
-#undef ARITH_REG_IMM64
-
-OPC_DEF(10, opcode_ldr) {
-    registers[args->reg_offset_reg.reg1].asInteger = *((uint64_t*) args->reg_offset_reg.addr + registers[args->reg_offset_reg.reg2].asSignedInteger);
-}
-
-OPC_DEF(11, opcode_ldr) {
-    registers[args->reg_offset_imm.reg1].asInteger = *((uint64_t*) args->reg_offset_imm.addr + args->reg_offset_imm.imm_off);
-}
-OPC_DEF(11, opcode_mov) {
-    uint64_t* ptr = (uint64_t*) args->mov_reg_n_reg_offset_reg_offset.addr + registers[args->mov_reg_n_reg_offset_reg_offset.reg2].asSignedInteger;
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset_reg_offset.nbytes);
-    registers[args->mov_reg_n_reg_offset_reg_offset.reg1].asInteger = value;
-}
-#define ARITH_REG_SYM(_op, _what) \
-OPC_DEF(11, opcode_ ## _op) { \
-    uint64_t* ptr = (uint64_t*) args->mov_reg_n_reg_offset_reg_offset.addr + registers[args->mov_reg_n_reg_offset_reg_offset.reg2].asSignedInteger; \
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset_reg_offset.nbytes); \
-    registers[args->mov_reg_n_reg_offset_reg_offset.reg1].asInteger _what ## = value; \
-}
-
-ARITH_REG_SYM(add, +)
-ARITH_REG_SYM(sub, -)
-ARITH_REG_SYM(mul, *)
-ARITH_REG_SYM(div, /)
-ARITH_REG_SYM(mod, %)
-ARITH_REG_SYM(and, &)
-ARITH_REG_SYM(or, |)
-ARITH_REG_SYM(xor, ^)
-ARITH_REG_SYM(shl, <<)
-ARITH_REG_SYM(shr, >>)
-
-#undef ARITH_REG_SYM
-
-#define ARITH_REG_ADDR_OFF(_op, _what) \
-OPC_DEF(12, opcode_ ## _op) { \
-    uint64_t* ptr = (uint64_t*) (args->mov_reg_n_reg_offset_reg_offset_offset.addr + args->mov_reg_n_reg_offset_reg_offset_offset.offset_offset); \
-    uint64_t value = (*ptr) & NBYTES_TO_BITMASK(args->mov_reg_n_reg_offset_reg_offset_offset.nbytes); \
-    registers[args->mov_reg_n_reg_offset_reg_offset_offset.reg1].asInteger _what ## = value; \
-}
-
-ARITH_REG_ADDR_OFF(add, +)
-ARITH_REG_ADDR_OFF(sub, -)
-ARITH_REG_ADDR_OFF(mul, *)
-ARITH_REG_ADDR_OFF(div, /)
-ARITH_REG_ADDR_OFF(mod, %)
-ARITH_REG_ADDR_OFF(and, &)
-ARITH_REG_ADDR_OFF(or, |)
-ARITH_REG_ADDR_OFF(xor, ^)
-ARITH_REG_ADDR_OFF(shl, <<)
-ARITH_REG_ADDR_OFF(shr, >>)
-
-#undef ARITH_REG_ADDR_OFF
-
-OPC_FUNC(0)
-    OPC(0, opcode_nop),
-    OPC(0, opcode_halt),
-    OPC(0, opcode_pshi),
-    OPC(0, opcode_ret),
-    OPC(0, opcode_irq),
-    OPC(0, opcode_svc),
-OPC_ENDFUNC;
-OPC_FUNC(1)
-    OPC(1, opcode_cmpz),
-    OPC(1, opcode_b),
-    OPC(1, opcode_bne),
-    OPC(1, opcode_beq),
-    OPC(1, opcode_bgt),
-    OPC(1, opcode_blt),
-    OPC(1, opcode_bge),
-    OPC(1, opcode_ble),
-    OPC(1, opcode_bnz),
-    OPC(1, opcode_bz),
-    OPC(1, opcode_psh),
-    OPC(1, opcode_pp),
-    OPC(1, opcode_not),
-    OPC(1, opcode_inc),
-    OPC(1, opcode_dec),
-    OPC(1, opcode_bl),
-    OPC(1, opcode_blne),
-    OPC(1, opcode_bleq),
-    OPC(1, opcode_blgt),
-    OPC(1, opcode_bllt),
-    OPC(1, opcode_blge),
-    OPC(1, opcode_blle),
-    OPC(1, opcode_blnz),
-    OPC(1, opcode_blz),
-OPC_ENDFUNC;
-OPC_FUNC(2)
-    OPC(2, opcode_ldr),
-    OPC(2, opcode_str),
-    OPC(2, opcode_cmp),
-    OPC(2, opcode_psh),
-    OPC(2, opcode_add),
-    OPC(2, opcode_sub),
-    OPC(2, opcode_mul),
-    OPC(2, opcode_div),
-    OPC(2, opcode_mod),
-    OPC(2, opcode_and),
-    OPC(2, opcode_or),
-    OPC(2, opcode_xor),
-    OPC(2, opcode_shl),
-    OPC(2, opcode_shr),
-OPC_ENDFUNC;
-OPC_FUNC(3)
-    OPC(3, opcode_ldr),
-    OPC(3, opcode_str),
-    OPC(3, opcode_cmp),
-    OPC(3, opcode_add),
-    OPC(3, opcode_sub),
-    OPC(3, opcode_mul),
-    OPC(3, opcode_div),
-    OPC(3, opcode_mod),
-    OPC(3, opcode_and),
-    OPC(3, opcode_or),
-    OPC(3, opcode_xor),
-    OPC(3, opcode_shl),
-    OPC(3, opcode_shr),
-OPC_ENDFUNC;
-OPC_FUNC(4)
-    OPC(4, opcode_ldr),
-    OPC(4, opcode_mov),
-OPC_ENDFUNC;
-OPC_FUNC(5)
-    OPC(5, opcode_mov),
-    OPC(5, opcode_add),
-    OPC(5, opcode_sub),
-    OPC(5, opcode_mul),
-    OPC(5, opcode_div),
-    OPC(5, opcode_mod),
-    OPC(5, opcode_and),
-    OPC(5, opcode_or),
-    OPC(5, opcode_xor),
-    OPC(5, opcode_shl),
-    OPC(5, opcode_shr),
-OPC_ENDFUNC;
-OPC_FUNC(6)
-OPC_ENDFUNC;
-OPC_FUNC(7)
-OPC_ENDFUNC;
-OPC_FUNC(8)
-    OPC(8, opcode_psh),
-    OPC(8, opcode_mov),
-    OPC(8, opcode_b),
-    OPC(8, opcode_bne),
-    OPC(8, opcode_beq),
-    OPC(8, opcode_bgt),
-    OPC(8, opcode_blt),
-    OPC(8, opcode_bge),
-    OPC(8, opcode_ble),
-    OPC(8, opcode_bnz),
-    OPC(8, opcode_bz),
-    OPC(8, opcode_pp),
-    OPC(8, opcode_bl),
-    OPC(8, opcode_blne),
-    OPC(8, opcode_bleq),
-    OPC(8, opcode_blgt),
-    OPC(8, opcode_bllt),
-    OPC(8, opcode_blge),
-    OPC(8, opcode_blle),
-    OPC(8, opcode_blnz),
-    OPC(8, opcode_blz),
-OPC_ENDFUNC;
-OPC_FUNC(9)
-    OPC(9, opcode_ldr),
-    OPC(9, opcode_str),
-    OPC(9, opcode_cmp),
-    OPC(9, opcode_add),
-    OPC(9, opcode_sub),
-    OPC(9, opcode_mul),
-    OPC(9, opcode_div),
-    OPC(9, opcode_mod),
-    OPC(9, opcode_and),
-    OPC(9, opcode_or),
-    OPC(9, opcode_xor),
-    OPC(9, opcode_shl),
-    OPC(9, opcode_shr),
-OPC_ENDFUNC;
-OPC_FUNC(10)
-    OPC(10, opcode_ldr),
-OPC_ENDFUNC;
-OPC_FUNC(11)
-    OPC(11, opcode_ldr),
-    OPC(11, opcode_mov),
-    OPC(11, opcode_add),
-    OPC(11, opcode_sub),
-    OPC(11, opcode_mul),
-    OPC(11, opcode_div),
-    OPC(11, opcode_mod),
-    OPC(11, opcode_and),
-    OPC(11, opcode_or),
-    OPC(11, opcode_xor),
-    OPC(11, opcode_shl),
-    OPC(11, opcode_shr),
-OPC_ENDFUNC;
-OPC_FUNC(12)
-    OPC(12, opcode_add),
-    OPC(12, opcode_sub),
-    OPC(12, opcode_mul),
-    OPC(12, opcode_div),
-    OPC(12, opcode_mod),
-    OPC(12, opcode_and),
-    OPC(12, opcode_or),
-    OPC(12, opcode_xor),
-    OPC(12, opcode_shl),
-    OPC(12, opcode_shr),
-OPC_ENDFUNC;
-OPC_FUNC(13)
-OPC_ENDFUNC;
-OPC_FUNC(14)
-OPC_ENDFUNC;
-OPC_FUNC(15)
-OPC_ENDFUNC;
+OPC_FUNCS
+    OPC(opcode_nop),
+    OPC(opcode_ret),
+    OPC(opcode_irq),
+    OPC(opcode_svc),
+    OPC(opcode_b_addr),
+    OPC(opcode_bl_addr),
+    OPC(opcode_br_reg),
+    OPC(opcode_blr_reg),
+    OPC(opcode_dot_eq),
+    OPC(opcode_dot_ne),
+    OPC(opcode_dot_lt),
+    OPC(opcode_dot_gt),
+    OPC(opcode_dot_le),
+    OPC(opcode_dot_ge),
+    OPC(opcode_dot_cs),
+    OPC(opcode_dot_cc),
+    OPC(opcode_add_reg_reg_reg),
+    OPC(opcode_sub_reg_reg_reg),
+    OPC(opcode_mul_reg_reg_reg),
+    OPC(opcode_div_reg_reg_reg),
+    OPC(opcode_mod_reg_reg_reg),
+    OPC(opcode_and_reg_reg_reg),
+    OPC(opcode_or_reg_reg_reg),
+    OPC(opcode_xor_reg_reg_reg),
+    OPC(opcode_shl_reg_reg_reg),
+    OPC(opcode_shr_reg_reg_reg),
+    OPC(opcode_rol_reg_reg_reg),
+    OPC(opcode_ror_reg_reg_reg),
+    OPC(opcode_inc_reg),
+    OPC(opcode_dec_reg),
+    OPC(opcode_psh_reg),
+    OPC(opcode_pp_reg),
+    OPC(opcode_ldr_reg_reg),
+    OPC(opcode_ldr_reg_addr),
+    OPC(opcode_ldr_reg_addr_reg),
+    OPC(opcode_ldr_reg_addr_imm),
+    NULL,
+    OPC(opcode_str_reg_reg),
+    OPC(opcode_str_reg_addr_reg),
+    NULL,
+    OPC(opcode_movl),
+    OPC(opcode_movh),
+    OPC(opcode_movql),
+    OPC(opcode_movqh),
+    OPC(opcode_lea_reg_addr),
+    OPC(opcode_cmp_reg_reg),
+    OPC(opcode_xchg_reg_reg),
+    OPC(opcode_movz),
+    OPC(opcode_add_reg_imm),
+    OPC(opcode_sub_reg_imm),
+    OPC(opcode_mul_reg_imm),
+    OPC(opcode_div_reg_imm),
+    OPC(opcode_mod_reg_imm),
+    OPC(opcode_and_reg_imm),
+    OPC(opcode_or_reg_imm),
+    OPC(opcode_xor_reg_imm),
+    OPC(opcode_shl_reg_imm),
+    OPC(opcode_shr_reg_imm),
+    OPC(opcode_rol_reg_imm),
+    OPC(opcode_ror_reg_imm),
+    OPC(opcode_not_reg),
+    OPC(opcode_dot_addressing_override),
+OPC_END;
 
 #pragma endregion
-
-static opc_func* funcs[16] = {
-    opc_0,  opc_1,  opc_2,  opc_3,
-    opc_4,  opc_5,  opc_6,  opc_7,
-    opc_8,  opc_9,  opc_10, opc_11,
-    opc_12, opc_13, opc_14, opc_15
-};
 
 __attribute__((noreturn))
 void exec(register hive_register_t* const restrict registers) {
     while (1) {
-        register uint16_t opcode = *(uint16_t*) pc;
-        pc += 2 + (opcode >> 12);
-        funcs[opcode >> 12][opcode & 0x0FFF](registers, pc - (opcode >> 12));
+        opcode_t opcode = *(opcode_t*) PC;
+        PC += sizeof(opcode_t);
+        if (ZERO) ZERO = 0;
+        if (ONE != 0xFFFFFFFFFFFFFFFF) ONE = 0xFFFFFFFFFFFFFFFF;
+        opcs[opcode.opcode](registers, opcode);
     }
 }
 
@@ -886,17 +1101,29 @@ int add_symbol(section_t* obj, const char* name) {
     return 0;
 }
 
-uint64_t symbol_offset(section_t* obj, const char* name) {
+int16_t symbol_offset(section_t* obj, const char* name) {
     for (uint32_t i = 0; i < obj->symbols_size; i++) {
-        if (strcmp((char*) obj->symbols[i].name, name) == 0) {
-            return i;
+        if ((strcmp((char*) obj->symbols[i].name, name) == 0 && !obj->symbols[i].is_global) || (obj->symbols[i].name[0] == '.' && strcmp((char*) obj->symbols[i].name + 1, name) == 0)) {
+            if (obj->symbols[i].is_global) {
+                return obj->symbols[i].sym_addr;
+            }
+            return (obj->symbols[i].sym_addr - obj->size) / sizeof(opcode_t);
         }
     }
 
-    add_symbol(obj, (char*) name);
-    obj->symbols[obj->symbols_size - 1].sym_addr |= 0x8000000000000000;
+    char s[strlen(name) + 2];
+    s[0] = '.';
+    strcpy(s + 1, name);
 
-    return obj->symbols_size - 1;
+    add_symbol(obj, name);
+    obj->symbols[obj->symbols_size - 1].is_global = 1;
+    obj->symbols[obj->symbols_size - 1].sym_addr = 0x8000000000000000 | (obj->symbols_size - 1);
+
+    add_symbol(obj, strdup(s));
+    add_instruction(obj, op_dot_symbol());
+    add_symbol_offset(obj, name);
+    
+    return (obj->symbols[obj->symbols_size - 1].sym_addr - obj->size) / sizeof(opcode_t);
 }
 
 section_t** run_compile(const char* file_name);
@@ -968,7 +1195,7 @@ void relocate(object_file_t* objects, uint64_t count) {
                 relocation_info_t reloc = *(relocation_info_t*) (lc->data + i);
                 uint64_t* ptr = (uint64_t*) (code_sect->data + reloc.offset);
                 uint64_t symIndex = *ptr;
-                *ptr = (uint64_t) symbols[symIndex].sym_addr;
+                *ptr = (uint64_t) symbols[symIndex & 0x7FFFFFFFFFFFFFFF].sym_addr;
             }
             commands++;
         }
@@ -1085,14 +1312,17 @@ int main(int argc, char **argv) {
 
         relocate(objects, sizeof(objects) / sizeof(object_file_t));
         
-        hive_register_t registers[32];
-        pc = (void*) find_symbol("_start", objects, sizeof(objects) / sizeof(object_file_t));
+        hive_register_t registers[64] = {0}; // r0 - r31, LR, SP, PC, FR, cr0 - cr11, zero, one
+        PC = (void*) find_symbol("_start", objects, sizeof(objects) / sizeof(object_file_t));
+        ZERO = 0;
+        ONE = 0xFFFFFFFFFFFFFFFF;
+        CR11 = 4;
 
-        if (pc) {
+        if (PC) {
             char stack[1024][1024];
-            bp = sp = (void**) stack;
+            SP = (void**) stack;
             exec(registers);
-            return registers[0].asInteger;
+            return R0;
         }
         
         fprintf(stderr, "Could not find _start symbol\n");

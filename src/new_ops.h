@@ -6,6 +6,9 @@
  * b: arg2 type
  * c: arg1
  * d: arg2
+ * 
+ * Pseudocode:
+ * 
 */
 #pragma once
 
@@ -32,33 +35,28 @@ struct bytes {
 };
 
 typedef struct {
-    uint8_t         nbytes:4;
-    uint16_t        opcode:12;
-} opcode_t;
-
-#define OPC(_nbytes, _opcode) ((opcode_t) { .nbytes = _nbytes, .opcode = _opcode })
-
-typedef struct {
     enum {
         arg_none,       // no argument
         arg_reg,        // register
+        arg_imm8,       // immediate 8 bit
         arg_imm16,      // immediate 16 bit
-        arg_imm64,      // 64 bit immediate
+        arg_imm64,      // immediate 64 bit
         arg_sym         // symbol
     }               type;
     union {
         uint8_t     reg;
+        uint8_t     imm8;
         uint16_t    imm16;
         uint64_t    imm64;
         const char* sym;
     };
 } instr_arg;
 
-#define ARG_8BIT(_reg) ((instr_arg) { .type = arg_reg, .reg = _reg })
+#define ARG_8BIT(_reg) ((instr_arg) { .type = arg_imm8, .reg = _reg })
 #define ARG_16BIT(_imm) ((instr_arg) { .type = arg_imm16, .imm16 = _imm })
 #define ARG_64BIT(_imm) ((instr_arg) { .type = arg_imm64, .imm64 = _imm })
 #define ARG_IMM64(_imm) ARG_64BIT(_imm)
-#define ARG_64SYM(_sym) ((instr_arg) { .type = arg_sym, .sym = _sym })
+#define ARG_SYM(_sym) ((instr_arg) { .type = arg_sym, .sym = _sym })
 
 static void* align_alloc(size_t alignment, size_t size) {
     // pad the size to a multiple of the alignment
@@ -73,10 +71,44 @@ static void* align_alloc(size_t alignment, size_t size) {
     return ptr;
 }
 
+#define PACKED __attribute__((packed))
+
+typedef struct section section_t;
+
 typedef struct instruction {
-    opcode_t        opcode;
-    instr_arg       args[16];
+    uint8_t         opcode;
+    instr_arg       args[4];
+    uint32_t        (*encode)(section_t* sect, struct instruction instr);
 } instruction_t;
+
+typedef struct opcode {
+    union {
+        struct {
+            uint8_t     reg3 PACKED;
+            uint8_t     reg2 PACKED;
+            uint8_t     reg1 PACKED;
+        }           rrr PACKED;
+        struct {
+            uint8_t     imm PACKED;
+            uint8_t     reg2 PACKED;
+            uint8_t     reg1 PACKED;
+        }           rri PACKED;
+        struct {
+            int16_t     imm PACKED;
+            uint8_t     reg1 PACKED;
+        }           ri PACKED;
+        int16_t     i16 PACKED;
+        struct {
+            uint8_t     reg2 PACKED;
+            uint8_t     reg1 PACKED;
+        }           rr PACKED;
+        uint8_t     r PACKED;
+        uint8_t     u8 PACKED;
+
+        uint32_t    args_raw: 24 PACKED;
+    }               args PACKED;
+    uint8_t         opcode PACKED;
+} opcode_t;
 
 typedef struct {
     enum {
@@ -108,15 +140,14 @@ typedef struct relocation_info {
 
 #define SYMBOL_NAME_LEN_MAX 64
 
-#define PACKED __attribute__((packed))
-
 typedef struct symbol_t {
     uint64_t        sym_addr PACKED;
     uint64_t        section PACKED;
     char*           name PACKED;
+    uint8_t         is_global PACKED;
 } symbol_t;
 
-typedef struct section {
+struct section {
     uint16_t        type;
     uint16_t        sect_flags;
     uint64_t        size;
@@ -135,7 +166,10 @@ typedef struct section {
 
     uint16_t        symbols_size;
     symbol_t*       symbols;
-} section_t;
+
+    uint16_t        globals_size;
+    char**          globals;
+};
 
 typedef struct load_command {
     char            cmd[16];
@@ -241,11 +275,14 @@ static inline object_file_t read_translation_unit_bytes(uint8_t* data, uint64_t 
     uint64_t ptr = sizeof(uint64_t);
     for (uint64_t j = 0; j < symbols_count; j++) {
         symbol_t* sym = (symbol_t*) (symtab[0]->data + ptr);
+
         symbols[j].sym_addr = sym->sym_addr;
         symbols[j].section = sym->section;
+
         char* name = (char*) sym + hive_offsetof(symbol_t, name);
         symbols[j].name = malloc(strlen(name) + 1);
         strcpy(symbols[j].name, name);
+        
         ptr += (sizeof(symbol_t) - sizeof(char*)) + strlen(name) + 1;
     }
 
@@ -333,8 +370,14 @@ static inline void write_translation_unit(object_file_t* obj, FILE* fp) {
 }
 
 typedef union hive_register_t {
-    uint64_t    asInteger;
-    int64_t     asSignedInteger;
+    uint64_t    asQWord;
+    uint32_t    asDWord;
+    uint16_t    asWord;
+    uint8_t     asByte;
+    int64_t     asSQWord;
+    int32_t     asSDWord;
+    int16_t     asSWord;
+    int8_t      asSByte;
     void*       asPointer;
     void**      asPointerPointer;
     uint16_t*   asUint16Ptr;
@@ -342,16 +385,13 @@ typedef union hive_register_t {
     uint8_t     bytes[8];
 } hive_register_t;
 
-uint64_t symbol_offset(section_t* obj, const char *name);
+int16_t symbol_offset(section_t* obj, const char *name);
 int add_symbol(section_t* obj, const char* name);
 
 #define CODE(name) add_symbol(obj, name)
 #define DATA(name) add_symbol(obj, name)
 #define ASCII(str) add_bytes(obj, str, strlen(str))
 #define ASCIZ(str) add_bytes(obj, str, strlen(str) + 1)
-
-#define opcode_nbytes_mask  0b1111000000000000
-#define opcode_nbytes_shift 12
 
 #define RESIZE_CONTENTS() if (obj->contents_size++ == obj->contents_capacity) { obj->contents_capacity = obj->contents_capacity ? obj->contents_capacity * 2 : 16; obj->contents = realloc(obj->contents, obj->contents_capacity * sizeof(file_insert_t)); }
 #define RESIZE_SYMBOL_RELOCS() if (obj->symbol_relocs_size++ == obj->symbol_relocs_capacity) { obj->symbol_relocs_capacity = obj->symbol_relocs_capacity ? obj->symbol_relocs_capacity * 2 : 16; obj->symbol_relocs = realloc(obj->symbol_relocs, obj->symbol_relocs_capacity * sizeof(uint64_t)); }
@@ -431,30 +471,7 @@ static inline void add_instruction(section_t* obj, struct instruction instr) {
     RESIZE_CONTENTS();
     obj->contents[obj->contents_size - 1].type = file_insert_type_instruction;
     obj->contents[obj->contents_size - 1].instruction = instr;
-    obj->comp_size += 2;
-    for (uint8_t i = 0; i < 4; i++) {
-        switch (instr.args[i].type)
-        {
-        case arg_none:
-            break;
-        case arg_reg:
-            obj->comp_size += 1;
-            break;
-        case arg_imm16:
-            obj->comp_size += 2;
-            break;
-        case arg_sym:
-            symbol_reloc(obj);
-            obj->comp_size += 8;
-            break;
-        case arg_imm64:
-            obj->comp_size += 8;
-            break;
-        default:
-            printf("Unknown instruction argument type %d in instruction %01x %03x\n", instr.args[i].type, instr.opcode.nbytes, instr.opcode.opcode);
-            break;
-        }
-    }
+    obj->comp_size += 4;
 }
 
 static inline void add_bytes(section_t* obj, char* data, size_t count) {
@@ -469,6 +486,20 @@ static inline void add_bytes(section_t* obj, char* data, size_t count) {
 static inline void compile_bytes(section_t* obj, struct bytes bytes);
 static inline void compile_instruction(section_t* obj, struct instruction instr);
 
+static uint64_t symbol_index(section_t* obj, char* name) {
+    for (uint64_t i = 0; i < obj->symbols_size; i++) {
+        if (strcmp(obj->symbols[i].name, name) == 0) {
+            return i;
+        }
+    }
+
+    add_symbol(obj, (char*) name);
+    obj->symbols[obj->symbols_size - 1].sym_addr = 0x8000000000000000 | (obj->symbols_size - 1);
+    obj->symbols[obj->symbols_size - 1].is_global = 1;
+
+    return obj->symbols_size - 1;
+}
+
 static inline void compile_bytes_or_instr(section_t* obj, file_insert_t insert) {
     switch (insert.type)
     {
@@ -479,7 +510,7 @@ static inline void compile_bytes_or_instr(section_t* obj, file_insert_t insert) 
         compile_instruction(obj, insert.instruction);
         break;
     case file_insert_type_symbol:
-        compile_imm_qword(obj, symbol_offset(obj, insert.symbol));
+        compile_imm_qword(obj, symbol_index(obj, insert.symbol));
         break;
     }
 }
@@ -499,225 +530,656 @@ static inline void compile_bytes(section_t* obj, struct bytes bytes) {
 }
 
 static inline void compile_instruction(section_t* obj, struct instruction instr) {
-    uint16_t op = instr.opcode.opcode;
-    op |= instr.opcode.nbytes << opcode_nbytes_shift;
-    compile_imm_word(obj, op);
-    for (uint8_t i = 0; i < 4; i++) {
-        switch (instr.args[i].type)
-        {
-        case arg_none:
-            break;
-        case arg_reg:
-            compile_imm_byte(obj, instr.args[i].reg);
-            break;
-        case arg_imm16:
-            compile_imm_word(obj, instr.args[i].imm16);
-            break;
-        case arg_sym:
-            // symbol_reloc(obj);
-            compile_imm_qword(obj, symbol_offset(obj, instr.args[i].sym));
-            break;
-        case arg_imm64:
-            compile_imm_qword(obj, instr.args[i].imm64);
-            break;
-        default:
-            printf("Unknown instruction argument type %d in instruction %01x %03x\n", instr.args[i].type, instr.opcode.nbytes, instr.opcode.opcode);
-            break;
-        }
+    obj->size += 4;
+    if (instr.encode == NULL) {
+        printf("Instruction %02x has no encoder\n", instr.opcode);
+        exit(1);
     }
+    uint32_t op = instr.encode(obj, instr);
+    obj->size -= 4;
+
+    compile_imm_dword(obj, op);
 }
 
-#define opcode_nop              0b000000000000
-#define opcode_halt             0b000000000001
-#define opcode_ldr              0b000000000010
-#define opcode_str              0b000000000011
-#define opcode_cmp              0b000000000100
-#define opcode_cmpz             0b000000000101
-#define opcode_b                0b000000000110
-#define opcode_bne              0b000000000111
-#define opcode_beq              0b000000001000
-#define opcode_bgt              0b000000001001
-#define opcode_blt              0b000000001010
-#define opcode_bge              0b000000001011
-#define opcode_ble              0b000000001100
-#define opcode_bnz              0b000000001101
-#define opcode_bz               0b000000001110
-#define opcode_pshi             0b000000001111
-#define opcode_ret              0b000000010000
-#define opcode_psh              0b000000010001
-#define opcode_pp               0b000000010010
-#define opcode_add              0b000000010011
-#define opcode_sub              0b000000010100
-#define opcode_mul              0b000000010101
-#define opcode_div              0b000000010110
-#define opcode_mod              0b000000010111
-#define opcode_and              0b000000011000
-#define opcode_or               0b000000011001
-#define opcode_xor              0b000000011010
-#define opcode_shl              0b000000011011
-#define opcode_shr              0b000000011100
-#define opcode_not              0b000000011101
-#define opcode_inc              0b000000011110
-#define opcode_dec              0b000000011111
-#define opcode_irq              0b000000100000
-#define opcode_mov              0b000000100001
-#define opcode_bl               0b000000100010
-#define opcode_blne             0b000000100011
-#define opcode_bleq             0b000000100100
-#define opcode_blgt             0b000000100101
-#define opcode_bllt             0b000000100110
-#define opcode_blge             0b000000100111
-#define opcode_blle             0b000000101000
-#define opcode_blnz             0b000000101001
-#define opcode_blz              0b000000101010
-#define opcode_svc              0b000000101011
+/** nop
+ * No operation
+ * 
+ * Pseudocode:
+ * 
+*/
+#define opcode_nop                                      0x00
+#define op_nop(...) (instruction_t) { .opcode = opcode_nop, .encode = encode_opcode_nop, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_nop(section_t* sect, struct instruction instr);
 
-//      opcode                      nbytes                 // mnemonic                                                          // bytecode
-#define op_nop                  OPC(0, opcode_nop)         // nop                                                               // 0x000
-#define op_halt                 OPC(0, opcode_halt)        // hlt                                                               // 0x001
-#define op_pshi                 OPC(0, opcode_pshi)        // pshi                                                              // 0x00F
-#define op_ret                  OPC(0, opcode_ret)         // ret                                                               // 0x010
-#define op_irq                  OPC(0, opcode_irq)         // irq                                                               // 0x024
-#define op_svc                  OPC(0, opcode_svc)         // svc                                                               // 0x040
+/** ret
+ * Return from function
+ * 
+ * Pseudocode:
+ * pc = lr
+ * lr = stack[--sp]
+*/
+#define opcode_ret                                      0x01
+#define op_ret(...) (instruction_t) { .opcode = opcode_ret, .encode = encode_opcode_ret, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_ret(section_t* sect, struct instruction instr);
 
-#define op_cmpz_reg             OPC(1, opcode_cmpz)        // cmpz r1                                                           // 0x005 0x01
-#define op_b_reg                OPC(1, opcode_b)           // b r1                                                              // 0x006 0x01
-#define op_bne_reg              OPC(1, opcode_bne)         // bne r1                                                            // 0x007 0x01
-#define op_beq_reg              OPC(1, opcode_beq)         // beq r1                                                            // 0x008 0x01
-#define op_bgt_reg              OPC(1, opcode_bgt)         // bgt r1                                                            // 0x009 0x01
-#define op_blt_reg              OPC(1, opcode_blt)         // blt r1                                                            // 0x00A 0x01
-#define op_bge_reg              OPC(1, opcode_bge)         // bge r1                                                            // 0x00B 0x01
-#define op_ble_reg              OPC(1, opcode_ble)         // ble r1                                                            // 0x00C 0x01
-#define op_bnz_reg              OPC(1, opcode_bnz)         // bnz r1                                                            // 0x00D 0x01
-#define op_bz_reg               OPC(1, opcode_bz)          // bz r1                                                             // 0x00E 0x01
-#define op_psh_reg              OPC(1, opcode_psh)         // psh r1                                                            // 0x015 0x01
-#define op_pp_reg               OPC(1, opcode_pp)          // pp r1                                                             // 0x016 0x01
-#define op_not_reg              OPC(1, opcode_not)         // not r1                                                            // 0x021 0x01
-#define op_inc_reg              OPC(1, opcode_inc)         // inc r1                                                            // 0x022 0x01
-#define op_dec_reg              OPC(1, opcode_dec)         // dec r1                                                            // 0x023 0x01
-#define op_bl_reg               OPC(1, opcode_bl)          // bl r1                                                             // 0x036 0x01
-#define op_blne_reg             OPC(1, opcode_blne)        // blne r1                                                           // 0x037 0x01
-#define op_bleq_reg             OPC(1, opcode_bleq)        // bleq r1                                                           // 0x038 0x01
-#define op_blgt_reg             OPC(1, opcode_blgt)        // blgt r1                                                           // 0x039 0x01
-#define op_bllt_reg             OPC(1, opcode_bllt)        // bllt r1                                                           // 0x03A 0x01
-#define op_blge_reg             OPC(1, opcode_blge)        // blge r1                                                           // 0x03B 0x01
-#define op_blle_reg             OPC(1, opcode_blle)        // blle r1                                                           // 0x03C 0x01
-#define op_blnz_reg             OPC(1, opcode_blnz)        // blnz r1                                                           // 0x03D 0x01
-#define op_blz_reg              OPC(1, opcode_blz)         // blz r1                                                            // 0x03E 0x01
+/** irq
+ * Interrupt
+*/
+#define opcode_irq                                      0x02
+#define op_irq(...) (instruction_t) { .opcode = opcode_irq, .encode = encode_opcode_irq, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_irq(section_t* sect, struct instruction instr);
 
-#define op_ldr_reg_reg          OPC(2, opcode_ldr)         // ldr r1 r2                                                         // 0x002 0x01 0x02
-#define op_str_reg_reg          OPC(2, opcode_str)         // str r1 r2                                                         // 0x003 0x01 0x02
-#define op_cmp_reg_reg          OPC(2, opcode_cmp)         // cmp r1 r2                                                         // 0x004 0x01 0x02
-#define op_psh_imm16            OPC(2, opcode_psh)         // psh 0x1234                                                        // 0x015 0x12 0x34
-#define op_add_reg_reg          OPC(2, opcode_add)         // add r1 r2                                                         // 0x017 0x01 0x02
-#define op_sub_reg_reg          OPC(2, opcode_sub)         // sub r1 r2                                                         // 0x018 0x01 0x02
-#define op_mul_reg_reg          OPC(2, opcode_mul)         // mul r1 r2                                                         // 0x019 0x01 0x02
-#define op_div_reg_reg          OPC(2, opcode_div)         // div r1 r2                                                         // 0x01A 0x01 0x02
-#define op_mod_reg_reg          OPC(2, opcode_mod)         // mod r1 r2                                                         // 0x01B 0x01 0x02
-#define op_and_reg_reg          OPC(2, opcode_and)         // and r1 r2                                                         // 0x01C 0x01 0x02
-#define op_or_reg_reg           OPC(2, opcode_or)          // or r1 r2                                                          // 0x01D 0x01 0x02
-#define op_xor_reg_reg          OPC(2, opcode_xor)         // xor r1 r2                                                         // 0x01E 0x01 0x02
-#define op_shl_reg_reg          OPC(2, opcode_shl)         // shl r1 r2                                                         // 0x01F 0x01 0x02
-#define op_shr_reg_reg          OPC(2, opcode_shr)         // shr r1 r2                                                         // 0x020 0x01 0x02
+/** svc
+ * Supervisor call
+ * 
+ * Pseudocode:
+ * stack[sp++] = lr
+ * lr = pc
+ * pc = svc_handler[R0]
+*/
+#define opcode_svc                                      0x03
+#define op_svc(...) (instruction_t) { .opcode = opcode_svc, .encode = encode_opcode_svc, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_svc(section_t* sect, struct instruction instr);
 
-#define op_ldr_reg_imm16        OPC(3, opcode_ldr)         // ldr r1 0x1234                                                     // 0x002 0x01 0x12 0x34
-#define op_str_reg_imm16        OPC(3, opcode_str)         // str r1 0x1234                                                     // 0x003 0x01 0x12 0x34
-#define op_cmp_reg_imm16        OPC(3, opcode_cmp)         // cmp r1 0x1234                                                     // 0x004 0x01 0x12 0x34
-#define op_add_reg_imm16        OPC(3, opcode_add)         // add r1 0x1234                                                     // 0x017 0x01 0x12 0x34
-#define op_sub_reg_imm16        OPC(3, opcode_sub)         // sub r1 0x1234                                                     // 0x018 0x01 0x12 0x34
-#define op_mul_reg_imm16        OPC(3, opcode_mul)         // mul r1 0x1234                                                     // 0x019 0x01 0x12 0x34
-#define op_div_reg_imm16        OPC(3, opcode_div)         // div r1 0x1234                                                     // 0x01A 0x01 0x12 0x34
-#define op_mod_reg_imm16        OPC(3, opcode_mod)         // mod r1 0x1234                                                     // 0x01B 0x01 0x12 0x34
-#define op_and_reg_imm16        OPC(3, opcode_and)         // and r1 0x1234                                                     // 0x01C 0x01 0x12 0x34
-#define op_or_reg_imm16         OPC(3, opcode_or)          // or r1 0x1234                                                      // 0x01D 0x01 0x12 0x34
-#define op_xor_reg_imm16        OPC(3, opcode_xor)         // xor r1 0x1234                                                     // 0x01E 0x01 0x12 0x34
-#define op_shl_reg_imm16        OPC(3, opcode_shl)         // shl r1 0x1234                                                     // 0x01F 0x01 0x12 0x34
-#define op_shr_reg_imm16        OPC(3, opcode_shr)         // shr r1 0x1234                                                     // 0x020 0x01 0x12 0x34
+/** b label
+ * Branches to the label
+ * 
+ * Pseudocode:
+ * pc += label
+*/
+#define opcode_b_addr                                   0x04
+#define op_b_addr(...) (instruction_t) { .opcode = opcode_b_addr, .encode = encode_opcode_b_addr, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_b_addr(section_t* sect, struct instruction instr);
 
-#define op_ldr_reg_mem          OPC(4, opcode_ldr)         // ldr r1 [r2 (0x1234)]                                              // 0x002 0x01 0x02 0x12 0x34
-#define op_mov_reg_reg_reg      OPC(4, opcode_mov)         // mov r1 (b|w|d|q) [r2 r3]                                          // 0x026 0x01 0x0(1|2|4|8) 0x02 0x03
-#define op_add_reg_reg_reg      OPC(4, opcode_add)         // add r1 (b|w|d|q) [r2 r3]                                          // 0x017 0x01 0x0(1|2|4|8) 0x02 0x03
-#define op_sub_reg_reg_reg      OPC(4, opcode_sub)         // sub r1 (b|w|d|q) [r2 r3]                                          // 0x018 0x01 0x0(1|2|4|8) 0x02 0x03
-#define op_mul_reg_reg_reg      OPC(4, opcode_mul)         // mul r1 (b|w|d|q) [r2 r3]                                          // 0x019 0x01 0x0(1|2|4|8) 0x02 0x03
-#define op_div_reg_reg_reg      OPC(4, opcode_div)         // div r1 (b|w|d|q) [r2 r3]                                          // 0x01A 0x01 0x0(1|2|4|8) 0x02 0x03
-#define op_mod_reg_reg_reg      OPC(4, opcode_mod)         // mod r1 (b|w|d|q) [r2 r3]                                          // 0x01B 0x01 0x0(1|2|4|8) 0x02 0x03
-#define op_and_reg_reg_reg      OPC(4, opcode_and)         // and r1 (b|w|d|q) [r2 r3]                                          // 0x01C 0x01 0x0(1|2|4|8) 0x02 0x03
-#define op_or_reg_reg_reg       OPC(4, opcode_or)          // or r1 (b|w|d|q) [r2 r3]                                           // 0x01D 0x01 0x0(1|2|4|8) 0x02 0x03
-#define op_xor_reg_reg_reg      OPC(4, opcode_xor)         // xor r1 (b|w|d|q) [r2 r3]                                          // 0x01E 0x01 0x0(1|2|4|8) 0x02 0x03
-#define op_shl_reg_reg_reg      OPC(4, opcode_shl)         // shl r1 (b|w|d|q) [r2 r3]                                          // 0x01F 0x01 0x0(1|2|4|8) 0x02 0x03
-#define op_shr_reg_reg_reg      OPC(4, opcode_shr)         // shr r1 (b|w|d|q) [r2 r3]                                          // 0x020 0x01 0x0(1|2|4|8) 0x02 0x03
+/** bl label
+ * Branches to the label and stores the return address in lr (old value pushed to stack)
+ * 
+ * Pseudocode:
+ * stack[sp++] = lr
+ * lr = pc
+ * pc += label
+*/
+#define opcode_bl_addr                                  0x05
+#define op_bl_addr(...) (instruction_t) { .opcode = opcode_bl_addr, .encode = encode_opcode_bl_addr, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_bl_addr(section_t* sect, struct instruction instr);
 
-#define op_mov_reg_reg          OPC(5, opcode_mov)         // mov r1 (b|w|d|q) [r2 (0x1234)]                                    // 0x026 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
-#define op_add_reg_mem          OPC(5, opcode_add)         // add r1 (b|w|d|q) [r2 (0x1234)]                                    // 0x017 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
-#define op_sub_reg_mem          OPC(5, opcode_sub)         // sub r1 (b|w|d|q) [r2 (0x1234)]                                    // 0x018 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
-#define op_mul_reg_mem          OPC(5, opcode_mul)         // mul r1 (b|w|d|q) [r2 (0x1234)]                                    // 0x019 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
-#define op_div_reg_mem          OPC(5, opcode_div)         // div r1 (b|w|d|q) [r2 (0x1234)]                                    // 0x01A 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
-#define op_mod_reg_mem          OPC(5, opcode_mod)         // mod r1 (b|w|d|q) [r2 (0x1234)]                                    // 0x01B 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
-#define op_and_reg_mem          OPC(5, opcode_and)         // and r1 (b|w|d|q) [r2 (0x1234)]                                    // 0x01C 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
-#define op_or_reg_mem           OPC(5, opcode_or)          // or r1 (b|w|d|q) [r2 (0x1234)]                                     // 0x01D 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
-#define op_xor_reg_mem          OPC(5, opcode_xor)         // xor r1 (b|w|d|q) [r2 (0x1234)]                                    // 0x01E 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
-#define op_shl_reg_mem          OPC(5, opcode_shl)         // shl r1 (b|w|d|q) [r2 (0x1234)]                                    // 0x01F 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
-#define op_shr_reg_mem          OPC(5, opcode_shr)         // shr r1 (b|w|d|q) [r2 (0x1234)]                                    // 0x020 0x01 0x0(1|2|4|8) 0x02 0x12 0x34
+/** br r1
+ * Branches to the address in r1
+ * 
+ * Pseudocode:
+ * pc = r1
+*/
+#define opcode_br_reg                                   0x06
+#define op_br_reg(...) (instruction_t) { .opcode = opcode_br_reg, .encode = encode_opcode_br_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_br_reg(section_t* sect, struct instruction instr);
 
-#define op_psh_imm64            OPC(8, opcode_psh)         // psh 0x123456789ABCDEF0                                            // 0x015 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_b_addr               OPC(8, opcode_b)           // b label                                                           // 0x006 (label address in data (64 bit))
-#define op_bne_addr             OPC(8, opcode_bne)         // bne label                                                         // 0x007 (label address in data (64 bit))
-#define op_beq_addr             OPC(8, opcode_beq)         // beq label                                                         // 0x008 (label address in data (64 bit))
-#define op_bgt_addr             OPC(8, opcode_bgt)         // bgt label                                                         // 0x009 (label address in data (64 bit))
-#define op_blt_addr             OPC(8, opcode_blt)         // blt label                                                         // 0x00A (label address in data (64 bit))
-#define op_bge_addr             OPC(8, opcode_bge)         // bge label                                                         // 0x00B (label address in data (64 bit))
-#define op_ble_addr             OPC(8, opcode_ble)         // ble label                                                         // 0x00C (label address in data (64 bit))
-#define op_bnz_addr             OPC(8, opcode_bnz)         // bnz label                                                         // 0x00D (label address in data (64 bit))
-#define op_bz_addr              OPC(8, opcode_bz)          // bz label                                                          // 0x00E (label address in data (64 bit))
-#define op_psh_addr             OPC(8, opcode_psh)         // psh label                                                         // 0x015 (label address in data (64 bit))
-#define op_pp_addr              OPC(8, opcode_pp)          // pp label                                                          // 0x016 (label address in data (64 bit))
-#define op_bl_addr              OPC(8, opcode_bl)          // bl label                                                          // 0x036 (label address in data (64 bit))
-#define op_blne_addr            OPC(8, opcode_blne)        // blne label                                                        // 0x037 (label address in data (64 bit))
-#define op_bleq_addr            OPC(8, opcode_bleq)        // bleq label                                                        // 0x038 (label address in data (64 bit))
-#define op_blgt_addr            OPC(8, opcode_blgt)        // blgt label                                                        // 0x039 (label address in data (64 bit))
-#define op_bllt_addr            OPC(8, opcode_bllt)        // bllt label                                                        // 0x03A (label address in data (64 bit))
-#define op_blge_addr            OPC(8, opcode_blge)        // blge label                                                        // 0x03B (label address in data (64 bit))
-#define op_blle_addr            OPC(8, opcode_blle)        // blle label                                                        // 0x03C (label address in data (64 bit))
-#define op_blnz_addr            OPC(8, opcode_blnz)        // blnz label                                                        // 0x03D (label address in data (64 bit))
-#define op_blz_addr             OPC(8, opcode_blz)         // blz label                                                         // 0x03E (label address in data (64 bit))
+/** blr r1
+ * Branches to the address in r1 and stores the return address in lr (old value pushed to stack)
+ * 
+ * Pseudocode:
+ * stack[sp++] = lr
+ * lr = pc
+ * pc = r1
+*/
+#define opcode_blr_reg                                  0x07
+#define op_blr_reg(...) (instruction_t) { .opcode = opcode_blr_reg, .encode = encode_opcode_blr_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_blr_reg(section_t* sect, struct instruction instr);
 
-#define op_ldr_reg_imm          OPC(9, opcode_ldr)         // ldr r1 0x123456789ABCDEF0                                         // 0x002 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_str_reg_imm64        OPC(9, opcode_str)         // str r1 0x123456789ABCDEF0                                         // 0x003 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_cmp_reg_imm64        OPC(9, opcode_cmp)         // cmp r1 0x123456789ABCDEF0                                         // 0x004 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_add_reg_imm64        OPC(9, opcode_add)         // add r1 0x123456789ABCDEF0                                         // 0x017 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_sub_reg_imm64        OPC(9, opcode_sub)         // sub r1 0x123456789ABCDEF0                                         // 0x018 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_mul_reg_imm64        OPC(9, opcode_mul)         // mul r1 0x123456789ABCDEF0                                         // 0x019 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_div_reg_imm64        OPC(9, opcode_div)         // div r1 0x123456789ABCDEF0                                         // 0x01A 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_mod_reg_imm64        OPC(9, opcode_mod)         // mod r1 0x123456789ABCDEF0                                         // 0x01B 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_and_reg_imm64        OPC(9, opcode_and)         // and r1 0x123456789ABCDEF0                                         // 0x01C 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_or_reg_imm64         OPC(9, opcode_or)          // or r1 0x123456789ABCDEF0                                          // 0x01D 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_xor_reg_imm64        OPC(9, opcode_xor)         // xor r1 0x123456789ABCDEF0                                         // 0x01E 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_shl_reg_imm64        OPC(9, opcode_shl)         // shl r1 0x123456789ABCDEF0                                         // 0x01F 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
-#define op_shr_reg_imm64        OPC(9, opcode_shr)         // shr r1 0x123456789ABCDEF0                                         // 0x020 0x01 0x12 0x34 0x56 0x78 0x9A 0xBC 0xDE 0xF0
+/** <op>.eq <args>
+ * Only executes the following instruction if the zero flag is set
+ * 
+ * Pseudocode:
+ * if (zero_flag) ...
+ * else pc += op.nbytes
+*/
+#define opcode_dot_eq                                   0x08
+#define op_dot_eq(...) (instruction_t) { .opcode = opcode_dot_eq, .encode = encode_opcode_dot_eq, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dot_eq(section_t* sect, struct instruction instr);
 
-#define op_ldr_reg_addr_reg     OPC(10, opcode_ldr)        // ldr r1 [label r2]                                                 // 0x002 0x01 0x02 (label address in data (64 bit))
+/** <op>.ne <args>
+ * Only executes the following instruction if the zero flag is not set
+ * 
+ * Pseudocode:
+ * if (!zero_flag) ...
+ * else pc += op.nbytes
+*/
+#define opcode_dot_ne                                   0x09
+#define op_dot_ne(...) (instruction_t) { .opcode = opcode_dot_ne, .encode = encode_opcode_dot_ne, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dot_ne(section_t* sect, struct instruction instr);
 
-#define op_ldr_reg_addr_imm16   OPC(11, opcode_ldr)        // ldr r1 [label (0x1234)]                                           // 0x002 0x01 0x12 0x34 (label address in data (64 bit))
-#define op_mov_reg_addr_reg     OPC(11, opcode_mov)        // mov r1 (b|w|d|q) [label r2]                                       // 0x026 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
-#define op_add_reg_addr_reg     OPC(11, opcode_add)        // add r1 (b|w|d|q) [label r2]                                       // 0x017 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
-#define op_sub_reg_addr_reg     OPC(11, opcode_sub)        // sub r1 (b|w|d|q) [label r2]                                       // 0x018 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
-#define op_mul_reg_addr_reg     OPC(11, opcode_mul)        // mul r1 (b|w|d|q) [label r2]                                       // 0x019 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
-#define op_div_reg_addr_reg     OPC(11, opcode_div)        // div r1 (b|w|d|q) [label r2]                                       // 0x01A 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
-#define op_mod_reg_addr_reg     OPC(11, opcode_mod)        // mod r1 (b|w|d|q) [label r2]                                       // 0x01B 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
-#define op_and_reg_addr_reg     OPC(11, opcode_and)        // and r1 (b|w|d|q) [label r2]                                       // 0x01C 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
-#define op_or_reg_addr_reg      OPC(11, opcode_or)         // or r1 (b|w|d|q) [label r2]                                        // 0x01D 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
-#define op_xor_reg_addr_reg     OPC(11, opcode_xor)        // xor r1 (b|w|d|q) [label r2]                                       // 0x01E 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
-#define op_shl_reg_addr_reg     OPC(11, opcode_shl)        // shl r1 (b|w|d|q) [label r2]                                       // 0x01F 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
-#define op_shr_reg_addr_reg     OPC(11, opcode_shr)        // shr r1 (b|w|d|q) [label r2]                                       // 0x020 0x01 0x0(1|2|4|8) (label address in data (64 bit)) 0x02
+/** <op>.lt <args>
+ * Only executes the following instruction if the negative flag is set
+ * 
+ * Pseudocode:
+ * if (negative_flag) ...
+ * else pc += op.nbytes
+*/
+#define opcode_dot_lt                                   0x0A
+#define op_dot_lt(...) (instruction_t) { .opcode = opcode_dot_lt, .encode = encode_opcode_dot_lt, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dot_lt(section_t* sect, struct instruction instr);
 
-#define op_mov_reg_addr         OPC(12, opcode_mov)        // mov r1 (b|w|d|q) [label (0x1234)]                                 // 0x026 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
-#define op_add_reg_addr         OPC(12, opcode_add)        // add r1 (b|w|d|q) [label (0x1234)]                                 // 0x017 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
-#define op_sub_reg_addr         OPC(12, opcode_sub)        // sub r1 (b|w|d|q) [label (0x1234)]                                 // 0x018 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
-#define op_mul_reg_addr         OPC(12, opcode_mul)        // mul r1 (b|w|d|q) [label (0x1234)]                                 // 0x019 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
-#define op_div_reg_addr         OPC(12, opcode_div)        // div r1 (b|w|d|q) [label (0x1234)]                                 // 0x01A 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
-#define op_mod_reg_addr         OPC(12, opcode_mod)        // mod r1 (b|w|d|q) [label (0x1234)]                                 // 0x01B 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
-#define op_and_reg_addr         OPC(12, opcode_and)        // and r1 (b|w|d|q) [label (0x1234)]                                 // 0x01C 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
-#define op_or_reg_addr          OPC(12, opcode_or)         // or r1 (b|w|d|q) [label (0x1234)]                                  // 0x01D 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
-#define op_xor_reg_addr         OPC(12, opcode_xor)        // xor r1 (b|w|d|q) [label (0x1234)]                                 // 0x01E 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
-#define op_shl_reg_addr         OPC(12, opcode_shl)        // shl r1 (b|w|d|q) [label (0x1234)]                                 // 0x01F 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
-#define op_shr_reg_addr         OPC(12, opcode_shr)        // shr r1 (b|w|d|q) [label (0x1234)]                                 // 0x020 0x01 0x0(1|2|4|8) 0x12 0x34 (label address in data (64 bit)
+/** <op>.gt <args>
+ * Only executes the following instruction if the negative flag is not set
+ * 
+ * Pseudocode:
+ * if (!negative_flag && !zero_flag) ...
+ * else pc += op.nbytes
+*/
+#define opcode_dot_gt                                   0x0B
+#define op_dot_gt(...) (instruction_t) { .opcode = opcode_dot_gt, .encode = encode_opcode_dot_gt, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dot_gt(section_t* sect, struct instruction instr);
+
+/** <op>.le <args>
+ * Only executes the following instruction if the zero flag or the negative flag is set
+ * 
+ * Pseudocode:
+ * if (zero_flag || negative_flag) ...
+ * else pc += op.nbytes
+*/
+#define opcode_dot_le                                   0x0C
+#define op_dot_le(...) (instruction_t) { .opcode = opcode_dot_le, .encode = encode_opcode_dot_le, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dot_le(section_t* sect, struct instruction instr);
+
+/** <op>.ge <args>
+ * Only executes the following instruction if the zero flag or the negative flag is not set
+ * 
+ * Pseudocode:
+ * if (!zero_flag && !negative_flag) ...
+ * else pc += op.nbytes
+*/
+#define opcode_dot_ge                                   0x0D
+#define op_dot_ge(...) (instruction_t) { .opcode = opcode_dot_ge, .encode = encode_opcode_dot_ge, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dot_ge(section_t* sect, struct instruction instr);
+
+/** <op>.cs <args>
+ * Only executes the following instruction if the carry flag is set
+ * 
+ * Pseudocode:
+ * if (carry_flag) ...
+ * else pc += op.nbytes
+*/
+#define opcode_dot_cs                                   0x0E
+#define op_dot_cs(...) (instruction_t) { .opcode = opcode_dot_cs, .encode = encode_opcode_dot_cs, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dot_cs(section_t* sect, struct instruction instr);
+
+/** <op>.cc <args>
+ * Only executes the following instruction if the carry flag is not set
+ * 
+ * Pseudocode:
+ * if (!carry_flag) ...
+ * else pc += op.nbytes
+*/
+#define opcode_dot_cc                                   0x0F
+#define op_dot_cc(...) (instruction_t) { .opcode = opcode_dot_cc, .encode = encode_opcode_dot_cc, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dot_cc(section_t* sect, struct instruction instr);
+
+/** add r1, r2, r3
+ * Adds r2 and r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 + r3
+*/
+#define opcode_add_reg_reg_reg                          0x10
+#define op_add_reg_reg_reg(...) (instruction_t) { .opcode = opcode_add_reg_reg_reg, .encode = encode_opcode_add_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_add_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** sub r1, r2, r3
+ * Subtracts r3 from r2 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 - r3
+*/
+#define opcode_sub_reg_reg_reg                          0x11
+#define op_sub_reg_reg_reg(...) (instruction_t) { .opcode = opcode_sub_reg_reg_reg, .encode = encode_opcode_sub_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_sub_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** mul r1, r2, r3
+ * Multiplies r2 and r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 * r3
+*/
+#define opcode_mul_reg_reg_reg                          0x12
+#define op_mul_reg_reg_reg(...) (instruction_t) { .opcode = opcode_mul_reg_reg_reg, .encode = encode_opcode_mul_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_mul_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** div r1, r2, r3
+ * Divides r2 by r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 / r3
+*/
+#define opcode_div_reg_reg_reg                          0x13
+#define op_div_reg_reg_reg(...) (instruction_t) { .opcode = opcode_div_reg_reg_reg, .encode = encode_opcode_div_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_div_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** mod r1, r2, r3
+ * Computes the remainder of r2 divided by r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 % r3
+*/
+#define opcode_mod_reg_reg_reg                          0x14
+#define op_mod_reg_reg_reg(...) (instruction_t) { .opcode = opcode_mod_reg_reg_reg, .encode = encode_opcode_mod_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_mod_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** and r1, r2, r3
+ * Computes the bitwise AND of r2 and r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 & r3
+*/
+#define opcode_and_reg_reg_reg                          0x15
+#define op_and_reg_reg_reg(...) (instruction_t) { .opcode = opcode_and_reg_reg_reg, .encode = encode_opcode_and_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_and_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** or r1, r2, r3
+ * Computes the bitwise OR of r2 and r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 | r3
+*/
+#define opcode_or_reg_reg_reg                           0x16
+#define op_or_reg_reg_reg(...) (instruction_t) { .opcode = opcode_or_reg_reg_reg, .encode = encode_opcode_or_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_or_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** xor r1, r2, r3
+ * Computes the bitwise XOR of r2 and r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 ^ r3
+*/
+#define opcode_xor_reg_reg_reg                          0x17
+#define op_xor_reg_reg_reg(...) (instruction_t) { .opcode = opcode_xor_reg_reg_reg, .encode = encode_opcode_xor_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_xor_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** shl r1, r2, r3
+ * Shifts the bits in r2 to the left by the number of bits specified in r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 << r3
+*/
+#define opcode_shl_reg_reg_reg                          0x18
+#define op_shl_reg_reg_reg(...) (instruction_t) { .opcode = opcode_shl_reg_reg_reg, .encode = encode_opcode_shl_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_shl_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** shr r1, r2, r3
+ * Shifts the bits in r2 to the right by the number of bits specified in r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 >> r3
+*/
+#define opcode_shr_reg_reg_reg                          0x19
+#define op_shr_reg_reg_reg(...) (instruction_t) { .opcode = opcode_shr_reg_reg_reg, .encode = encode_opcode_shr_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_shr_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** rol r1, r2, r3
+ * Rotates the bits in r2 to the left by the number of bits specified in r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 <<< r3
+*/
+#define opcode_rol_reg_reg_reg                          0x1A
+#define op_rol_reg_reg_reg(...) (instruction_t) { .opcode = opcode_rol_reg_reg_reg, .encode = encode_opcode_rol_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_rol_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** ror r1, r2, r3
+ * Rotates the bits in r2 to the right by the number of bits specified in r3 and stores the result in r1
+ * The instruction updates zero, carry, and negative flags accordingly
+ * 
+ * Pseudocode:
+ * r1 = r2 >>> r3
+*/
+#define opcode_ror_reg_reg_reg                          0x1B
+#define op_ror_reg_reg_reg(...) (instruction_t) { .opcode = opcode_ror_reg_reg_reg, .encode = encode_opcode_ror_reg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_ror_reg_reg_reg(section_t* sect, struct instruction instr);
+
+/** inc r1
+ * Increments r1 by 1
+ * 
+ * Pseudocode:
+ * r1++
+*/
+#define opcode_inc_reg                                  0x1C
+#define op_inc_reg(...) (instruction_t) { .opcode = opcode_inc_reg, .encode = encode_opcode_inc_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_inc_reg(section_t* sect, struct instruction instr);
+
+/** dec r1
+ * Decrements r1 by 1
+ * 
+ * Pseudocode:
+ * r1--
+*/
+#define opcode_dec_reg                                  0x1D
+#define op_dec_reg(...) (instruction_t) { .opcode = opcode_dec_reg, .encode = encode_opcode_dec_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dec_reg(section_t* sect, struct instruction instr);
+
+/** psh r1
+ * Pushes the value of r1 onto the stack
+ * 
+ * Pseudocode:
+ * stack[sp++] = r1
+*/
+#define opcode_psh_reg                                  0x1E
+#define op_psh_reg(...) (instruction_t) { .opcode = opcode_psh_reg, .encode = encode_opcode_psh_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_psh_reg(section_t* sect, struct instruction instr);
+
+/** pp r1
+ * Pops the value of the stack into r1
+ * 
+ * Pseudocode:
+ * r1 = stack[--sp]
+*/
+#define opcode_pp_reg                                   0x1F
+#define op_pp_reg(...) (instruction_t) { .opcode = opcode_pp_reg, .encode = encode_opcode_pp_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_pp_reg(section_t* sect, struct instruction instr);
+
+/** ldr r1, r2
+ * Loads the value of r2 into r1
+ * 
+ * Pseudocode:
+ * r1 = r2
+*/
+#define opcode_ldr_reg_reg                              0x20
+#define op_ldr_reg_reg(...) (instruction_t) { .opcode = opcode_ldr_reg_reg, .encode = encode_opcode_ldr_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_ldr_reg_reg(section_t* sect, struct instruction instr);
+
+/** ldr r1, [r2]
+ * Loads the value of the memory at the address in r2 into r1
+ * 
+ * Pseudocode:
+ * r1 = *r2
+*/
+#define opcode_ldr_reg_addr                             0x21
+#define op_ldr_reg_addr(...) (instruction_t) { .opcode = opcode_ldr_reg_addr, .encode = encode_opcode_ldr_reg_addr, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_ldr_reg_addr(section_t* sect, struct instruction instr);
+
+/** ldr r1, [r2 + r3]
+ * Loads the value of the memory at the address in r2 + r3 into r1
+ * 
+ * Pseudocode:
+ * r1 = *(r2 + r3)
+*/
+#define opcode_ldr_reg_addr_reg                         0x22
+#define op_ldr_reg_addr_reg(...) (instruction_t) { .opcode = opcode_ldr_reg_addr_reg, .encode = encode_opcode_ldr_reg_addr_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_ldr_reg_addr_reg(section_t* sect, struct instruction instr);
+
+/** ldr r1, [r2 + 32]
+ * Loads the value of the memory at the address in r2 + 32 into r1
+ * 
+ * Pseudocode:
+ * r1 = *(r2 + 32)
+*/
+#define opcode_ldr_reg_addr_imm                         0x23
+#define op_ldr_reg_addr_imm(...) (instruction_t) { .opcode = opcode_ldr_reg_addr_imm, .encode = encode_opcode_ldr_reg_addr_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_ldr_reg_addr_imm(section_t* sect, struct instruction instr);
+
+/** str [r1], r2
+ * Stores the value of r2 into the memory at the address in r1
+ * 
+ * Pseudocode:
+ * *r1 = r2
+*/
+#define opcode_str_reg_reg                              0x25
+#define op_str_reg_reg(...) (instruction_t) { .opcode = opcode_str_reg_reg, .encode = encode_opcode_str_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_str_reg_reg(section_t* sect, struct instruction instr);
+
+/** str [r1 + r2], r3
+ * Stores the value of r3 into the memory at the address in r1 + r2
+ * 
+ * Pseudocode:
+ * *(r1 + r2) = r3
+*/
+#define opcode_str_reg_addr_reg                         0x26
+#define op_str_reg_addr_reg(...) (instruction_t) { .opcode = opcode_str_reg_addr_reg, .encode = encode_opcode_str_reg_addr_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_str_reg_addr_reg(section_t* sect, struct instruction instr);
+
+// /** str [r1 + 32], r2
+//  * Stores the value of r2 into the memory at the address in r1 + 32
+//  * 
+//  * Pseudocode:
+//  * *(r1 + 32) = r2
+// */
+// #define opcode_str_reg_addr_imm                      0x27
+// #define op_str_reg_addr_imm(...) (instruction_t) { .opcode = opcode_str_reg_addr_imm, .encode = encode_opcode_str_reg_addr_imm, .args = { __VA_ARGS__ } }
+
+/** movl r1, 0x1234
+ * Moves the immediate value into r1 at location 0 (mask: 0x000000000000ffff)
+ * 
+ * Pseudocode:
+ * r1 = imm
+*/
+#define opcode_movl                                     0x28
+#define op_movl(...) (instruction_t) { .opcode = opcode_movl, .encode = encode_opcode_movl, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_movl(section_t* sect, struct instruction instr);
+
+/** movh r1, 0x1234
+ * Moves the immediate value into r1 at location 1 (mask: 0x00000000ffff0000)
+ * 
+ * Pseudocode:
+ * r1 = imm << 16
+*/
+#define opcode_movh                                     0x29
+#define op_movh(...) (instruction_t) { .opcode = opcode_movh, .encode = encode_opcode_movh, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_movh(section_t* sect, struct instruction instr);
+
+/** movql r1, 0x1234
+ * Moves the immediate value into r1 at location 2 (mask: 0x0000ffff00000000)
+ * 
+ * Pseudocode:
+ * r1 = imm << 32
+*/
+#define opcode_movql                                    0x2A
+#define op_movql(...) (instruction_t) { .opcode = opcode_movql, .encode = encode_opcode_movql, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_movql(section_t* sect, struct instruction instr);
+
+/** movqh r1, 0x1234
+ * Moves the immediate value into r1 at location 3 (mask: 0xffff000000000000)
+ * 
+ * Pseudocode:
+ * r1 = imm << 48
+*/
+#define opcode_movqh                                    0x2B
+#define op_movqh(...) (instruction_t) { .opcode = opcode_movqh, .encode = encode_opcode_movqh, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_movqh(section_t* sect, struct instruction instr);
+
+/** lea r1, label
+ * Loads the address of the label into r1
+ * 
+ * Pseudocode:
+ * r1 = pc + label
+*/
+#define opcode_lea_reg_addr                             0x2C
+#define op_lea_reg_addr(...) (instruction_t) { .opcode = opcode_lea_reg_addr, .encode = encode_opcode_lea_reg_addr, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_lea_reg_addr(section_t* sect, struct instruction instr);
+
+/** cmp r1, r2
+ * Compares r1 and r2 and updates the zero and carry flags accordingly
+ * 
+ * Pseudocode:
+ * zero_flag = r1 == r2
+ * negative_flag = r1 < r2
+*/
+#define opcode_cmp_reg_reg                              0x2D
+#define op_cmp_reg_reg(...) (instruction_t) { .opcode = opcode_cmp_reg_reg, .encode = encode_opcode_cmp_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_cmp_reg_reg(section_t* sect, struct instruction instr);
+
+/** xchg r1, r2
+ * Swaps the values of r1 and r2
+ * 
+ * Pseudocode:
+ * tmp = r1
+ * r1 = r2
+ * r2 = tmp
+*/
+#define opcode_xchg_reg_reg                             0x2E
+#define op_xchg_reg_reg(...) (instruction_t) { .opcode = opcode_xchg_reg_reg, .encode = encode_opcode_xchg_reg_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_xchg_reg_reg(section_t* sect, struct instruction instr);
+
+/** movz r1, 0x1234
+ * Moves the immediate value into r1 at location 0 while zeroing the other locations (mask: 0x000000000000ffff)
+ * 
+ * Pseudocode:
+ * r1 = imm
+*/
+#define opcode_movz                                     0x2F
+#define op_movz(...) (instruction_t) { .opcode = opcode_movz, .encode = encode_opcode_movz, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_movz(section_t* sect, struct instruction instr);
+
+/** add r1, 0x1234
+ * Adds the immediate value to r1 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 += imm
+*/
+#define opcode_add_reg_imm                              0x30
+#define op_add_reg_imm(...) (instruction_t) { .opcode = opcode_add_reg_imm, .encode = encode_opcode_add_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_add_reg_imm(section_t* sect, struct instruction instr);
+
+/** sub r1, 0x1234
+ * Subtracts r2 from r1 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 -= r2
+*/
+#define opcode_sub_reg_imm                              0x31
+#define op_sub_reg_imm(...) (instruction_t) { .opcode = opcode_sub_reg_imm, .encode = encode_opcode_sub_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_sub_reg_imm(section_t* sect, struct instruction instr);
+
+/** mul r1, 0x1234
+ * Multiplies r1 by r2 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 *= r2
+*/
+#define opcode_mul_reg_imm                              0x32
+#define op_mul_reg_imm(...) (instruction_t) { .opcode = opcode_mul_reg_imm, .encode = encode_opcode_mul_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_mul_reg_imm(section_t* sect, struct instruction instr);
+
+/** div r1, 0x1234
+ * Divides r1 by r2 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 /= r2
+*/
+#define opcode_div_reg_imm                              0x33
+#define op_div_reg_imm(...) (instruction_t) { .opcode = opcode_div_reg_imm, .encode = encode_opcode_div_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_div_reg_imm(section_t* sect, struct instruction instr);
+
+/** mod r1, 0x1234
+ * Computes the remainder of r1 divided by r2 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 %= r2
+*/
+#define opcode_mod_reg_imm                              0x34
+#define op_mod_reg_imm(...) (instruction_t) { .opcode = opcode_mod_reg_imm, .encode = encode_opcode_mod_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_mod_reg_imm(section_t* sect, struct instruction instr);
+
+/** and r1, 0x1234
+ * Computes the bitwise AND of r1 and r2 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 &= r2
+*/
+#define opcode_and_reg_imm                              0x35
+#define op_and_reg_imm(...) (instruction_t) { .opcode = opcode_and_reg_imm, .encode = encode_opcode_and_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_and_reg_imm(section_t* sect, struct instruction instr);
+
+/** or r1, 0x1234
+ * Computes the bitwise OR of r1 and r2 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 |= r2
+*/
+#define opcode_or_reg_imm                               0x36
+#define op_or_reg_imm(...) (instruction_t) { .opcode = opcode_or_reg_imm, .encode = encode_opcode_or_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_or_reg_imm(section_t* sect, struct instruction instr);
+
+/** xor r1, 0x1234
+ * Computes the bitwise XOR of r1 and r2 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 ^= r2
+*/
+#define opcode_xor_reg_imm                              0x37
+#define op_xor_reg_imm(...) (instruction_t) { .opcode = opcode_xor_reg_imm, .encode = encode_opcode_xor_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_xor_reg_imm(section_t* sect, struct instruction instr);
+
+/** shl r1, 0x1234
+ * Shifts the bits of r1 to the left by r2 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 <<= r2
+*/
+#define opcode_shl_reg_imm                              0x38
+#define op_shl_reg_imm(...) (instruction_t) { .opcode = opcode_shl_reg_imm, .encode = encode_opcode_shl_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_shl_reg_imm(section_t* sect, struct instruction instr);
+
+/** shr r1, 0x1234
+ * Shifts the bits of r1 to the right by r2 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 >>= r2
+*/
+#define opcode_shr_reg_imm                              0x39
+#define op_shr_reg_imm(...) (instruction_t) { .opcode = opcode_shr_reg_imm, .encode = encode_opcode_shr_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_shr_reg_imm(section_t* sect, struct instruction instr);
+
+/** rol r1, 0x1234
+ * Rotates the bits of r1 to the left by r2 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 = (r1 << r2) | (r1 >> (64 - r2))
+*/
+#define opcode_rol_reg_imm                              0x3A
+#define op_rol_reg_imm(...) (instruction_t) { .opcode = opcode_rol_reg_imm, .encode = encode_opcode_rol_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_rol_reg_imm(section_t* sect, struct instruction instr);
+
+/** ror r1, 0x1234
+ * Rotates the bits of r1 to the right by r2 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 = (r1 >> r2) | (r1 << (64 - r2))
+*/
+#define opcode_ror_reg_imm                              0x3B
+#define op_ror_reg_imm(...) (instruction_t) { .opcode = opcode_ror_reg_imm, .encode = encode_opcode_ror_reg_imm, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_ror_reg_imm(section_t* sect, struct instruction instr);
+
+/** not r1
+ * Computes the bitwise NOT of r1 and stores the result in r1
+ * 
+ * Pseudocode:
+ * r1 = ~r1
+*/
+#define opcode_not_reg                                  0x3C
+#define op_not_reg(...) (instruction_t) { .opcode = opcode_not_reg, .encode = encode_opcode_not_reg, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_not_reg(section_t* sect, struct instruction instr);
+
+/** <op>.byte <args> / <op>.word <args> / <op>.dword <args> / <op>.qword <args>
+ * Changes the addressing mode of the following instruction to byte
+ * 
+ * Pseudocode:
+ * Addressing mode = byte
+*/
+#define opcode_dot_addressing_override                  0x48
+#define op_dot_addressing_override(...) (instruction_t) { .opcode = opcode_dot_addressing_override, .encode = encode_opcode_dot_addressing_override, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dot_addressing_override(section_t* sect, struct instruction instr);
+
+/** .symbol
+ * Internal instruction used to mark the location of a symbol
+*/
+#define opcode_dot_symbol                               0x49
+#define op_dot_symbol(...) (instruction_t) { .opcode = opcode_dot_symbol, .encode = encode_opcode_dot_symbol, .args = { __VA_ARGS__ } }
+uint32_t encode_opcode_dot_symbol(section_t* sect, struct instruction instr);

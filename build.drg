@@ -13,5 +13,6 @@ build: {
   units: [
     "main.c";
     "h64c.c";
+    "encode.c";
   ];
 };
