@@ -28,19 +28,19 @@ typedef struct _Token {
     int line;
 } Token;
 
-section_t** compile(Token* tokens);
+section_t compile(Token* tokens);
 Token* parse(char* src);
 
 static char* file;
 
-section_t** run_compile(const char* file_name) {
+section_t run_compile(const char* file_name) {
     file = malloc(strlen(file_name) + 1);
     strcpy(file, file_name);
 
     FILE* file = fopen(file_name, "r");
     if (!file) {
         printf("Could not open file: %s\n", file_name);
-        return NULL;
+        return (section_t) {0};
     }
     fseek(file, 0, SEEK_END);
     size_t size = ftell(file);
@@ -66,7 +66,7 @@ section_t** run_compile(const char* file_name) {
         }
         if (src[i] == '\n' && inside_string) {
             printf("%s:%d: Unterminated string\n", file_name, i);
-            return NULL;
+            return (section_t) {0};
         }
         if ((src[i] == ';' || src[i] == '#' || src[i] == '@') && !inside_string) {
             while (src[i] != '\n' && i < size) {
@@ -78,9 +78,7 @@ section_t** run_compile(const char* file_name) {
 
     Token* tokens = parse(src);
     
-    section_t** obj = compile(tokens);
-
-    return obj;
+    return compile(tokens);
 }
 
 int isValidBegin(int c) {
@@ -164,13 +162,8 @@ uint8_t is_conditional(uint8_t opcode) {
             opcode == opcode_dot_le;
 }
 
-section_t** compile(Token* tokens) {
-    uint32_t section_count = 1;
-    section_t** objs = NULL;
-    objs = realloc(objs, sizeof(section_t*) * section_count);
-    section_t* obj = malloc(sizeof(section_t));
-    objs[section_count - 1] = obj;
-    obj->type = SECTION_TYPE_CODE;
+section_t compile(Token* tokens) {
+    section_t obj;
     for (;tokens->type != EOF; tokens++) {
         if (tokens->type == Identifier) {
             char* mnemonic = lower(tokens->value);
@@ -186,7 +179,8 @@ section_t** compile(Token* tokens) {
             instruction_t cond[16] = {0};
             int cond_count = 0;
             int extra_dwords = 0;
-            while (tokens->type == Directive && cond_count < 16) {
+            instr_arg extra_arg = {0};
+            while (tokens->type == Directive && cond_count < 16 && tokens->line == instruction_token->line) {
                 char* cond_str = lower(tokens->value);
                 
                 if (eq(cond_str, "eq")) {
@@ -241,9 +235,6 @@ section_t** compile(Token* tokens) {
                         ARG_8BIT(4)
                     );
                     flags |= ADDRESSING_QWORD;
-                } else {
-                    printf("%s:%d: Unknown condition: %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
                 }
                 tokens++;
             }
@@ -254,7 +245,7 @@ section_t** compile(Token* tokens) {
             #define EXPECT(_type, _diag) \
                 if (tokens->type != _type) { \
                     printf("%s:%d: " _diag, tokens->file, tokens->line, tokens->value); \
-                    return NULL; \
+                    return (section_t) {0}; \
                 }
 
             if (ins("nop")) {
@@ -310,7 +301,7 @@ section_t** compile(Token* tokens) {
                     instr = op_ ## _what ## _reg_imm(dest, imm16); \
                 } else { \
                     printf("%s:%d: Expected register or number, got %s\n", tokens->file, tokens->line, tokens->value); \
-                    return NULL; \
+                    return (section_t) {0}; \
                 }
             ARITH(add)
             ARITH(sub)
@@ -336,9 +327,19 @@ section_t** compile(Token* tokens) {
                 instr = op_dec_reg(what);
             } else if (ins("psh")) {
                 tokens++;
-                EXPECT(Register, "Expected register, got %s\n");
-                instr_arg what = ARG_8BIT(parse8(tokens->value + 1));
-                instr = op_psh_reg(what);
+                if (tokens->type == Register) {
+                    instr_arg what = ARG_8BIT(parse8(tokens->value + 1));
+                    instr = op_psh_reg(what);
+                } else if (tokens->type == Number) {
+                    instr_arg what = ARG_16BIT(parse16(tokens->value));
+                    instr = op_psh_imm(what);
+                } else if (tokens->type == Identifier) {
+                    instr_arg what = ARG_SYM(tokens->value);
+                    instr = op_psh_addr(what);
+                } else {
+                    printf("%s:%d: Expected register, number or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return (section_t) {0};
+                }
             } else if (ins("pp")) {
                 tokens++;
                 EXPECT(Register, "Expected register, got %s\n");
@@ -369,7 +370,7 @@ section_t** compile(Token* tokens) {
                             tokens++;
                         } else {
                             printf("%s:%d: Expected plus or minus, got %s\n", tokens->file, tokens->line, tokens->value);
-                            return NULL;
+                            return (section_t) {0};
                         }
                         if (tokens->type == Number) {
                             offset = parse8(tokens->value);
@@ -382,21 +383,51 @@ section_t** compile(Token* tokens) {
                             EXPECT(RightBracket, "Expected right bracket, got %s\n");
                             if (sign == -1) {
                                 printf("%s:%d: Cannot use minus with register offset\n", tokens->file, tokens->line);
-                                return NULL;
+                                return (section_t) {0};
                             }
                             instr = op_ldr_reg_addr_reg(dest, src, offset_reg);
                         } else {
                             printf("%s:%d: Expected number or register, got %s\n", tokens->file, tokens->line, tokens->value);
-                            return NULL;
+                            return (section_t) {0};
                         }
                     } else {
-                        instr = op_ldr_reg_addr(dest, src);
+                        instr = op_ldr_reg_addr_imm(dest, src, 0);
                     }
                 } else {
                     printf("%s:%d: Expected register or left bracket, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
+                    return (section_t) {0};
                 }
-            } else if (ins("movl")) {
+            } else if (ins("str")) {
+                tokens++;
+                EXPECT(LeftBracket, "Expected left bracket, got %s\n");
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                if (tokens->type == RightBracket) {
+                    tokens++;
+                    EXPECT(Comma, "Expected comma, got %s\n");
+                    tokens++;
+                    EXPECT(Register, "Expected register, got %s\n");
+                    instr_arg src = ARG_8BIT(parse8(tokens->value + 1));
+                    instr = op_str_reg_reg(dest, src);
+                } else if (tokens->type == Plus) {
+                    tokens++;
+                    EXPECT(Register, "Expected register, got %s\n");
+                    instr_arg offset_reg = ARG_8BIT(parse8(tokens->value + 1));
+                    tokens++;
+                    EXPECT(RightBracket, "Expected right bracket, got %s\n");
+                    tokens++;
+                    EXPECT(Comma, "Expected comma, got %s\n");
+                    tokens++;
+                    EXPECT(Register, "Expected register, got %s\n");
+                    instr_arg src = ARG_8BIT(parse8(tokens->value + 1));
+                    instr = op_str_reg_addr_reg(dest, src, offset_reg);
+                } else {
+                    printf("%s:%d: Expected right bracket or plus, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return (section_t) {0};
+                }
+            } else if (ins("movz")) {
                 tokens++;
                 EXPECT(Register, "Expected register, got %s\n");
                 instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
@@ -404,8 +435,33 @@ section_t** compile(Token* tokens) {
                 EXPECT(Comma, "Expected comma, got %s\n");
                 tokens++;
                 EXPECT(Number, "Expected number, got %s\n");
-                instr = op_movl(dest, ARG_16BIT(parse16(tokens->value)));
-            } else if (ins("movh")) {
+                int line = tokens->line;
+                instr_arg imm16 = ARG_16BIT(parse16(tokens->value));
+                tokens++;
+                if (tokens->line != line) {
+                    tokens--;
+                    instr = op_movz(dest, imm16, ARG_8BIT(0));
+                } else if (tokens->type != Identifier) {
+                    printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return (section_t) {0};
+                } else if (eq(tokens->value, "shl")) {
+                    tokens++;
+                    EXPECT(Number, "Expected number, got %s\n");
+                    instr_arg shift = ARG_8BIT(parse8(tokens->value));
+                    if (shift.imm8 % 16 != 0) {
+                        printf("%s:%d: Shift must be multiple of 16, got %d\n", tokens->file, tokens->line, shift.imm8);
+                        return (section_t) {0};
+                    }
+                    if (shift.imm8 >= 64) {
+                        printf("%s:%d: Shift must be less than 64, got %d\n", tokens->file, tokens->line, shift.imm8);
+                        return (section_t) {0};
+                    }
+                    instr = op_movz(dest, imm16, shift);
+                } else {
+                    printf("%s:%d: Expected shl, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return (section_t) {0};
+                }
+            } else if (ins("movk")) {
                 tokens++;
                 EXPECT(Register, "Expected register, got %s\n");
                 instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
@@ -413,26 +469,33 @@ section_t** compile(Token* tokens) {
                 EXPECT(Comma, "Expected comma, got %s\n");
                 tokens++;
                 EXPECT(Number, "Expected number, got %s\n");
-                instr = op_movh(dest, ARG_16BIT(parse16(tokens->value)));
-            } else if (ins("movql")) {
+                int line = tokens->line;
+                instr_arg imm16 = ARG_16BIT(parse16(tokens->value));
                 tokens++;
-                EXPECT(Register, "Expected register, got %s\n");
-                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
-                tokens++;
-                EXPECT(Comma, "Expected comma, got %s\n");
-                tokens++;
-                EXPECT(Number, "Expected number, got %s\n");
-                instr = op_movql(dest, ARG_16BIT(parse16(tokens->value)));
-            } else if (ins("movqh")) {
-                tokens++;
-                EXPECT(Register, "Expected register, got %s\n");
-                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
-                tokens++;
-                EXPECT(Comma, "Expected comma, got %s\n");
-                tokens++;
-                EXPECT(Number, "Expected number, got %s\n");
-                instr = op_movqh(dest, ARG_16BIT(parse16(tokens->value)));
-            } else if (ins("lea")) {
+                if (tokens->line != line) {
+                    tokens--;
+                    instr = op_movk(dest, imm16, ARG_8BIT(0));
+                } else if (tokens->type != Identifier) {
+                    printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return (section_t) {0};
+                } else if (eq(tokens->value, "shl")) {
+                    tokens++;
+                    EXPECT(Number, "Expected number, got %s\n");
+                    instr_arg shift = ARG_8BIT(parse8(tokens->value));
+                    if (shift.imm8 % 16 != 0) {
+                        printf("%s:%d: Shift must be multiple of 16, got %d\n", tokens->file, tokens->line, shift.imm8);
+                        return (section_t) {0};
+                    }
+                    if (shift.imm8 >= 64) {
+                        printf("%s:%d: Shift must be less than 64, got %d\n", tokens->file, tokens->line, shift.imm8);
+                        return (section_t) {0};
+                    }
+                    instr = op_movk(dest, imm16, shift);
+                } else {
+                    printf("%s:%d: Expected shl, got %s\n", tokens->file, tokens->line, tokens->value);
+                    return (section_t) {0};
+                }
+            } else if (ins("adrp")) {
                 tokens++;
                 EXPECT(Register, "Expected register, got %s\n");
                 instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
@@ -440,7 +503,16 @@ section_t** compile(Token* tokens) {
                 EXPECT(Comma, "Expected comma, got %s\n");
                 tokens++;
                 EXPECT(Identifier, "Expected identifier, got %s\n");
-                instr = op_lea_reg_addr(dest, ARG_SYM(tokens->value));
+                instr = op_adrp_reg_addr(dest, ARG_SYM(tokens->value));
+            } else if (ins("adp")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg dest = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
+                tokens++;
+                EXPECT(Identifier, "Expected identifier, got %s\n");
+                instr = op_adp_reg_addr(dest, ARG_SYM(tokens->value));
             } else if (ins("cmp")) {
                 tokens++;
                 EXPECT(Register, "Expected register, got %s\n");
@@ -461,6 +533,16 @@ section_t** compile(Token* tokens) {
                 EXPECT(Register, "Expected register, got %s\n");
                 instr_arg op2 = ARG_8BIT(parse8(tokens->value + 1));
                 instr = op_xchg_reg_reg(op1, op2);
+            } else if (ins("cmpxchg")) {
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg op1 = ARG_8BIT(parse8(tokens->value + 1));
+                tokens++;
+                EXPECT(Comma, "Expected comma, got %s\n");
+                tokens++;
+                EXPECT(Register, "Expected register, got %s\n");
+                instr_arg op2 = ARG_8BIT(parse8(tokens->value + 1));
+                instr = op_cmpxchg_reg_reg(op1, op2);
             } else if (ins("movz")) {
                 tokens++;
                 EXPECT(Register, "Expected register, got %s\n");
@@ -474,62 +556,73 @@ section_t** compile(Token* tokens) {
                 tokens++;
                 EXPECT(Register, "Expected register, got %s\n");
                 instr = op_not_reg(ARG_8BIT(parse8(tokens->value + 1)));
+            } else if (ins("pause")) {
+                instr = op_pause();
             } else {
                 printf("%s:%d: Unknown instruction: %s\n", tokens->file, tokens->line, tokens->value);
-                return NULL;
+                return (section_t) {0};
             }
             for (int i = 0; i < cond_count; i++) {
                 if (is_conditional(cond[i].opcode)) {
                     cond[i].args[0].imm8 += cond_count - i - 1 + extra_dwords;
                 }
-                add_instruction(obj, cond[i]);
+                add_instruction(&obj, cond[i]);
             }
-            add_instruction(obj, instr);
+            add_instruction(&obj, instr);
         } else if (tokens->type == Directive) {
             if (eq(tokens->value, "asciz") || eq(tokens->value, "ascii")) {
                 tokens++;
                 if (tokens->type != String) {
                     printf("%s:%d: Expected string, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
+                    return (section_t) {0};
                 }
                 char* str = tokens->value;
                 str = unquote(str);
+                size_t len = strlen(str) + !eq((tokens - 1)->value, "ascii");
                 if (eq((tokens - 1)->value, "ascii")) {
                     ASCII(str);
                 } else {
                     ASCIZ(str);
                 }
+                while (len % 4 != 0) {
+                    add_imm_byte(&obj, 0);
+                    len++;
+                }
             } else if (eq(tokens->value, "byte")) {
                 tokens++;
                 if (tokens->type != Number) {
                     printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
+                    return (section_t) {0};
                 }
                 uint8_t num = parse8(tokens->value);
-                add_imm_byte(obj, num);
+                add_imm_byte(&obj, num);
+                add_imm_byte(&obj, 0);
+                add_imm_byte(&obj, 0);
+                add_imm_byte(&obj, 0);
             } else if (eq(tokens->value, "word")) {
                 tokens++;
                 if (tokens->type != Number) {
                     printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
+                    return (section_t) {0};
                 }
                 uint16_t num = parse16(tokens->value);
-                add_imm_word(obj, num);
+                add_imm_word(&obj, num);
+                add_imm_word(&obj, 0);
             } else if (eq(tokens->value, "dword")) {
                 tokens++;
                 if (tokens->type != Number) {
                     printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
+                    return (section_t) {0};
                 }
                 uint32_t num = parse32(tokens->value);
-                add_imm_dword(obj, num);
+                add_imm_dword(&obj, num);
             } else if (eq(tokens->value, "qword")) {
                 tokens++;
                 if (tokens->type == Number) {
                     uint64_t num = parse64(tokens->value);
-                    add_imm_qword(obj, num);
+                    add_imm_qword(&obj, num);
                 } else if (tokens->type == Identifier) {
-                    add_symbol_offset(obj, tokens->value);
+                    add_symbol_offset(&obj, tokens->value);
                 } else {
                     printf("%s:%d: Expected number or identifier, got %s\n", tokens->file, tokens->line, tokens->value);
                 }
@@ -537,39 +630,45 @@ section_t** compile(Token* tokens) {
                 tokens++;
                 if (tokens->type != NumberFloat) {
                     printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
+                    return (section_t) {0};
                 }
                 float num = atof(tokens->value);
-                add_imm_dword(obj, *(int32_t*) &num);
+                add_imm_dword(&obj, *(int32_t*) &num);
             } else if (eq(tokens->value, "double")) {
                 tokens++;
                 if (tokens->type != NumberFloat) {
                     printf("%s:%d: Expected number, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
+                    return (section_t) {0};
                 }
                 double num = atof(tokens->value);
-                add_imm_qword(obj, *(int64_t*) &num);
+                add_imm_qword(&obj, *(int64_t*) &num);
             } else if (eq(tokens->value, "offset")) {
                 tokens++;
                 if (tokens->type != Identifier) {
                     printf("%s:%d: Expected identifier, got %s\n", tokens->file, tokens->line, tokens->value);
-                    return NULL;
+                    return (section_t) {0};
                 }
-                add_symbol_offset(obj, tokens->value);
+                add_symbol_offset(&obj, tokens->value);
+            } else if (eq(tokens->value, "zerofill")) {
+                tokens++;
+                EXPECT(Number, "Expected number, got %s\n");
+                uint64_t size = parse64(tokens->value);
+                size += 4 - size % 4;
+                while (size > 0) {
+                    add_imm_byte(&obj, 0);
+                    size--;
+                }
             } else {
                 printf("%s:%d: Unknown directive: %s\n", tokens->file, tokens->line, tokens->value);
-                return NULL;
+                return (section_t) {0};
             }
         } else if (tokens->type == Label) {
             char* str = tokens->value;
             str = unquote(str);
-            int index = CODE(str);
-            obj->symbols[index].section = section_count - 1;
+            CODE(str);
         }
     }
-    objs = realloc(objs, sizeof(section_t*) * (section_count + 1));
-    objs[section_count] = NULL;
-    return objs;
+    return obj;
 }
 
 char* unquote(const char* str) {

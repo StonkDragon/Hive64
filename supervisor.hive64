@@ -1,25 +1,31 @@
 _start:
     movz r0, 0x1
-    lea r1, Lsyscall$branchtable
+    adrp r1, Lsyscall$branchtable
+    adp r1, Lsyscall$branchtable
     irq
 
-    bl main
+    adrp r0, main
+    adp r0, main
+
+    blr r0
+    ; bl main
+
     ldr r1, r0
     movz r0, 0x2
     irq
 
 Lsyscall$branchtable:
-    .offset Lsyscall$exit
-    .offset Lsyscall$write
-    .offset Lsyscall$read
-    .offset Lsyscall$open
-    .offset Lsyscall$close
+    .qword Lsyscall$exit
+    .qword Lsyscall$write
+    .qword 0
+    .qword 0
+    .qword 0
     .qword 0
     .qword 0
     .qword 0
 
 Lsyscall$exit:
-    movl r0, 0x2
+    movz r0, 0x2
     irq
 
 Lsyscall$write: ; r1 = fd, r2 = buf
@@ -53,13 +59,4 @@ Lsyscall$write: ; r1 = fd, r2 = buf
     pp r2
     pp y
     pp x
-    ret
-
-Lsyscall$read:
-    ret
-
-Lsyscall$open:
-    ret
-
-Lsyscall$close:
     ret
