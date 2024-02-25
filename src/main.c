@@ -11,1188 +11,602 @@
 #include <execinfo.h>
 #include <fcntl.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <ctype.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/ptrace.h>
+#include <setjmp.h>
 
+#define NOB_IMPLEMENTATION
+#include "nob.h"
 #include "new_ops.h"
 
-#define PC (registers[32].asPointer)
-#define LR (registers[33].asPointer)
-#define SP (registers[34].asPointerPointer)
-#define FR (registers[35].bytes[0])
+hive_register_file_t register_file = {0};
+hive_simd_register_t simd_registers[8] = {0};
 
-#define CR0 (registers[36].asQWord)
-#define CR1 (registers[37].asQWord)
-#define CR2 (registers[38].asQWord)
-#define CR3 (registers[39].asQWord)
-#define CR4 (registers[40].asQWord)
-#define CR5 (registers[41].asQWord)
-#define CR6 (registers[42].asQWord)
-#define CR7 (registers[43].asQWord)
-#define CR8 (registers[44].asQWord)
-#define CR9 (registers[45].asQWord)
-#define SVC_TBL (registers[46].asQWord)
-#define ADDR_MODE (registers[47].asQWord)
-
-#define ZERO (registers[48].asQWord)
-#define ONE (registers[49].asQWord)
-
-#define R0 (registers[0].asQWord)
-#define R1 (registers[1].asQWord)
-#define R2 (registers[2].asQWord)
-#define R3 (registers[3].asQWord)
-#define R4 (registers[4].asQWord)
-#define R5 (registers[5].asQWord)
-#define R6 (registers[6].asQWord)
-#define R7 (registers[7].asQWord)
-#define R8 (registers[8].asQWord)
-#define R9 (registers[9].asQWord)
-#define R10 (registers[10].asQWord)
-#define R11 (registers[11].asQWord)
-#define R12 (registers[12].asQWord)
-#define R13 (registers[13].asQWord)
-#define R14 (registers[14].asQWord)
-#define R15 (registers[15].asQWord)
-#define R16 (registers[16].asQWord)
-#define R17 (registers[17].asQWord)
-#define R18 (registers[18].asQWord)
-#define R19 (registers[19].asQWord)
-#define R20 (registers[20].asQWord)
-#define R21 (registers[21].asQWord)
-#define R22 (registers[22].asQWord)
-#define R23 (registers[23].asQWord)
-#define R24 (registers[24].asQWord)
-#define R25 (registers[25].asQWord)
-#define R26 (registers[26].asQWord)
-#define R27 (registers[27].asQWord)
-#define R28 (registers[28].asQWord)
-#define R29 (registers[29].asQWord)
-#define R30 (registers[30].asQWord)
-#define R31 (registers[31].asQWord)
-
-#define FLAG_ZERO           0b0001
-#define ZERO_FLAG_SET       (FR & FLAG_ZERO)
-#define FLAG_NEGATIVE       0b0010
-#define NEGATIVE_FLAG_SET   (FR & FLAG_NEGATIVE)
-#define FLAG_CARRY          0b0100
-#define CARRY_FLAG_SET      (FR & FLAG_CARRY)
-#define FLAG_INTERRUPT      0b1000
-#define INTERRUPT_FLAG_SET  (FR & FLAG_INTERRUPT)
-
-#define RESET_ADDRESSING_MODE() ADDR_MODE = 4
-
-typedef union {
-    struct {
-    } none PACKED;
-    struct {
-        uint8_t reg1 PACKED;
-    } reg PACKED;
-    struct {
-        uint8_t reg1 PACKED;
-        uint8_t reg2 PACKED;
-    } reg_reg PACKED;
-    struct {
-        int16_t imm PACKED;
-    } imm16 PACKED;
-    struct {
-        int16_t imm PACKED;
-        uint8_t reg1 PACKED;
-    } reg_imm16 PACKED;
-    struct {
-        uint8_t reg1 PACKED;
-        uint8_t reg2 PACKED;
-        int16_t offset PACKED;
-    } reg_reg_offset PACKED;
-    struct {
-        uintptr_t addr PACKED;
-    } offset PACKED;
-    struct {
-        uint8_t reg1 PACKED;
-        uint8_t nbytes PACKED;
-        uint8_t reg2 PACKED;
-        uint8_t reg2_offset_reg PACKED;
-    } mov_reg_n_reg_offset_reg PACKED;
-    struct {
-        uintptr_t addr PACKED;
-        uint8_t reg PACKED;
-    } reg_offset PACKED;
-    struct {
-        int16_t offset PACKED;
-        uint8_t reg1 PACKED;
-        uint8_t nbytes PACKED;
-        uint8_t reg2 PACKED;
-    } mov_reg_n_reg_offset PACKED;
-    struct {
-        uintptr_t addr PACKED;
-        uint8_t reg1 PACKED;
-        uint8_t reg2 PACKED;
-    } reg_offset_reg PACKED;
-    struct {
-        uintptr_t addr PACKED;
-        uint8_t reg1 PACKED;
-        int16_t imm_off PACKED;
-    } reg_offset_imm PACKED;
-    struct {
-        uintptr_t addr PACKED;
-        uint8_t reg1 PACKED;
-        uint8_t nbytes PACKED;
-        uint8_t reg2 PACKED;
-    } mov_reg_n_reg_offset_reg_offset PACKED;
-    struct {
-        uint64_t imm PACKED;
-    } imm64 PACKED;
-    struct {
-        uintptr_t addr PACKED;
-        uint8_t reg1 PACKED;
-        uint8_t nbytes PACKED;
-        int16_t offset_offset PACKED;
-    } mov_reg_n_reg_offset_reg_offset_offset PACKED;
-    struct {
-        uint64_t imm PACKED;
-        uint8_t reg1 PACKED;
-    } reg_imm64 PACKED;
-
-    __uint128_t imm128; // 16 bytes because that is the maximum extra size of an instruction
-} args_t;
-
-typedef void (*opc_func)(register hive_register_t* const restrict, register const opcode_t args);
-
-#pragma region EXEC
-
-#define NBITS_TO_BITMASK(_nbits)    ((1ULL << _nbits) - 1)
-#define NBYTES_TO_BITMASK(_nbytes)  NBITS_TO_BITMASK(_nbytes * 8)
-
-static inline uint64_t sign_extend(uint64_t src, uint8_t nbits) {
-    uint64_t sign_bit = src & (1ULL << (nbits - 1));
-    if (sign_bit) {
-        uint64_t mask = NBITS_TO_BITMASK(nbits);
-        src |= ~mask;
+void exec_svc(register hive_register_file_t* const restrict regs) {
+    switch (regs->r[8].asQWord) {
+    case 0:
+        exit(regs->r[0].asDWord);
+        break;
+    case 1:
+        regs->r[0].asSQWord = write(regs->r[0].asDWord, regs->r[1].asPointer, regs->r[2].asQWord);
+        break;
+    default:
+        fprintf(stderr, "Invalid svc call: %lld\n", regs->r[8].asQWord);
+        exit(-1);
+        break;
     }
-    return src;
 }
-
-static inline uint64_t zero_extend(uint64_t src, uint8_t nbits) {
-    uint64_t mask = NBITS_TO_BITMASK(nbits);
-    src &= mask;
-    return src;
+static inline void test(register hive_register_file_t* const restrict regs, uint64_t a, uint64_t b) {
+    regs->spec.flags.equal = (a == b);
+    regs->spec.flags.negative = (a < b);
+    // lt, mi   -> negative
+    // gt       -> !equal && !negative
+    // ge, pl   -> equal || !negative
+    // le       -> negative || equal
+    // eq, z    -> equal
+    // ne, nz   -> !equal
 }
+#define BRANCH(to)                  (regs->spec.pc.asInstrPtr = (to))
+#define LINK()                      (regs->spec.lr.asQWord = regs->spec.pc.asQWord)
+#define BRANCH_LINK(to)             (LINK(), BRANCH(to))
+#define BRANCH_ON(to, what)         (regs->spec.pc.asInstrPtr = (to) * (what))
+#define LINK_ON(what)               (regs->spec.lr.asQWord = regs->spec.pc.asQWord * (what) + regs->spec.lr.asQWord * !(what))
+#define BRANCH_LINK_ON(to, what)    (LINK_ON(what), BRANCH_ON(to, what))
+#define PC_REL(what)                (regs->spec.pc.asQWord + (what) * sizeof(hive_instruction_t))
 
-#undef OPC
-#undef OPC_ENDFUNC
-#undef OPC_FUNC
-
-#define CAT_(a, b)                  a ## b
-#define CAT(a, b)                   CAT_(a, b)
-
-#define OPC_DEF(_opcode)            static void execute_ ## _opcode(register hive_register_t* const restrict registers, register const opcode_t args)
-#define OPC(_opcode)                [_opcode] = execute_ ## _opcode
-#define OPC_FUNCS                   const opc_func opcs[] = {
-#define OPC_END                     }
-
-OPC_DEF(opcode_nop) {
-    (void) args;
-    (void) registers;
-}
-
-OPC_DEF(opcode_ret) {
-    if (LR) {
-        PC = LR;
-        LR = *(--SP);
-        return;
-    }
-    exit(R0);
-}
-
-OPC_DEF(opcode_irq) {
-    switch (R0) {
-        case 0x1: {
-            SVC_TBL = R1;
+void exec_data_type(hive_instruction_t ins, register hive_register_file_t* const restrict regs, register hive_simd_register_t simd_regs[8]) {
+    switch (ins.data.op) {
+        case OP_DATA_nop:
             break;
-        }
-        case 0x2: {
-            exit(R1);
-        }
-        case 0xe: {
-            uint8_t s[2] = {registers[1].asByte, 0};
-            write(R2, (char*) s, 1);
+        case OP_DATA_ret:
+            regs->spec.pc.asInstrPtr = regs->spec.lr.asInstrPtr;
             break;
-        }
-    }
-}
-
-OPC_DEF(opcode_svc) {
-    *(SP++) = LR;
-    LR = PC;
-    PC = ((void**) SVC_TBL)[R0];
-}
-
-OPC_DEF(opcode_b_addr) {
-    int64_t offset = ((int64_t) sign_extend(args.args.args_raw, 24)) * 4;
-
-    PC += offset;
-}
-
-OPC_DEF(opcode_bl_addr) {
-    int64_t offset = ((int64_t) sign_extend(args.args.args_raw, 24)) * 4;
-
-    *(SP++) = LR;
-    LR = PC;
-    PC += offset;
-}
-
-OPC_DEF(opcode_br_reg) {
-    PC = registers[args.args.r].asPointer;
-}
-
-OPC_DEF(opcode_blr_reg) {
-    *(SP++) = LR;
-    LR = PC;
-    PC = registers[args.args.r].asPointer;
-}
-
-OPC_DEF(opcode_dot_eq) {
-    if (!(ZERO_FLAG_SET)) {
-        PC += sizeof(opcode_t) * (args.args.u8 + 1);
-    }
-}
-
-OPC_DEF(opcode_dot_ne) {
-    if (ZERO_FLAG_SET) {
-        PC += sizeof(opcode_t) * (args.args.u8 + 1);
-    }
-}
-
-OPC_DEF(opcode_dot_lt) {
-    if (!(NEGATIVE_FLAG_SET)) {
-        PC += sizeof(opcode_t) * (args.args.u8 + 1);
-    }
-}
-
-OPC_DEF(opcode_dot_gt) {
-    if (NEGATIVE_FLAG_SET || ZERO_FLAG_SET) {
-        PC += sizeof(opcode_t) * (args.args.u8 + 1);
-    }
-}
-
-OPC_DEF(opcode_dot_le) {
-    if (!(NEGATIVE_FLAG_SET) && !(ZERO_FLAG_SET)) {
-        PC += sizeof(opcode_t) * (args.args.u8 + 1);
-    }
-}
-
-OPC_DEF(opcode_dot_ge) {
-    if (ZERO_FLAG_SET || NEGATIVE_FLAG_SET) {
-        PC += sizeof(opcode_t) * (args.args.u8 + 1);
-    }
-}
-
-OPC_DEF(opcode_dot_cs) {
-    if (!(CARRY_FLAG_SET)) {
-        PC += sizeof(opcode_t) * (args.args.u8 + 1);
-    }
-}
-
-OPC_DEF(opcode_dot_cc) {
-    if (CARRY_FLAG_SET) {
-        PC += sizeof(opcode_t) * (args.args.u8 + 1);
-    }
-}
-
-OPC_DEF(opcode_ldr_reg_reg) {
-    uint8_t dest = args.args.rr.reg1;
-    uint8_t src = args.args.rr.reg2;
-
-    switch (ADDR_MODE) {
-        case 1: registers[dest].asByte = registers[src].asByte; break;
-        case 2: registers[dest].asWord = registers[src].asWord; break;
-        case 3: registers[dest].asDWord = registers[src].asDWord; break;
-        default: registers[dest].asQWord = registers[src].asQWord; break;
-    }
-    RESET_ADDRESSING_MODE();
-}
-
-OPC_DEF(opcode_ldr_reg_addr_imm) {
-    uint8_t dest = args.args.rri.reg1;
-    uint8_t src = args.args.rri.reg2;
-    int8_t offset_imm = args.args.rri.imm;
-
-    switch (ADDR_MODE) {
-        case 1: registers[dest].asByte = *(uint8_t*) (registers[src].asPointer + offset_imm); break;
-        case 2: registers[dest].asWord = *(uint16_t*) (registers[src].asPointer + offset_imm); break;
-        case 3: registers[dest].asDWord = *(uint32_t*) (registers[src].asPointer + offset_imm); break;
-        default: registers[dest].asQWord = *(uint64_t*) (registers[src].asPointer + offset_imm); break;
-    }
-    RESET_ADDRESSING_MODE();
-}
-
-OPC_DEF(opcode_ldr_reg_addr_reg) {
-    uint8_t dest = args.args.rrr.reg1;
-    uint8_t src = args.args.rrr.reg2;
-    uint8_t offset_reg = args.args.rrr.reg3;
-
-    switch (ADDR_MODE) {
-        case 1: registers[dest].asByte = *(uint8_t*) (registers[src].asPointer + registers[offset_reg].asSQWord); break;
-        case 2: registers[dest].asWord = *(uint16_t*) (registers[src].asPointer + registers[offset_reg].asSQWord); break;
-        case 3: registers[dest].asDWord = *(uint32_t*) (registers[src].asPointer + registers[offset_reg].asSQWord); break;
-        default: registers[dest].asQWord = *(uint64_t*) (registers[src].asPointer + registers[offset_reg].asSQWord); break;
-    }
-    RESET_ADDRESSING_MODE();
-}
-
-OPC_DEF(opcode_str_reg_reg) {
-    uint8_t dest = args.args.rr.reg1;
-    uint8_t src = args.args.rr.reg2;
-
-    switch (ADDR_MODE) {
-        case 1: *(uint8_t*) registers[dest].asPointer = registers[src].asByte; break;
-        case 2: *(uint16_t*) registers[dest].asPointer = registers[src].asWord; break;
-        case 3: *(uint32_t*) registers[dest].asPointer = registers[src].asDWord; break;
-        default: *(uint64_t*) registers[dest].asPointer = registers[src].asQWord; break;
-    }
-    RESET_ADDRESSING_MODE();
-}
-
-OPC_DEF(opcode_str_reg_addr_reg) {
-    uint8_t dest = args.args.rrr.reg1;
-    uint8_t dest_offset_reg = args.args.rrr.reg2;
-    uint8_t src = args.args.rrr.reg3;
-
-    switch (ADDR_MODE) {
-        case 1: *(uint8_t*) (registers[dest].asPointer + registers[dest_offset_reg].asSQWord) = registers[src].asByte; break;
-        case 2: *(uint16_t*) (registers[dest].asPointer + registers[dest_offset_reg].asSQWord) = registers[src].asWord; break;
-        case 3: *(uint32_t*) (registers[dest].asPointer + registers[dest_offset_reg].asSQWord) = registers[src].asDWord; break;
-        default: *(uint64_t*) (registers[dest].asPointer + registers[dest_offset_reg].asSQWord) = registers[src].asQWord; break;
-    }
-    RESET_ADDRESSING_MODE();
-}
-
-#define HIGHEST_BIT(_type) (1ULL << (sizeof(_type) * 8 - 1))
-
-#define ARITH(_op, _what) \
-OPC_DEF(opcode_ ## _op ## _reg_reg_reg) { \
-    uint8_t dest = args.args.rrr.reg1; \
-    uint8_t src1 = args.args.rrr.reg2; \
-    uint8_t src2 = args.args.rrr.reg3; \
-    switch (ADDR_MODE) { \
-        case 1: { \
-            registers[dest].asByte = registers[src1].asByte _what registers[src2].asByte; \
-            if (registers[dest].asByte < registers[src1].asByte) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
-            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
-            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
-            break; \
-        } \
-        case 2: { \
-            registers[dest].asWord = registers[src1].asWord _what registers[src2].asWord; \
-            if (registers[dest].asWord < registers[src1].asWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
-            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
-            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
-            break; \
-        } \
-        case 3: { \
-            registers[dest].asDWord = registers[src1].asDWord _what registers[src2].asDWord; \
-            if (registers[dest].asDWord < registers[src1].asDWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
-            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
-            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
-            break; \
-        } \
-        default: { \
-            registers[dest].asQWord = registers[src1].asQWord _what registers[src2].asQWord; \
-            if (registers[dest].asQWord < registers[src1].asQWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
-            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
-            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
-            break; \
-        } \
-    } \
-    RESET_ADDRESSING_MODE(); \
-}
-
-ARITH(add, +)
-ARITH(sub, -)
-ARITH(mul, *)
-ARITH(div, /)
-ARITH(mod, %)
-ARITH(and, &)
-ARITH(or, |)
-ARITH(xor, ^)
-ARITH(shl, <<)
-ARITH(shr, >>)
-
-#define ROTATE_LEFT(_val, _n, _type)  ((_val << _n) | (_val >> (sizeof(_type) * 8 - _n)))
-#define ROTATE_RIGHT(_val, _n, _type) ((_val >> _n) | (_val << (sizeof(_type) * 8 - _n)))
-
-OPC_DEF(opcode_rol_reg_reg_reg) {
-    uint8_t dest = args.args.rrr.reg1;
-    uint8_t src1 = args.args.rrr.reg2;
-    uint8_t src2 = args.args.rrr.reg3;
-
-    switch (ADDR_MODE) {
-        case 1: {
-            registers[dest].asByte = ROTATE_LEFT(registers[src1].asByte, registers[src2].asByte, uint8_t);
-            if (registers[dest].asByte < registers[src1].asByte) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+        case OP_DATA_b:
+            BRANCH(PC_REL(ins.data_s.data));
             break;
-        }
-        case 2: {
-            registers[dest].asWord = ROTATE_LEFT(registers[src1].asWord, registers[src2].asWord, uint16_t);
-            if (registers[dest].asWord < registers[src1].asWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+        case OP_DATA_bl:
+            BRANCH_LINK(PC_REL(ins.data_s.data));
             break;
-        }
-        case 3: {
-            registers[dest].asDWord = ROTATE_LEFT(registers[src1].asDWord, registers[src2].asDWord, uint32_t);
-            if (registers[dest].asDWord < registers[src1].asDWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+        case OP_DATA_blt:
+            BRANCH_ON(PC_REL(ins.data_s.data), regs->spec.flags.negative);
             break;
-        }
-        default: {
-            registers[dest].asQWord = ROTATE_LEFT(registers[src1].asQWord, registers[src2].asQWord, uint64_t);
-            if (registers[dest].asQWord < registers[src1].asQWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+        case OP_DATA_bgt:
+            BRANCH_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative && !regs->spec.flags.equal);
             break;
-        }
+        case OP_DATA_bge:
+            BRANCH_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative || regs->spec.flags.equal);
+            break;
+        case OP_DATA_ble:
+            BRANCH_ON(PC_REL(ins.data_s.data), regs->spec.flags.negative || regs->spec.flags.equal);
+            break;
+        case OP_DATA_beq:
+            BRANCH_ON(PC_REL(ins.data_s.data), regs->spec.flags.equal);
+            break;
+        case OP_DATA_bne:
+            BRANCH_ON(PC_REL(ins.data_s.data), regs->spec.flags.equal);
+            break;
+        case OP_DATA_bllt:
+            BRANCH_LINK_ON(PC_REL(ins.data_s.data), regs->spec.flags.negative);
+            break;
+        case OP_DATA_blgt:
+            BRANCH_LINK_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative && !regs->spec.flags.equal);
+            break;
+        case OP_DATA_blge:
+            BRANCH_LINK_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative || regs->spec.flags.equal);
+            break;
+        case OP_DATA_blle:
+            BRANCH_LINK_ON(PC_REL(ins.data_s.data), regs->spec.flags.negative || regs->spec.flags.equal);
+            break;
+        case OP_DATA_bleq:
+            BRANCH_LINK_ON(PC_REL(ins.data_s.data), regs->spec.flags.equal);
+            break;
+        case OP_DATA_blne:
+            BRANCH_LINK_ON(PC_REL(ins.data_s.data), regs->spec.flags.equal);
+            break;
     }
-    RESET_ADDRESSING_MODE();
 }
 
-OPC_DEF(opcode_ror_reg_reg_reg) {
-    uint8_t dest = args.args.rrr.reg1;
-    uint8_t src1 = args.args.rrr.reg2;
-    uint8_t src2 = args.args.rrr.reg3;
-
-    switch (ADDR_MODE) {
-        case 1: {
-            registers[dest].asByte = ROTATE_RIGHT(registers[src1].asByte, registers[src2].asByte, uint8_t);
-            if (registers[dest].asByte < registers[src1].asByte) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+void exec_rri_type(hive_instruction_t ins, register hive_register_file_t* const restrict regs, register hive_simd_register_t simd_regs[8]) {
+    switch (ins.rri.op) {
+        case OP_RRI_add:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord + ins.rri.imm;
             break;
-        }
-        case 2: {
-            registers[dest].asWord = ROTATE_RIGHT(registers[src1].asWord, registers[src2].asWord, uint16_t);
-            if (registers[dest].asWord < registers[src1].asWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+        case OP_RRI_sub:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord - ins.rri.imm;
             break;
-        }
-        case 3: {
-            registers[dest].asDWord = ROTATE_RIGHT(registers[src1].asDWord, registers[src2].asDWord, uint32_t);
-            if (registers[dest].asDWord < registers[src1].asDWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+        case OP_RRI_mul:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord * ins.rri.imm;
             break;
-        }
-        default: {
-            registers[dest].asQWord = ROTATE_RIGHT(registers[src1].asQWord, registers[src2].asQWord, uint64_t);
-            if (registers[dest].asQWord < registers[src1].asQWord) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+        case OP_RRI_div:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord / ins.rri.imm;
             break;
-        }
+        case OP_RRI_mod:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord % ins.rri.imm;
+            break;
+        case OP_RRI_and:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord & ins.rri.imm;
+            break;
+        case OP_RRI_or:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord | ins.rri.imm;
+            break;
+        case OP_RRI_xor:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord ^ ins.rri.imm;
+            break;
+        case OP_RRI_shl:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord << ins.rri.imm;
+            break;
+        case OP_RRI_shr:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord >> ins.rri.imm;
+            break;
+        case OP_RRI_rol:
+            #define ROL(_a, _b) ((_a) >> (_b)) | ((_a) << ((sizeof(typeof(_a)) << 3) - (_b)))
+            regs->r[ins.rri.r1].asQWord = ROL(regs->r[ins.rri.r2].asQWord, ins.rri.imm);
+            break;
+        case OP_RRI_ror:
+            #define ROR(_a, _b) ((_a) << (_b)) | ((_a) >> ((sizeof(typeof(_a)) << 3) - (_b)))
+            regs->r[ins.rri.r1].asQWord = ROR(regs->r[ins.rri.r2].asQWord, ins.rri.imm);
+            break;
+        case OP_RRI_ldr:
+            regs->r[ins.rri.r1].asQWord = *(QWord_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm);
+            break;
+        case OP_RRI_str:
+            *(QWord_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm) = regs->r[ins.rri.r1].asQWord;
+            break;
+        case OP_RRI_ldrb:
+            regs->r[ins.rri.r1].asByte = *(Byte_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm);
+            break;
+        case OP_RRI_strb:
+            *(Byte_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm) = regs->r[ins.rri.r1].asByte;
+            break;
+        case OP_RRI_ldrw:
+            regs->r[ins.rri.r1].asWord = *(Word_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm);
+            break;
+        case OP_RRI_strw:
+            *(Word_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm) = regs->r[ins.rri.r1].asWord;
+            break;
+        case OP_RRI_mov:
+            regs->r[ins.rri.r1].asQWord = regs->r[ins.rri.r2].asQWord;
+            break;
     }
-    RESET_ADDRESSING_MODE();
 }
-
-#undef ARITH
-
-OPC_DEF(opcode_inc_reg) {
-    uint8_t dest = args.args.r;
-
-    switch (ADDR_MODE) {
-        case 1: {
-            registers[dest].asByte++;
-            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+void exec_rrr_type(hive_instruction_t ins, register hive_register_file_t* const restrict regs, register hive_simd_register_t simd_regs[8]) {
+    switch (ins.rrr.op) {
+        case OP_RRR_add:
+            regs->r[ins.rrr.r1].asQWord = regs->r[ins.rrr.r2].asQWord + regs->r[ins.rrr.r3].asQWord;
             break;
-        }
-        case 2: {
-            registers[dest].asWord++;
-            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+        case OP_RRR_sub:
+            regs->r[ins.rrr.r1].asQWord = regs->r[ins.rrr.r2].asQWord - regs->r[ins.rrr.r3].asQWord;
             break;
-        }
-        case 3: {
-            registers[dest].asDWord++;
-            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+        case OP_RRR_mul:
+            regs->r[ins.rrr.r1].asQWord = regs->r[ins.rrr.r2].asQWord * regs->r[ins.rrr.r3].asQWord;
             break;
-        }
-        default: {
-            registers[dest].asQWord++;
-            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
+        case OP_RRR_div:
+            regs->r[ins.rrr.r1].asQWord = regs->r[ins.rrr.r2].asQWord / regs->r[ins.rrr.r3].asQWord;
             break;
-        }
+        case OP_RRR_mod:
+            regs->r[ins.rrr.r1].asQWord = regs->r[ins.rrr.r2].asQWord % regs->r[ins.rrr.r3].asQWord;
+            break;
+        case OP_RRR_and:
+            regs->r[ins.rrr.r1].asQWord = regs->r[ins.rrr.r2].asQWord & regs->r[ins.rrr.r3].asQWord;
+            break;
+        case OP_RRR_or:
+            regs->r[ins.rrr.r1].asQWord = regs->r[ins.rrr.r2].asQWord | regs->r[ins.rrr.r3].asQWord;
+            break;
+        case OP_RRR_xor:
+            regs->r[ins.rrr.r1].asQWord = regs->r[ins.rrr.r2].asQWord ^ regs->r[ins.rrr.r3].asQWord;
+            break;
+        case OP_RRR_shl:
+            regs->r[ins.rrr.r1].asQWord = regs->r[ins.rrr.r2].asQWord << regs->r[ins.rrr.r3].asQWord;
+            break;
+        case OP_RRR_shr:
+            regs->r[ins.rrr.r1].asQWord = regs->r[ins.rrr.r2].asQWord >> regs->r[ins.rrr.r3].asQWord;
+            break;
+        case OP_RRR_rol:
+            regs->r[ins.rrr.r1].asQWord = ROL(regs->r[ins.rrr.r2].asQWord, regs->r[ins.rrr.r3].asQWord);
+            break;
+        case OP_RRR_ror:
+            regs->r[ins.rrr.r1].asQWord = ROR(regs->r[ins.rrr.r2].asQWord, regs->r[ins.rrr.r3].asQWord);
+            break;
+        case OP_RRR_ldr:
+            regs->r[ins.rrr.r1].asQWord = *(QWord_t*) (regs->r[ins.rrr.r2].asQWord + regs->r[ins.rrr.r3].asQWord);
+            break;
+        case OP_RRR_str:
+            *(QWord_t*) (regs->r[ins.rrr.r2].asQWord + regs->r[ins.rrr.r3].asQWord) = regs->r[ins.rrr.r1].asQWord;
+            break;
+        case OP_RRR_ldrb:
+            regs->r[ins.rrr.r1].asByte = *(Byte_t*) (regs->r[ins.rrr.r2].asQWord + regs->r[ins.rrr.r3].asQWord);
+            break;
+        case OP_RRR_strb:
+            *(Byte_t*) (regs->r[ins.rrr.r2].asQWord + regs->r[ins.rrr.r3].asQWord) = regs->r[ins.rrr.r1].asByte;
+            break;
+        case OP_RRR_ldrw:
+            regs->r[ins.rrr.r1].asWord = *(Word_t*) (regs->r[ins.rrr.r2].asQWord + regs->r[ins.rrr.r3].asQWord);
+            break;
+        case OP_RRR_strw:
+            *(Word_t*) (regs->r[ins.rrr.r2].asQWord + regs->r[ins.rrr.r3].asQWord) = regs->r[ins.rrr.r1].asWord;
+            break;
+        case OP_RRR_tst:
+            test(regs, regs->r[ins.rrr.r1].asQWord, regs->r[ins.rrr.r2].asQWord);
+            break;
     }
-    RESET_ADDRESSING_MODE();
 }
-
-OPC_DEF(opcode_dec_reg) {
-    uint8_t dest = args.args.r;
-
-    switch (ADDR_MODE) {
-        case 1: {
-            registers[dest].asByte--;
-            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
-        case 2: {
-            registers[dest].asWord--;
-            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
-        case 3: {
-            registers[dest].asDWord--;
-            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
-        default: {
-            registers[dest].asQWord--;
-            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
-    }
-    RESET_ADDRESSING_MODE();
-}
-
-OPC_DEF(opcode_psh_reg) {
-    uint8_t src = args.args.r;
-
-    switch (ADDR_MODE) {
-        case 1: *(uint8_t*) (SP++) = registers[src].asByte; break;
-        case 2: *(uint16_t*) (SP++) = registers[src].asWord; break;
-        case 3: *(uint32_t*) (SP++) = registers[src].asDWord; break;
-        default: *(uint64_t*) (SP++) = registers[src].asQWord; break;
-    }
-    RESET_ADDRESSING_MODE();
-}
-
-OPC_DEF(opcode_pp_reg) {
-    uint8_t dest = args.args.r;
-
-    switch (ADDR_MODE) {
-        case 1: registers[dest].asByte = *(uint8_t*) (--SP); break;
-        case 2: registers[dest].asWord = *(uint16_t*) (--SP); break;
-        case 3: registers[dest].asDWord = *(uint32_t*) (--SP); break;
-        default: registers[dest].asQWord = *(uint64_t*) (--SP); break;
-    }
-    RESET_ADDRESSING_MODE();
-}
-
-OPC_DEF(opcode_movk) {
-    uint8_t dest = args.args.ris.reg1;
-    uint16_t imm = args.args.ris.imm;
-    uint8_t shift = args.args.ris.shift * 16;
-    uint64_t mask = 0xFFFF << shift;
-
-    registers[dest].asQWord &= ~mask;
-    registers[dest].asQWord |= ((uint64_t) imm) << shift;
-}
-
-OPC_DEF(opcode_movz) {
-    uint8_t dest = args.args.ris.reg1;
-    uint16_t imm = args.args.ris.imm;
-    uint8_t shift = args.args.ris.shift * 16;
-
-    registers[dest].asQWord = ((uint64_t) imm) << shift;
-}
-
-OPC_DEF(opcode_adrp_reg_addr) {
-    uint8_t dest = args.args.ri.reg1;
-    int64_t imm = sign_extend(args.args.ri.imm, 16) << 16;
-    imm *= 4;
-    int64_t base = (int64_t) PC;
-
-    registers[dest].asPointer = (void*) (base + imm);
-}
-
-OPC_DEF(opcode_adp_reg_addr) {
-    uint8_t dest = args.args.ri.reg1;
-    uint64_t imm = (uint16_t) args.args.ri.imm;
-    imm *= 4;
-
-    registers[dest].asQWord += imm;
-}
-
-OPC_DEF(opcode_cmp_reg_reg) {
-    uint8_t reg1 = args.args.rr.reg1;
-    uint8_t reg2 = args.args.rr.reg2;
-
-    switch (ADDR_MODE) {
-        case 1: {
-            if (registers[reg1].asByte < registers[reg2].asByte) {
-                FR |= FLAG_CARRY;
-            } else {
-                FR &= ~FLAG_CARRY;
-            }
-            if (registers[reg1].asByte == 0) {
-                FR |= FLAG_ZERO;
-            } else {
-                FR &= ~FLAG_ZERO;
-            }
-            if (registers[reg1].asByte & 0x8000000000000000) {
-                FR |= FLAG_NEGATIVE;
-            } else {
-                FR &= ~FLAG_NEGATIVE;
+void exec_ri_type(hive_instruction_t ins, register hive_register_file_t* const restrict regs, register hive_simd_register_t simd_regs[8]) {
+    switch (ins.ri.op) {
+        case OP_RI_cbz:
+            if (regs->spec.flags.equal) {
+                regs->spec.pc.asInstrPtr += ins.data_s.data;
             }
             break;
-        }
-        case 2: {
-            if (registers[reg1].asWord < registers[reg2].asWord) {
-                FR |= FLAG_CARRY;
-            } else {
-                FR &= ~FLAG_CARRY;
-            }
-            if (registers[reg1].asWord == 0) {
-                FR |= FLAG_ZERO;
-            } else {
-                FR &= ~FLAG_ZERO;
-            }
-            if (registers[reg1].asWord & 0x8000000000000000) {
-                FR |= FLAG_NEGATIVE;
-            } else {
-                FR &= ~FLAG_NEGATIVE;
+        case OP_RI_cbnz:
+            if (!regs->spec.flags.equal) {
+                regs->spec.pc.asInstrPtr += ins.data_s.data;
             }
             break;
-        }
-        case 3: {
-            if (registers[reg1].asDWord < registers[reg2].asDWord) {
-                FR |= FLAG_CARRY;
-            } else {
-                FR &= ~FLAG_CARRY;
-            }
-            if (registers[reg1].asDWord == 0) {
-                FR |= FLAG_ZERO;
-            } else {
-                FR &= ~FLAG_ZERO;
-            }
-            if (registers[reg1].asDWord & 0x8000000000000000) {
-                FR |= FLAG_NEGATIVE;
-            } else {
-                FR &= ~FLAG_NEGATIVE;
-            }
+        case OP_RI_lea:
+            regs->r[ins.ri.r1].asInstrPtr = regs->spec.pc.asInstrPtr + ins.ri_s.imm;
             break;
-        }
-        default: {
-            if (registers[reg1].asQWord < registers[reg2].asQWord) {
-                FR |= FLAG_CARRY;
-            } else {
-                FR &= ~FLAG_CARRY;
-            }
-            if (registers[reg1].asQWord == 0) {
-                FR |= FLAG_ZERO;
-            } else {
-                FR &= ~FLAG_ZERO;
-            }
-            if (registers[reg1].asQWord & 0x8000000000000000) {
-                FR |= FLAG_NEGATIVE;
-            } else {
-                FR &= ~FLAG_NEGATIVE;
-            }
+        case OP_RI_movk:
+            regs->r[ins.ri_mov.r1].asQWord &= ROL(0xFFFFFFFFFFFF0000, (16 * ins.ri_mov.shift));
+            regs->r[ins.ri_mov.r1].asQWord |= ROL((uint64_t) ins.ri_mov.imm, (16 * ins.ri_mov.shift));
             break;
-        }
-    }
-    RESET_ADDRESSING_MODE();
-}
-
-OPC_DEF(opcode_xchg_reg_reg) {
-    uint8_t reg1 = args.args.rr.reg1;
-    uint8_t reg2 = args.args.rr.reg2;
-
-    switch (ADDR_MODE) {
-        case 1: {
-            uint8_t tmp = registers[reg1].asByte;
-            registers[reg1].asByte = registers[reg2].asByte;
-            registers[reg2].asByte = tmp;
+        case OP_RI_movz:
+            regs->r[ins.ri_mov.r1].asQWord = ROL((uint64_t) ins.ri_mov.imm, (16 * ins.ri_mov.shift));
             break;
-        }
-        case 2: {
-            uint16_t tmp = registers[reg1].asWord;
-            registers[reg1].asWord = registers[reg2].asWord;
-            registers[reg2].asWord = tmp;
+        case OP_RI_svc:
+            exec_svc(regs);
             break;
-        }
-        case 3: {
-            uint32_t tmp = registers[reg1].asDWord;
-            registers[reg1].asDWord = registers[reg2].asDWord;
-            registers[reg2].asDWord = tmp;
+        case OP_RI_br:
+            BRANCH(regs->r[ins.ri.r1].asQWord);
             break;
-        }
-        default: {
-            uint64_t tmp = registers[reg1].asQWord;
-            registers[reg1].asQWord = registers[reg2].asQWord;
-            registers[reg2].asQWord = tmp;
+        case OP_RI_blr:
+            BRANCH_LINK(regs->r[ins.ri.r1].asQWord);
             break;
-        }
-    }
-    RESET_ADDRESSING_MODE();
-}
-
-OPC_DEF(opcode_cmpxchg_reg_reg) {
-    uint8_t addr_mode = ADDR_MODE;
-    execute_opcode_cmp_reg_reg(registers, args);
-    if (FR & FLAG_NEGATIVE) {
-        ADDR_MODE = addr_mode;
-        execute_opcode_xchg_reg_reg(registers, args);
+        case OP_RI_brlt:
+            BRANCH_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.negative);
+            break;
+        case OP_RI_brgt:
+            BRANCH_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative && !regs->spec.flags.equal);
+            break;
+        case OP_RI_brge:
+            BRANCH_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative || regs->spec.flags.equal);
+            break;
+        case OP_RI_brle:
+            BRANCH_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.negative || regs->spec.flags.equal);
+            break;
+        case OP_RI_breq:
+            BRANCH_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.equal);
+            break;
+        case OP_RI_brne:
+            BRANCH_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.equal);
+            break;
+        case OP_RI_blrlt:
+            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.negative);
+            break;
+        case OP_RI_blrgt:
+            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative && !regs->spec.flags.equal);
+            break;
+        case OP_RI_blrge:
+            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative || regs->spec.flags.equal);
+            break;
+        case OP_RI_blrle:
+            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.negative || regs->spec.flags.equal);
+            break;
+        case OP_RI_blreq:
+            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.equal);
+            break;
+        case OP_RI_blrne:
+            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.equal);
+            break;
     }
 }
 
-#define ARITH(_op, _what) \
-OPC_DEF(opcode_ ## _op ## _reg_imm) { \
-    uint8_t dest = args.args.ri.reg1; \
-    uint16_t imm = args.args.ri.imm; \
-    switch (ADDR_MODE) { \
-        case 1: { \
-            registers[dest].asByte _what ## = imm; \
-            if (registers[dest].asByte < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
-            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
-            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
-            break; \
-        } \
-        case 2: { \
-            registers[dest].asWord _what ## = imm; \
-            if (registers[dest].asWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
-            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
-            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
-            break; \
-        } \
-        case 3: { \
-            registers[dest].asDWord _what ## = imm; \
-            if (registers[dest].asDWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
-            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
-            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
-            break; \
-        } \
-        default: { \
-            registers[dest].asQWord _what ## = imm; \
-            if (registers[dest].asQWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; } \
-            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; } \
-            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; } \
-            break; \
-        } \
-    } \
-    RESET_ADDRESSING_MODE(); \
-}
-
-ARITH(add, +)
-ARITH(sub, -)
-ARITH(mul, *)
-ARITH(div, /)
-ARITH(mod, %)
-ARITH(and, &)
-ARITH(or, |)
-ARITH(xor, ^)
-ARITH(shl, <<)
-ARITH(shr, >>)
-
-#define ROTATE_LEFT(_val, _n, _type)  ((_val << _n) | (_val >> (sizeof(_type) * 8 - _n)))
-#define ROTATE_RIGHT(_val, _n, _type) ((_val >> _n) | (_val << (sizeof(_type) * 8 - _n)))
-
-OPC_DEF(opcode_rol_reg_imm) {
-    uint8_t dest = args.args.ri.reg1;
-    uint16_t imm = args.args.ri.imm;
-
-    switch (ADDR_MODE) {
-        case 1: {
-            registers[dest].asByte = ROTATE_LEFT(registers[dest].asByte, imm, uint8_t);
-            if (registers[dest].asByte < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
-        case 2: {
-            registers[dest].asWord = ROTATE_LEFT(registers[dest].asWord, imm, uint16_t);
-            if (registers[dest].asWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
-        case 3: {
-            registers[dest].asDWord = ROTATE_LEFT(registers[dest].asDWord, imm, uint32_t);
-            if (registers[dest].asDWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
-        default: {
-            registers[dest].asQWord = ROTATE_LEFT(registers[dest].asQWord, imm, uint64_t);
-            if (registers[dest].asQWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
+#pragma region tostring
+#ifdef __printflike
+__printflike(1, 2)
+#endif
+char* strformat(const char* fmt, ...) {
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wformat-security"
+    va_list l;
+    va_start(l, fmt);
+    size_t len = vsnprintf(NULL, 0, fmt, l) + 1;
+    if (len == 0) {
+        va_end(l);
+        return NULL;
     }
-    RESET_ADDRESSING_MODE();
+    char* data = malloc(len);
+    vsnprintf(data, len, fmt, l);
+    va_end(l);
+    return data;
+    #pragma clang diagnostic pop
 }
 
-OPC_DEF(opcode_ror_reg_imm) {
-    uint8_t dest = args.args.ri.reg1;
-    uint16_t imm = args.args.ri.imm;
-
-    switch (ADDR_MODE) {
-        case 1: {
-            registers[dest].asByte = ROTATE_RIGHT(registers[dest].asByte, imm, uint8_t);
-            if (registers[dest].asByte < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asByte == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asByte & HIGHEST_BIT(uint8_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
-        case 2: {
-            registers[dest].asWord = ROTATE_RIGHT(registers[dest].asWord, imm, uint16_t);
-            if (registers[dest].asWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asWord & HIGHEST_BIT(uint16_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
-        case 3: {
-            registers[dest].asDWord = ROTATE_RIGHT(registers[dest].asDWord, imm, uint32_t);
-            if (registers[dest].asDWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asDWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asDWord & HIGHEST_BIT(uint32_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
-        default: {
-            registers[dest].asQWord = ROTATE_RIGHT(registers[dest].asQWord, imm, uint64_t);
-            if (registers[dest].asQWord < imm) { FR |= FLAG_CARRY; } else { FR &= ~FLAG_CARRY; }
-            if (registers[dest].asQWord == 0) { FR |= FLAG_ZERO; } else { FR &= ~FLAG_ZERO; }
-            if (registers[dest].asQWord & HIGHEST_BIT(uint64_t)) { FR |= FLAG_NEGATIVE; } else { FR &= ~FLAG_NEGATIVE; }
-            break;
-        }
+char* str_data_type(hive_instruction_t ins) {
+    switch (ins.data.op) {
+        case OP_DATA_nop: return strformat("nop");
+        case OP_DATA_ret: return strformat("ret");
+        case OP_DATA_b: return strformat("b %d", ins.data_s.data);
+        case OP_DATA_bl: return strformat("bl %d", ins.data_s.data);
+        case OP_DATA_blt: return strformat("blt %d", ins.data_s.data);
+        case OP_DATA_bgt: return strformat("bgt %d", ins.data_s.data);
+        case OP_DATA_bge: return strformat("bge %d", ins.data_s.data);
+        case OP_DATA_ble: return strformat("ble %d", ins.data_s.data);
+        case OP_DATA_beq: return strformat("beq %d", ins.data_s.data);
+        case OP_DATA_bne: return strformat("bne %d", ins.data_s.data);
+        case OP_DATA_bllt: return strformat("bllt %d", ins.data_s.data);
+        case OP_DATA_blgt: return strformat("blgt %d", ins.data_s.data);
+        case OP_DATA_blge: return strformat("blge %d", ins.data_s.data);
+        case OP_DATA_blle: return strformat("blle %d", ins.data_s.data);
+        case OP_DATA_bleq: return strformat("bleq %d", ins.data_s.data);
+        case OP_DATA_blne: return strformat("blne %d", ins.data_s.data);
     }
-    RESET_ADDRESSING_MODE();
+    return NULL;
 }
-
-OPC_DEF(opcode_not_reg) {
-    uint8_t reg = args.args.r;
-
-    switch (ADDR_MODE) {
-        case 1: {
-            registers[reg].asByte = ~registers[reg].asByte;
-            break;
-        }
-        case 2: {
-            registers[reg].asWord = ~registers[reg].asWord;
-            break;
-        }
-        case 3: {
-            registers[reg].asDWord = ~registers[reg].asDWord;
-            break;
-        }
-        default: {
-            registers[reg].asQWord = ~registers[reg].asQWord;
-            break;
-        }
+char* str_rri_type(hive_instruction_t ins) {
+    switch (ins.rri.op) {
+        case OP_RRI_add: return strformat("add r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_sub: return strformat("sub r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_mul: return strformat("mul r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_div: return strformat("div r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_mod: return strformat("mod r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_and: return strformat("and r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_or: return strformat("or r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_xor: return strformat("xor r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_shl: return strformat("shl r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_shr: return strformat("shr r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_rol: return strformat("rol r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_ror: return strformat("ror r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
+        case OP_RRI_ldr: return strformat("ldr r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
+        case OP_RRI_str: return strformat("str r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
+        case OP_RRI_ldrb: return strformat("ldrb r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
+        case OP_RRI_strb: return strformat("strb r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
+        case OP_RRI_ldrw: return strformat("ldrw r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
+        case OP_RRI_strw: return strformat("strw r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
+        case OP_RRI_mov: return strformat("mov r%d, r%d", ins.rri.r1, ins.rri.r2);
     }
-    RESET_ADDRESSING_MODE();
+    return NULL;
 }
-
-OPC_DEF(opcode_psh_imm) {
-    uint16_t imm = args.args.i16;
-    *(uint16_t*) (SP++) = imm;
-}
-
-OPC_DEF(opcode_psh_addr) {
-    int64_t addr = ((int64_t) sign_extend(args.args.args_raw, 24)) * 4;
-    *(uint64_t*) (SP++) = (uint64_t) (PC + addr);
-}
-
-OPC_DEF(opcode_pause) {
-    CR9 = 1;
-    FR |= FLAG_INTERRUPT;
-    while (INTERRUPT_FLAG_SET) {
-        int c = getchar();
-        if (c == 10) {
-            FR &= ~FLAG_INTERRUPT;
-        }
+char* str_rrr_type(hive_instruction_t ins) {
+    switch (ins.rrr.op) {
+        case OP_RRR_add: return strformat("add r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_sub: return strformat("sub r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_mul: return strformat("mul r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_div: return strformat("div r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_mod: return strformat("mod r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_and: return strformat("and r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_or: return strformat("or r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_xor: return strformat("xor r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_shl: return strformat("shl r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_shr: return strformat("shr r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_rol: return strformat("rol r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_ror: return strformat("ror r%d, r%d, r%d", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_ldr: return strformat("ldr r%d, [r%d, r%d]", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_str: return strformat("str r%d, [r%d, r%d]", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_ldrb: return strformat("ldrb r%d, [r%d, r%d]", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_strb: return strformat("strb r%d, [r%d, r%d]", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_ldrw: return strformat("ldrw r%d, [r%d, r%d]", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_strw: return strformat("strw r%d, [r%d, r%d]", ins.rrr.r1, ins.rrr.r2, ins.rrr.r3);
+        case OP_RRR_tst: return strformat("tst r%d, r%d", ins.rrr.r1, ins.rrr.r2);
     }
-    CR9 = 0;
+    return NULL;
 }
-
-OPC_DEF(opcode_dot_addressing_override) {
-    ADDR_MODE = args.args.r;
-    if (ADDR_MODE < 1 || ADDR_MODE > 4) {
-        ADDR_MODE = 4;
+char* str_ri_type(hive_instruction_t ins) {
+    switch (ins.ri.op) {
+        case OP_RI_cbz: return strformat("cbz r%d, 0x%08x", ins.ri_s.r1, ins.ri_s.imm);
+        case OP_RI_cbnz: return strformat("cbnz r%d, 0x%08x", ins.ri_s.r1, ins.ri_s.imm);
+        case OP_RI_lea: return strformat("lea r%d, 0x%08x", ins.ri_s.r1, ins.ri_s.imm);
+        case OP_RI_movk: return strformat("movk r%d, %d, shl %d", ins.ri.r1, ins.ri_mov.imm, ins.ri_mov.shift);
+        case OP_RI_movz: return strformat("movz r%d, %d, shl %d", ins.ri.r1, ins.ri_mov.imm, ins.ri_mov.shift);
+        case OP_RI_svc: return strformat("svc");
+        case OP_RI_br: return strformat("br r%d", ins.ri.r1);
+        case OP_RI_blr: return strformat("blr r%d", ins.ri.r1);
+        case OP_RI_brlt: return strformat("brlt r%d", ins.ri.r1);
+        case OP_RI_brgt: return strformat("brgt r%d", ins.ri.r1);
+        case OP_RI_brge: return strformat("brge r%d", ins.ri.r1);
+        case OP_RI_brle: return strformat("brle r%d", ins.ri.r1);
+        case OP_RI_breq: return strformat("breq r%d", ins.ri.r1);
+        case OP_RI_brne: return strformat("brne r%d", ins.ri.r1);
+        case OP_RI_blrlt: return strformat("blrlt r%d", ins.ri.r1);
+        case OP_RI_blrgt: return strformat("blrgt r%d", ins.ri.r1);
+        case OP_RI_blrge: return strformat("blrge r%d", ins.ri.r1);
+        case OP_RI_blrle: return strformat("blrle r%d", ins.ri.r1);
+        case OP_RI_blreq: return strformat("blreq r%d", ins.ri.r1);
+        case OP_RI_blrne: return strformat("blrne r%d", ins.ri.r1);
     }
+    return NULL;
 }
 
-OPC_DEF(opcode_dot_symbol) {
-    PC = *(void**) PC;
+void dis(hive_instruction_t ins) {
+    char* instr = NULL;
+    switch (ins.generic.type) {
+        case 0: instr = str_data_type(ins); break;
+        case 1: instr = str_rri_type(ins); break;
+        case 2: instr = str_rrr_type(ins); break;
+        case 3: instr = str_ri_type(ins); break;
+    }
+    printf("0x%08x\t%s\n", *(uint32_t*) &ins, instr);
+    free(instr);
 }
-
-OPC_FUNCS
-    OPC(opcode_nop),
-    OPC(opcode_ret),
-    OPC(opcode_irq),
-    OPC(opcode_svc),
-    OPC(opcode_b_addr),
-    OPC(opcode_bl_addr),
-    OPC(opcode_br_reg),
-    OPC(opcode_blr_reg),
-    OPC(opcode_dot_eq),
-    OPC(opcode_dot_ne),
-    OPC(opcode_dot_lt),
-    OPC(opcode_dot_gt),
-    OPC(opcode_dot_le),
-    OPC(opcode_dot_ge),
-    OPC(opcode_dot_cs),
-    OPC(opcode_dot_cc),
-    OPC(opcode_add_reg_reg_reg),
-    OPC(opcode_sub_reg_reg_reg),
-    OPC(opcode_mul_reg_reg_reg),
-    OPC(opcode_div_reg_reg_reg),
-    OPC(opcode_mod_reg_reg_reg),
-    OPC(opcode_and_reg_reg_reg),
-    OPC(opcode_or_reg_reg_reg),
-    OPC(opcode_xor_reg_reg_reg),
-    OPC(opcode_shl_reg_reg_reg),
-    OPC(opcode_shr_reg_reg_reg),
-    OPC(opcode_rol_reg_reg_reg),
-    OPC(opcode_ror_reg_reg_reg),
-    OPC(opcode_inc_reg),
-    OPC(opcode_dec_reg),
-    OPC(opcode_psh_reg),
-    OPC(opcode_pp_reg),
-    OPC(opcode_ldr_reg_reg),
-    OPC(opcode_ldr_reg_addr_imm),
-    OPC(opcode_ldr_reg_addr_reg),
-    NULL,
-    NULL,
-    OPC(opcode_str_reg_reg),
-    OPC(opcode_str_reg_addr_reg),
-    NULL,
-    OPC(opcode_movz),
-    OPC(opcode_movk),
-    OPC(opcode_adrp_reg_addr),
-    OPC(opcode_adp_reg_addr),
-    NULL,
-    OPC(opcode_cmp_reg_reg),
-    OPC(opcode_xchg_reg_reg),
-    OPC(opcode_cmpxchg_reg_reg),
-    OPC(opcode_add_reg_imm),
-    OPC(opcode_sub_reg_imm),
-    OPC(opcode_mul_reg_imm),
-    OPC(opcode_div_reg_imm),
-    OPC(opcode_mod_reg_imm),
-    OPC(opcode_and_reg_imm),
-    OPC(opcode_or_reg_imm),
-    OPC(opcode_xor_reg_imm),
-    OPC(opcode_shl_reg_imm),
-    OPC(opcode_shr_reg_imm),
-    OPC(opcode_rol_reg_imm),
-    OPC(opcode_ror_reg_imm),
-    OPC(opcode_not_reg),
-    NULL,
-    OPC(opcode_psh_imm),
-    OPC(opcode_psh_addr),
-    OPC(opcode_pause),
-    OPC(opcode_dot_addressing_override),
-    OPC(opcode_dot_symbol),
-OPC_END;
 
 #pragma endregion
 
 __attribute__((noreturn))
-void exec(register hive_register_t* const restrict registers) {
+void exec(register hive_register_file_t* const restrict regs, register hive_simd_register_t simd_regs[8]) {
+    void** op = NULL;
     while (1) {
-        opcode_t opcode = *(opcode_t*) PC;
-        PC += sizeof(opcode_t);
-        if (ZERO) ZERO = 0;
-        if (ONE != 0xFFFFFFFFFFFFFFFF) ONE = 0xFFFFFFFFFFFFFFFF;
-        opcs[opcode.opcode](registers, opcode);
-    }
-}
-
-int add_symbol(section_t* obj, const char* name) {
-    obj->symbols = realloc(obj->symbols, sizeof(symbol_t) * (obj->symbols_size + 1));
-
-    symbol_t* sym = &obj->symbols[obj->symbols_size];
-    sym->name = malloc(strlen(name) + 1);
-    strcpy((char*) sym->name, name);
-
-    sym->sym_addr = obj->comp_size;
-
-    obj->symbols_size++;
-    return 0;
-}
-
-int32_t symbol_offset(section_t* obj, const char* name) {
-    for (uint32_t i = 0; i < obj->symbols_size; i++) {
-        if (strcmp((char*) obj->symbols[i].name, name) == 0) {
-            if (obj->symbols[i].sym_addr & 0x8000000000000000) {
-                add_instr_addr_offset(obj, i);
-                return i;
-            }
-            int32_t offset = ((int32_t) (obj->symbols[i].sym_addr - obj->size)) / 4;
-            return offset;
+        hive_instruction_t ins;
+        printf("0x%016llx: ", regs->spec.pc.asQWord);
+        ins = *(regs->spec.pc.asInstrPtr++);
+        dis(ins);
+        switch (ins.generic.type) {
+            case 0: exec_data_type(ins, regs, simd_regs); break;
+            case 1: exec_rri_type(ins, regs, simd_regs); break;
+            case 2: exec_rrr_type(ins, regs, simd_regs); break;
+            case 3: exec_ri_type(ins, regs, simd_regs); break;
         }
     }
-
-    add_symbol(obj, name);
-    symbol_t* sym = &obj->symbols[obj->symbols_size - 1];
-    sym->sym_addr = (obj->symbols_size - 1) | 0x8000000000000000;
-    add_instr_addr_offset(obj, obj->symbols_size - 1);
-    return (obj->symbols_size - 1);
 }
 
-section_t run_compile(const char* file_name);
+Nob_String_Builder run_compile(const char* file_name, Symbol_Offsets* syms, Symbol_Offsets* relocations);
 
-hive_register_t* registers;
-
-void sig_handler(int sig, siginfo_t* info, void* ucontext) {
-    if (CR9) {
-        FR &= ~FLAG_INTERRUPT;
-        return;
+HiveFile read_hive_file(FILE* fp) {
+    HiveFile hf;
+    fread(&hf.magic, sizeof(hf.magic), 1, fp);
+    fread(&hf.sects.count, sizeof(hf.sects.count), 1, fp);
+    hf.sects.capacity = hf.sects.count;
+    hf.sects.items = malloc(sizeof(*hf.sects.items) * hf.sects.count);
+    for (size_t i = 0; i < hf.sects.count; i++) {
+        fread(&hf.sects.items[i].len, sizeof(hf.sects.items[i].len), 1, fp);
+        fread(&hf.sects.items[i].type, sizeof(hf.sects.items[i].type), 1, fp);
+        if (hf.sects.items[i].len) {
+            hf.sects.items[i].data = malloc(sizeof(char) * hf.sects.items[i].len);
+            fread(hf.sects.items[i].data, sizeof(char), hf.sects.items[i].len, fp);
+        }
     }
-    char* string = strsignal(sig);
-    fprintf(stderr, "%s at %p\n", string, info->si_addr);
-    void* bt[32];
-    size_t size = backtrace(bt, 32);
-    backtrace_symbols_fd(bt, size, STDERR_FILENO);
-    exit(1);
+    return hf;
 }
 
-void* find_symbol_in(object_file_t* tu, const char* sym) {
-    symbol_t* symbols = tu->code.symbols;
-    uint64_t symbols_count = tu->code.symbols_size;
-
-    for (uint64_t i = 0; i < symbols_count; i++) {
-        if (strcmp(symbols[i].name, sym) == 0 && ((int64_t) symbols[i].sym_addr) >= 0) {
-            return (void*) symbols[i].sym_addr;
-        }
+void write_hive_file(HiveFile hf, FILE* fp) {
+    fwrite(&hf.magic, sizeof(hf.magic), 1, fp);
+    fwrite(&hf.sects.count, sizeof(hf.sects.count), 1, fp);
+    for (size_t i = 0; i < hf.sects.count; i++) {
+        fwrite(&hf.sects.items[i].len, sizeof(hf.sects.items[i].len), 1, fp);
+        fwrite(&hf.sects.items[i].type, sizeof(hf.sects.items[i].type), 1, fp);
+        fwrite(hf.sects.items[i].data, sizeof(char), hf.sects.items[i].len, fp);
     }
-
-    return NULL;
 }
 
-void* find_symbol(const char* sym, object_file_t* objects, uint64_t count) {
-    for (uint64_t i = 0; i < count; i++) {
-        object_file_t* obj = &objects[i];
-        void* addr = find_symbol_in(obj, sym);
-        if (addr) {
-            return addr;
-        }
-    }
+#define SECT_TYPE_CODE  0x01
+#define SECT_TYPE_SYMS  0x02
+#define SECT_TYPE_RELOC 0x04
 
-    return NULL;
+Symbol_Offsets create_symbol_section(Section s) {
+    Symbol_Offsets off = {0};
+    char* data = s.data;
+
+    #define mem_read(ptr, type) ({ type t = *(type*) ptr; ptr += sizeof(type); t; })
+    off.count = mem_read(data, size_t);
+    off.capacity = off.count;
+    off.items = malloc(sizeof(*off.items) * off.capacity);
+    for (size_t i = 0; i < off.count; i++) {
+        size_t len = strlen(data);
+        off.items[i].name = malloc(len);
+        strcpy(off.items[i].name, data);
+        data += len + 1;
+        off.items[i].offset = mem_read(data, uint64_t);
+    }
+    #undef mem_read
+    return off;
 }
 
-void relocate(object_file_t* tu, uint64_t count) {
-    for (uint64_t i = 0; i < count; i++) {
-        object_file_t* obj = &tu[i];
+Symbol_Offsets create_relocation_section(Section s) {
+    Symbol_Offsets off = {0};
+    char* data = s.data;
 
-        for (uint32_t j = 0; j < obj->code.symbols_size; j++) {
-            symbol_t* sym = &obj->code.symbols[j];
-            if ((sym->sym_addr & 0x8000000000000000) == 0) {
-                sym->sym_addr += (uint64_t) obj->code.data;
-            }
+    #define mem_read(ptr, type) ({ type t = *(type*) ptr; ptr += sizeof(type); t; })
+    off.count = mem_read(data, size_t);
+    off.capacity = off.count;
+    off.items = malloc(sizeof(*off.items) * off.capacity);
+    for (size_t i = 0; i < off.count; i++) {
+        size_t len = strlen(data);
+        off.items[i].name = malloc(len);
+        strcpy(off.items[i].name, data);
+        data += len + 1;
+        off.items[i].offset = mem_read(data, uint64_t);
+        off.items[i].type = mem_read(data, enum symbol_type);
+    }
+    #undef mem_read
+    return off;
+}
+
+Section get_section(HiveFile f, uint32_t sect_type) {
+    for (size_t i = 0; i < f.sects.count; i++) {
+        if (f.sects.items[i].type != sect_type) continue;
+
+        return f.sects.items[i];
+    }
+    return (Section) {0};
+}
+
+char* get_code_section_address(HiveFile f) {
+    return get_section(f, SECT_TYPE_CODE).data;
+}
+
+uint64_t find_symbol_address(Symbol_Offsets syms, char* name) {
+    for (size_t i = 0; i < syms.count; i++) {
+        if (strcmp(syms.items[i].name, name) == 0) {
+            return syms.items[i].offset;
         }
     }
+    return -1;
+}
 
-    for (uint64_t i = 0; i < count; i++) {
-        object_file_t* obj = &tu[i];
-
-        for (uint32_t j = 0; j < obj->code.symbols_size; j++) {
-            symbol_t* sym = &obj->code.symbols[j];
-            if (sym->sym_addr & 0x8000000000000000) {
-                sym->sym_addr = (uint64_t) find_symbol(sym->name, tu, count);
-            }
-        }
+Nob_String_Builder pack_symbol_table(Symbol_Offsets syms) {
+    Nob_String_Builder s = {0};
+    nob_da_append_many(&s, &syms.count, sizeof(syms.count));
+    for (size_t i = 0; i < syms.count; i++) {
+        struct symbol_offset so = syms.items[i];
+        nob_da_append_many(&s, so.name, strlen(so.name) + 1);
+        nob_da_append_many(&s, &so.offset, sizeof(so.offset));
     }
+    return s;
+}
 
-    for (uint64_t i = 0; i < count; i++) {
-        object_file_t* obj = &tu[i];
-        for (uint64_t j = 0; j < obj->load_command.size; j++) {
-            offset_t* off = &obj->load_command.data[j];
-            if (!off->is_instr_addr) {
-                uint64_t* ptr = (uint64_t*) (obj->code.data + off->offset);
-                *ptr = (uint64_t) obj->code.symbols[off->symbol].sym_addr;
-            } else {
-                opcode_t* opcode = (opcode_t*) (obj->code.data + off->offset);
-                uint64_t current_addr = (uint64_t) (obj->code.data + off->offset) + sizeof(opcode_t);
-                switch (opcode->opcode) {
-                    case opcode_b_addr:
-                    case opcode_bl_addr:
-                    case opcode_psh_addr: {
-                        symbol_t* sym = &obj->code.symbols[opcode->args.args_raw];
-                        uint64_t target_addr = (uint64_t) find_symbol(sym->name, tu, count);
-                        if (target_addr) {
-                            int32_t offset = (int32_t) (target_addr - current_addr);
-                            if (offset & 0x3) {
-                                fprintf(stderr, "Address is not aligned to 4 bytes\n");
-                                exit(1);
-                            }
-                            offset = offset / sizeof(opcode_t);
-                            if (offset > 0x7FFFFF || offset < -0x800000) {
-                                fprintf(stderr, "Symbol '%s' is too far away (0x%08x)\n", sym->name, offset);
-                                exit(1);
-                            }
-                            opcode->args.args_raw = offset;
-                        } else {
-                            fprintf(stderr, "Could not find symbol '%s'\n", sym->name);
-                            exit(1);
-                        }
-                        break;
-                    }
-                    case opcode_adrp_reg_addr: {
-                        symbol_t* sym = &obj->code.symbols[off->symbol];
-                        uint64_t target_addr = (uint64_t) find_symbol(sym->name, tu, count);
-                        if (target_addr) {
-                            int32_t offset = (int32_t) (target_addr - current_addr) / sizeof(opcode_t);
-                            opcode->args.ri.imm = (offset >> 16) & 0xFFFF;
-                        } else {
-                            fprintf(stderr, "Could not find symbol '%s'\n", sym->name);
-                            exit(1);
-                        }
-                        break;
-                    }
-                    case opcode_adp_reg_addr: {
-                        symbol_t* sym = &obj->code.symbols[off->symbol];
-                        uint64_t target_addr = (uint64_t) find_symbol(sym->name, tu, count);
-                        if (target_addr) {
-                            int32_t offset = (int32_t) (target_addr - current_addr) / sizeof(opcode_t);
-                            opcode->args.ri.imm = (offset + 1) & 0xFFFF;
-                        } else {
-                            fprintf(stderr, "Could not find symbol '%s'\n", sym->name);
-                            exit(1);
-                        }
-                        break;
-                    }
+Nob_String_Builder pack_relocation_table(Symbol_Offsets relocs) {
+    Nob_String_Builder s = {0};
+    nob_da_append_many(&s, &relocs.count, sizeof(relocs.count));
+    for (size_t i = 0; i < relocs.count; i++) {
+        struct symbol_offset so = relocs.items[i];
+        nob_da_append_many(&s, so.name, strlen(so.name) + 1);
+        nob_da_append_many(&s, &so.offset, sizeof(so.offset));
+        nob_da_append_many(&s, &so.type, sizeof(so.type));
+    }
+    return s;
+}
 
-                    default:
-                        printf("Unknown opcode 0x%08x for relocation at %p\n", *(uint32_t*) opcode, opcode);
+void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) {
+    for (size_t i = 0; i < relocs.count; i++) {
+        struct symbol_offset reloc = relocs.items[i];
+        uint64_t current_address = reloc.offset;
+        uint64_t target_address = find_symbol_address(symbols, reloc.name);
+
+        switch (reloc.type) {
+            case st_abs:
+                *((QWord_t*) &code_sect.data[current_address]) = target_address;
+                break;
+            case st_data: {
+                    hive_instruction_t* s = ((hive_instruction_t*) &code_sect.data[current_address]);
+                    int32_t diff = target_address - (current_address + sizeof(*s));
+                    if (diff % 4) {
+                        fprintf(stderr, "Relative target not aligned!");
                         exit(1);
+                    }
+                    s->data_s.data = diff / 4;
                 }
-            }
+                break;
+            case st_ri: {
+                    hive_instruction_t* s = ((hive_instruction_t*) &code_sect.data[current_address]);
+                    int32_t diff = target_address - (current_address + sizeof(*s));
+                    if (diff % 4) {
+                        fprintf(stderr, "Relative target not aligned!");
+                        exit(1);
+                    }
+                    s->ri_s.imm = diff / 4;
+                }
+                break;
         }
     }
 }
 
 int main(int argc, char **argv) {
-    static struct sigaction act = {
-		.sa_sigaction = (void(*)(int, siginfo_t*, void*)) sig_handler,
-		.sa_flags = SA_SIGINFO,
-		.sa_mask = sigmask(SIGINT) | sigmask(SIGILL) | sigmask(SIGTRAP) | sigmask(SIGABRT) | sigmask(SIGBUS) | sigmask(SIGSEGV)
-	};
-	#define SIGACTION(_sig) if (sigaction(_sig, &act, NULL) == -1) { fprintf(stderr, "Failed to set up signal handler\n"); fprintf(stderr, "Error: %s (%d)\n", strerror(errno), errno); }
-    SIGACTION(SIGINT);
-    SIGACTION(SIGILL);
-    SIGACTION(SIGTRAP);
-    SIGACTION(SIGABRT);
-    SIGACTION(SIGBUS);
-    SIGACTION(SIGSEGV);
-    SIGACTION(SIGFPE);
-    SIGACTION(SIGINT);
-
     if (argc < 3) {
         fprintf(stderr, "Usage: %s run <objfile>\n", argv[0]);
         fprintf(stderr, "       %s comp <srcfile> <objfile>\n", argv[0]);
@@ -1204,72 +618,72 @@ int main(int argc, char **argv) {
             return 1;
         }
         
-        object_file_t tu = create_translation_unit();
-        section_t obj = run_compile(argv[2]);
+        Symbol_Offsets syms = {0};
+        Symbol_Offsets relocations = {0};
+        Nob_String_Builder obj = run_compile(argv[2], &syms, &relocations);
+
+        if (obj.items == NULL) {
+            fprintf(stderr, "Failed to compile!\n");
+            return 1;
+        }
+
+        Section code_sect = {
+            .data = obj.items,
+            .len = obj.count,
+            .type = SECT_TYPE_CODE
+        };
+        Nob_String_Builder sym_sect_data = pack_symbol_table(syms);
+        Nob_String_Builder reloc_sect_data = pack_relocation_table(relocations);
+
+        Section sym_sect = {
+            .data = sym_sect_data.items,
+            .len = sym_sect_data.count,
+            .type = SECT_TYPE_SYMS
+        };
+
+        Section reloc_sect = {
+            .data = reloc_sect_data.items,
+            .len = reloc_sect_data.count,
+            .type = SECT_TYPE_RELOC
+        };
+
+        Section_Array sa = {0};
+        nob_da_append(&sa, code_sect);
+        nob_da_append(&sa, sym_sect);
+        nob_da_append(&sa, reloc_sect);
+
+        HiveFile hf = {
+            .magic = 0xFEEDF00D,
+            .sects = sa
+        };
         
-        for (uint64_t i = 0; i < obj.contents_size; i++) {
-            compile_bytes_or_instr(&obj, obj.contents[i]);
-        }
-
-        tu.load_command.size = obj.symbol_relocs_size + obj.instr_addr_offsets_size;
-        tu.load_command.data = malloc(tu.load_command.size * sizeof(offset_t));
-
-        for (uint64_t i = 0; i < obj.symbol_relocs_size; i++) {
-            offset_t* off = &tu.load_command.data[i];
-            
-            off->is_instr_addr = 0;
-            off->offset = obj.symbol_relocs[i];
-            
-            uint64_t* ptr = (uint64_t*) (obj.data + off->offset);
-            uint64_t symIndex = *ptr;
-
-            off->symbol = symIndex;
-        }
-        for (uint64_t i = 0; i < obj.instr_addr_offsets_size; i++) {
-            tu.load_command.data[i + obj.symbol_relocs_size] = obj.instr_addr_offsets[i];
-        }
-
-        tu.code = obj;
-
         FILE* f = fopen(argv[3], "wb");
-        write_translation_unit(&tu, f);
+        write_hive_file(hf, f);
         fclose(f);
         return 0;
     } else if (strcmp(argv[1], "run") == 0) {
-        
         FILE* f = fopen(argv[2], "rb");
-        FILE* supervisor = fopen("supervisor.rcx", "rb");
         if (!f) {
             fprintf(stderr, "Could not open file '%s'\n", argv[2]);
             return 1;
         }
-        if (!supervisor) {
-            fprintf(stderr, "Could not open supervisor file\n");
-            return 1;
-        }
-        object_file_t objects[] = {
-            read_translation_unit(supervisor),
-            read_translation_unit(f),
-        };
-        fclose(supervisor);
+        HiveFile hf = read_hive_file(f);
         fclose(f);
-        supervisor = NULL;
         f = NULL;
 
-        relocate(objects, 2);
-        
-        hive_register_t register_file[64] = {0}; // r0 - r31, LR, SP, PC, FR, cr0 - cr11, zero, one
-        registers = register_file;
-        PC = find_symbol("_start", objects, 2);
-        ZERO = 0;
-        ONE = 0xFFFFFFFFFFFFFFFF;
-        ADDR_MODE = 4;
+        Symbol_Offsets symbols = create_symbol_section(get_section(hf, SECT_TYPE_SYMS));
+        Symbol_Offsets relocs = create_relocation_section(get_section(hf, SECT_TYPE_RELOC));
+        Section code_sect = get_section(hf, SECT_TYPE_CODE);
 
-        if (PC) {
-            char stack[1024][1024];
-            SP = (void**) stack;
-            exec(register_file);
-            return R0;
+        relocate(code_sect, relocs, symbols);
+
+        register_file.spec.pc.asPointer = code_sect.data + find_symbol_address(symbols, "_start");
+
+        if (register_file.spec.pc.asSQWord != -1) {
+            char stack[1024 * 1024];
+            register_file.spec.sp.asPointer = (void*) stack;
+            exec(&register_file, simd_registers);
+            return register_file.r[0].asQWord;
         }
         
         fprintf(stderr, "Could not find _start symbol\n");

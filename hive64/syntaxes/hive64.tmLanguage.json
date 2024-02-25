@@ -41,14 +41,14 @@
 		},
 		"mnemonics": {
 			"patterns": [{
-				"name": "entity.name.function",
-				"match": "\\b(nop|ret|irq|svc|br?|blr?|add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|inc|dec|psh|pp|ldr|str|mov(k|z)|adr?p|cmp|xchg|cmpxchg|not)(\\.(byte|(d|q)?word|eq|ne|lt|gt|le|ge|cs|cc))*\\b"
+				"name": "keyword.control",
+				"match": "\\b(nop|ret|b|bl|bzs|bzc|bns|bnc|bcs|bcc|bvs|bvc|blzs|blzc|blns|blnc|blcs|blcc|blvs|blvc|add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|ldr|str|ldrb|strb|ldrw|strw|mov|add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|ldr|str|ldrb|strb|ldrw|strw|bz|bnz|lea|movk|movz|svc)\\b"
 			}]
 		},
 		"registers": {
 			"patterns": [{
-				"name": "storage.register",
-				"match": "\\b(r([1-2][0-9]|3[0-1]|[0-9])|xmm(1[0-5]|[0-9])|x|y|sp|bp|lr|pc)\\b"
+				"name": "storage",
+				"match": "\\b((x|w|d|s)([1-2][0-9]|3[0-1]|[0-9])|sp|bp|lr|pc)\\b"
 			}]
 		},
 		"labels": {

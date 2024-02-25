@@ -1,10 +1,14 @@
-msg: .asciz "Hello, world!\n"
-main:
-    movz r0, 1 ; print
-    movz r1, 1 ; stdout
-    adrp r2, msg ; msg
-    adp r2, msg ; msg
+_start:
+    movz r8, 1
+    movz r0, 1
+    lea r1, msg
+    movz r2, 14
     svc
 
-    movz r0, 0x02
-    ret
+    movz r0, 123
+    movz r8, 0
+    mov r0, r0
+    svc
+
+msg:
+    .asciz "Hello, World!\n"
