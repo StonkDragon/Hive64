@@ -155,8 +155,17 @@
         "variant": "cpp",
         "vector": "cpp",
         "version": "cpp",
+        "*.hpp": "cpp",
+        "*.fsh": "glsl",
         "jni_md.h": "c",
         "new_ops.h": "c",
-        "__memory": "c"
+        "__memory": "c",
+        "xx.h": "c",
+        "availability.h": "c",
+        "charconv": "c",
+        "format": "c",
+        "nob.h": "c",
+        "span": "c",
+        "checkint.h": "c"
     }
 }
