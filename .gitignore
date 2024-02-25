@@ -1,5 +1,5 @@
+build/
 dump.txt
 *.rcx
 *.dump
 a.out
-build/
