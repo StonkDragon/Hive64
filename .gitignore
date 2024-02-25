@@ -1,4 +1,5 @@
-build/
+build
+.vscode
 dump.txt
 *.rcx
 *.dump
