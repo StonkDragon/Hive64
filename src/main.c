@@ -91,7 +91,7 @@ void exec_svc(register hive_register_file_t* const restrict regs) {
 }
     // lt, mi   -> negative
     // gt       -> !equal && !negative
-    // ge, pl   -> equal || !negative
+    // ge, pl   -> !negative
     // le       -> negative || equal
     // eq, z    -> equal
     // ne, nz   -> !equal
@@ -126,7 +126,7 @@ void exec_data_type(hive_instruction_t ins, register hive_register_file_t* const
             BRANCH_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative && !regs->spec.flags.equal);
             break;
         case OP_DATA_bge:
-            BRANCH_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative || regs->spec.flags.equal);
+            BRANCH_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative);
             break;
         case OP_DATA_ble:
             BRANCH_ON(PC_REL(ins.data_s.data), regs->spec.flags.negative || regs->spec.flags.equal);
@@ -144,7 +144,7 @@ void exec_data_type(hive_instruction_t ins, register hive_register_file_t* const
             BRANCH_LINK_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative && !regs->spec.flags.equal);
             break;
         case OP_DATA_blge:
-            BRANCH_LINK_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative || regs->spec.flags.equal);
+            BRANCH_LINK_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative);
             break;
         case OP_DATA_blle:
             BRANCH_LINK_ON(PC_REL(ins.data_s.data), regs->spec.flags.negative || regs->spec.flags.equal);
@@ -445,7 +445,7 @@ void exec_ri_type(hive_instruction_t ins, register hive_register_file_t* const r
             BRANCH_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative && !regs->spec.flags.equal);
             break;
         case OP_RI_brge:
-            BRANCH_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative || regs->spec.flags.equal);
+            BRANCH_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative);
             break;
         case OP_RI_brle:
             BRANCH_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.negative || regs->spec.flags.equal);
@@ -463,7 +463,7 @@ void exec_ri_type(hive_instruction_t ins, register hive_register_file_t* const r
             BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative && !regs->spec.flags.equal);
             break;
         case OP_RI_blrge:
-            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative || regs->spec.flags.equal);
+            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative);
             break;
         case OP_RI_blrle:
             BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.negative || regs->spec.flags.equal);
