@@ -42,13 +42,13 @@
 		"mnemonics": {
 			"patterns": [{
 				"name": "keyword.control",
-				"match": "\\b(nop|ret|b|bl|bzs|bzc|bns|bnc|bcs|bcc|bvs|bvc|blzs|blzc|blns|blnc|blcs|blcc|blvs|blvc|add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|ldr|str|ldrb|strb|ldrw|strw|mov|add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|ldr|str|ldrb|strb|ldrw|strw|bz|bnz|lea|movk|movz|svc)\\b"
+				"match": "\\b(nop|ret|br?|blr?|br?lt|br?gt|br?ge|br?le|br?eq|br?ne|blr?lt|blr?gt|blr?ge|blr?le|blr?eq|blr?ne|add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|ld(r|p)(q|d|w|b)?|st(r|p)(q|d|w|b)?|mov(z|k)?|br?z|br?nz|lea|svc|tst|cmp|(s|u)b(xt|dp))\\b"
 			}]
 		},
 		"registers": {
 			"patterns": [{
 				"name": "storage",
-				"match": "\\b((x|w|d|s)([1-2][0-9]|3[0-1]|[0-9])|sp|bp|lr|pc)\\b"
+				"match": "\\b(r([1-2][0-9]|3[0-1]|[0-9])|sp|bp|lr|pc)\\b"
 			}]
 		},
 		"labels": {
@@ -60,7 +60,7 @@
 		"directives": {
 			"patterns": [{
 				"name": "storage.register",
-				"match": "(\\.(ascii|asciz|extern|byte|word|dword|qword|offset))\\b"
+				"match": "(\\.(ascii|asciz|extern|byte|word|dword|qword|offset|globa?l))\\b"
 			}]
 		},
 		"numbers": {

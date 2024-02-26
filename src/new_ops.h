@@ -50,6 +50,33 @@ typedef union {
     struct {
         uint8_t type: 2;
         uint8_t op: 5;
+        uint8_t size: 2;
+        uint8_t imm: 8;
+        uint8_t r1: 5;
+        uint8_t r2: 5;
+        uint8_t r3: 5;
+    } PACKED rri_rpairs;
+    struct {
+        uint8_t type: 2;
+        uint8_t op: 5;
+        uint16_t imm: 13;
+        uint8_t size: 2;
+        uint8_t r1: 5;
+        uint8_t r2: 5;
+    } PACKED rri_ls;
+    struct {
+        uint8_t type: 2;
+        uint8_t op: 5;
+        uint8_t pad: 2;
+        uint8_t sign_extend: 1;
+        uint8_t nbits: 6;
+        uint8_t lowest: 6;
+        uint8_t r1: 5;
+        uint8_t r2: 5;
+    } PACKED rri_bit;
+    struct {
+        uint8_t type: 2;
+        uint8_t op: 5;
         int16_t imm: 15;
         uint8_t r1: 5;
         uint8_t r2: 5;
@@ -57,11 +84,30 @@ typedef union {
     struct {
         uint8_t type: 2;
         uint8_t op: 6;
-        uint16_t instr_spec: 9;
+        uint16_t _: 9;
         uint8_t r1: 5;
         uint8_t r2: 5;
         uint8_t r3: 5;
     } PACKED rrr;
+    struct {
+        uint8_t type: 2;
+        uint8_t op: 6;
+        uint8_t _: 2;
+        uint8_t size: 2;
+        uint8_t r1: 5;
+        uint8_t r2: 5;
+        uint8_t r3: 5;
+        uint8_t r4: 5;
+    } PACKED rrr_rpairs;
+    struct {
+        uint8_t type: 2;
+        uint8_t op: 6;
+        uint16_t _: 7;
+        uint16_t size: 2;
+        uint8_t r1: 5;
+        uint8_t r2: 5;
+        uint8_t r3: 5;
+    } PACKED rrr_ls;
     struct {
         uint8_t type: 2;
         uint8_t op: 5;
@@ -109,9 +155,9 @@ typedef union hive_register_t {
 } hive_register_t;
 
 typedef struct {
-    uint64_t            reserved:62;
     uint8_t             negative:1;
     uint8_t             equal:1;
+    uint64_t            reserved:62;
 } PACKED hive_flag_register_t;
 
 typedef union {
@@ -185,6 +231,9 @@ typedef struct {
             st_data,
             st_ri,
         } type;
+        enum symbol_flag {
+            sf_exported = 1,
+        } flags;
     } *items;
     size_t count;
     size_t capacity;

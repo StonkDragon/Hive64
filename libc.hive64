@@ -1,0 +1,58 @@
+.global _start
+_start:
+    bl _main
+
+    movz r8, 0
+    svc
+
+.global _puts
+_puts:
+    sub sp, sp, 48
+    str lr, [sp, 32]
+
+    stp r0, r1, [sp, 16]
+    stp r2, r8, [sp]
+
+    mov r1, r0
+    bl _strlen
+    mov r2, r0
+    movz r0, 1
+    movz r8, 2
+    svc
+
+    movz r0, 1
+    lea r1, _puts$newline_str
+    movz r2, 1
+    svc
+
+    ldp r2, r8, [sp]
+    ldp r0, r1, [sp, 16]
+
+    ldr lr, [sp, 32]
+    add sp, sp, 48
+    ret
+
+_puts$newline_str:
+    .asciz "\n"
+
+.global _strlen
+_strlen:
+    sub sp, sp, 32
+    stp lr, r2, [sp, 16]
+    str r1, [sp]
+
+    movz r1, 0
+    _strlen$loop:
+        ldrb r2, [r0, r1]
+        bz _strlen$end
+
+        add r1, r1, 1
+        b _strlen$loop
+    _strlen$end:
+
+    mov r0, r1
+
+    ldr r1, [sp]
+    ldp lr, r2, [sp, 16]
+    add sp, sp, 32
+    ret

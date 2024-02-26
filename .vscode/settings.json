@@ -166,6 +166,7 @@
         "format": "c",
         "nob.h": "c",
         "span": "c",
-        "checkint.h": "c"
+        "checkint.h": "c",
+        "syscall.h": "c"
     }
 }

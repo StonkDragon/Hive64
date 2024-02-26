@@ -180,8 +180,215 @@ uint8_t parse_reg(char* s) {
         return (Nob_String_Builder) {0}; \
     }
 
+
+#define LDR(_sz) \
+    i++; \
+    EXPECT(Register, "Expected register, got %s"); \
+    uint8_t r1 = parse_reg(tokens.items[i].value); \
+    i++; \
+    EXPECT(Comma, "Expected comma, got %s"); \
+    i++; \
+    EXPECT(LeftBracket, "Expected '[', got %s"); \
+    i++; \
+    EXPECT(Register, "Expected register, got %s"); \
+    uint8_t r2 = parse_reg(tokens.items[i].value); \
+    i++; \
+    if (tokens.items[i].type == RightBracket) { \
+        ins.generic.type = OP_RRI; \
+        ins.rri.op = OP_RRI_ldr; \
+        ins.rri.r1 = r1; \
+        ins.rri.r2 = r2; \
+        ins.rri.imm = 0; \
+        ins.rri_ls.size = _sz; \
+    } else if (tokens.items[i].type == Comma) { \
+        i++; \
+        if (tokens.items[i].type == Register) { \
+            ins.generic.type = OP_RRR; \
+            ins.rrr.op = OP_RRR_ldr; \
+            ins.rrr.r1 = r1; \
+            ins.rrr.r2 = r2; \
+            ins.rrr_ls.size = _sz; \
+            ins.rrr.r3 = parse_reg(tokens.items[i].value); \
+        } else if (tokens.items[i].type == Number) { \
+            ins.generic.type = OP_RRI; \
+            ins.rri.op = OP_RRI_ldr; \
+            ins.rri.r1 = r1; \
+            ins.rri.r2 = r2; \
+            ins.rri_ls.size = _sz; \
+            uint16_t num = parse16(tokens.items[i].value); \
+            if (num & 0x8000) { \
+                EXPECT(Eof, "Number too large: %s"); \
+            } \
+            ins.rri.imm = num; \
+        } else { \
+            EXPECT(Eof, "Expected register or number, got %s"); \
+        } \
+        i++; \
+        EXPECT(RightBracket, "Expected ']', got %s"); \
+    } else { \
+        EXPECT(Eof, "Expected comma or ']', got %s"); \
+    }
+
+#define STR(_sz)  \
+    i++; \
+    EXPECT(Register, "Expected register, got %s"); \
+    uint8_t r1 = parse_reg(tokens.items[i].value); \
+    i++; \
+    EXPECT(Comma, "Expected comma, got %s"); \
+    i++; \
+    EXPECT(LeftBracket, "Expected '[', got %s"); \
+    i++; \
+    EXPECT(Register, "Expected register, got %s"); \
+    uint8_t r2 = parse_reg(tokens.items[i].value); \
+    i++; \
+    if (tokens.items[i].type == RightBracket) { \
+        ins.generic.type = OP_RRI; \
+        ins.rri.op = OP_RRI_str; \
+        ins.rri.r1 = r1; \
+        ins.rri.r2 = r2; \
+        ins.rri.imm = 0; \
+    } else if (tokens.items[i].type == Comma) { \
+        i++; \
+        if (tokens.items[i].type == Register) { \
+            ins.generic.type = OP_RRR; \
+            ins.rrr.op = OP_RRR_str; \
+            ins.rrr.r1 = r1; \
+            ins.rrr.r2 = r2; \
+            ins.rrr.r3 = parse_reg(tokens.items[i].value); \
+        } else if (tokens.items[i].type == Number) { \
+            ins.generic.type = OP_RRI; \
+            ins.rri.op = OP_RRI_str; \
+            ins.rri.r1 = r1; \
+            ins.rri.r2 = r2; \
+            uint16_t num = parse16(tokens.items[i].value); \
+            if (num & 0x8000) { \
+                EXPECT(Eof, "Number too large: %s"); \
+            } \
+            ins.rri.imm = num; \
+        } else { \
+            EXPECT(Eof, "Expected register or number, got %s"); \
+        } \
+        i++; \
+        EXPECT(RightBracket, "Expected ']', got %s"); \
+    } else { \
+        EXPECT(Eof, "Expected comma or ']', got %s"); \
+    }
+#define LDP(_sz) \
+    i++; \
+    EXPECT(Register, "Expected register, got %s"); \
+    uint8_t r1 = parse_reg(tokens.items[i].value); \
+    i++; \
+    EXPECT(Comma, "Expected comma, got %s"); \
+    i++; \
+    EXPECT(Register, "Expected register, got %s"); \
+    uint8_t r2 = parse_reg(tokens.items[i].value); \
+    i++; \
+    EXPECT(Comma, "Expected comma, got %s"); \
+    i++; \
+    EXPECT(LeftBracket, "Expected '[', got %s"); \
+    i++; \
+    EXPECT(Register, "Expected register, got %s"); \
+    uint8_t r3 = parse_reg(tokens.items[i].value); \
+    i++; \
+    if (tokens.items[i].type == RightBracket) { \
+        ins.generic.type = OP_RRI; \
+        ins.rri_rpairs.op = OP_RRI_ldp; \
+        ins.rri_rpairs.r1 = r1; \
+        ins.rri_rpairs.r2 = r2; \
+        ins.rri_rpairs.r3 = r3; \
+        ins.rri_rpairs.imm = 0; \
+        ins.rri_rpairs.size = _sz; \
+    } else if (tokens.items[i].type == Comma) { \
+        i++; \
+        if (tokens.items[i].type == Register) { \
+            ins.generic.type = OP_RRR; \
+            ins.rrr_rpairs.op = OP_RRR_ldp; \
+            ins.rrr_rpairs.r1 = r1; \
+            ins.rrr_rpairs.r2 = r2; \
+            ins.rrr_rpairs.r3 = r3; \
+            ins.rrr_rpairs.size = _sz; \
+            ins.rrr_rpairs.r4 = parse_reg(tokens.items[i].value); \
+        } else if (tokens.items[i].type == Number) { \
+            ins.generic.type = OP_RRI; \
+            ins.rri_rpairs.op = OP_RRI_ldp; \
+            ins.rri_rpairs.r1 = r1; \
+            ins.rri_rpairs.r2 = r2; \
+            ins.rri_rpairs.r3 = r3; \
+            ins.rri_rpairs.size = _sz; \
+            uint16_t num = parse16(tokens.items[i].value); \
+            if (num & 0x8000) { \
+                EXPECT(Eof, "Number too large: %s"); \
+            } \
+            ins.rri_rpairs.imm = num; \
+        } else { \
+            EXPECT(Eof, "Expected register or number, got %s"); \
+        } \
+        i++; \
+        EXPECT(RightBracket, "Expected ']', got %s"); \
+    } else { \
+        EXPECT(Eof, "Expected comma or ']', got %s"); \
+    }
+
+#define STP(_sz)  \
+    i++; \
+    EXPECT(Register, "Expected register, got %s"); \
+    uint8_t r1 = parse_reg(tokens.items[i].value); \
+    i++; \
+    EXPECT(Comma, "Expected comma, got %s"); \
+    i++; \
+    EXPECT(Register, "Expected register, got %s"); \
+    uint8_t r2 = parse_reg(tokens.items[i].value); \
+    i++; \
+    EXPECT(Comma, "Expected comma, got %s"); \
+    i++; \
+    EXPECT(LeftBracket, "Expected '[', got %s"); \
+    i++; \
+    EXPECT(Register, "Expected register, got %s"); \
+    uint8_t r3 = parse_reg(tokens.items[i].value); \
+    i++; \
+    if (tokens.items[i].type == RightBracket) { \
+        ins.generic.type = OP_RRI; \
+        ins.rri_rpairs.op = OP_RRI_stp; \
+        ins.rri_rpairs.r1 = r1; \
+        ins.rri_rpairs.r2 = r2; \
+        ins.rri_rpairs.r3 = r3; \
+        ins.rri_rpairs.imm = 0; \
+    } else if (tokens.items[i].type == Comma) { \
+        i++; \
+        if (tokens.items[i].type == Register) { \
+            ins.generic.type = OP_RRR; \
+            ins.rrr_rpairs.op = OP_RRR_stp; \
+            ins.rrr_rpairs.r1 = r1; \
+            ins.rrr_rpairs.r2 = r2; \
+            ins.rrr_rpairs.r3 = r3; \
+            ins.rrr_rpairs.r4 = parse_reg(tokens.items[i].value); \
+        } else if (tokens.items[i].type == Number) { \
+            ins.generic.type = OP_RRI; \
+            ins.rri_rpairs.op = OP_RRI_stp; \
+            ins.rri_rpairs.r1 = r1; \
+            ins.rri_rpairs.r2 = r2; \
+            ins.rri_rpairs.r3 = r3; \
+            uint16_t num = parse16(tokens.items[i].value); \
+            if (num & 0x8000) { \
+                EXPECT(Eof, "Number too large: %s"); \
+            } \
+            ins.rri_rpairs.imm = num; \
+        } else { \
+            EXPECT(Eof, "Expected register or number, got %s"); \
+        } \
+        i++; \
+        EXPECT(RightBracket, "Expected ']', got %s"); \
+    } else { \
+        EXPECT(Eof, "Expected comma or ']', got %s"); \
+    }
+
+uint64_t find_symbol_address(Symbol_Offsets syms, char* name);
+struct symbol_offset find_symbol(Symbol_Offsets syms, char* name);
+
 Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offsets* relocations) {
     Nob_String_Builder data = {0};
+
+    Nob_File_Paths exported_symbols = {0};
 
     for (size_t i = 0; i < tokens.count; i++) {
         if (tokens.items[i].type == Identifier) {
@@ -191,11 +398,17 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
 
             hive_instruction_t ins = {0};
             if (eq(mnemonic, "nop")) {
-                ins.generic.type = OP_DATA;
-                ins.data.op = OP_DATA_nop;
+                ins.generic.type = OP_RRI;
+                ins.rri.op = OP_RRI_shl;
+                ins.rri.r1 = 0;
+                ins.rri.r2 = 0;
+                ins.rri.imm = 0;
             } else if (eq(mnemonic, "ret")) {
-                ins.generic.type = OP_DATA;
-                ins.data.op = OP_DATA_ret;
+                ins.generic.type = OP_RRI;
+                ins.rri.op = OP_RRI_shl;
+                ins.rri.r1 = 31;
+                ins.rri.r2 = 29;
+                ins.rri.imm = 0;
             } else if (eq(mnemonic, "b")) {
                 ins.generic.type = OP_DATA;
                 ins.data.op = OP_DATA_b;
@@ -684,7 +897,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 i++;
                 if (tokens.items[i].type == Number) {
                     ins.generic.type = OP_RRI;
-                    ins.rri.op = OP_RRI_rol;
+                    ins.rri.op = OP_RRI_shl;
                     uint16_t num = parse16(tokens.items[i].value);
                     if (num & 0x8000) {
                         EXPECT(Eof, "Number too large: %s");
@@ -736,270 +949,38 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 } else {
                     EXPECT(Eof, "Expected number or register, got %s");
                 }
-            } else if (eq(mnemonic, "ldr")) {
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
-                i++;
-                EXPECT(Comma, "Expected comma, got %s");
-                i++;
-                EXPECT(LeftBracket, "Expected '[', got %s");
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
-                i++;
-                if (tokens.items[i].type == RightBracket) {
-                    ins.generic.type = OP_RRI;
-                    ins.rri.op = OP_RRI_ldr;
-                    ins.rri.r1 = r1;
-                    ins.rri.r2 = r2;
-                    ins.rri.imm = 0;
-                } else if (tokens.items[i].type == Comma) {
-                    i++;
-                    if (tokens.items[i].type == Register) {
-                        ins.generic.type = OP_RRR;
-                        ins.rrr.op = OP_RRR_ldr;
-                        ins.rrr.r1 = r1;
-                        ins.rrr.r2 = r2;
-                        ins.rrr.r3 = parse_reg(tokens.items[i].value);
-                    } else if (tokens.items[i].type == Number) {
-                        ins.generic.type = OP_RRI;
-                        ins.rri.op = OP_RRI_ldr;
-                        ins.rri.r1 = r1;
-                        ins.rri.r2 = r2;
-                        uint16_t num = parse16(tokens.items[i].value);
-                        if (num & 0x8000) {
-                            EXPECT(Eof, "Number too large: %s");
-                        }
-                        ins.rri.imm = num;
-                    } else {
-                        EXPECT(Eof, "Expected register or number, got %s");
-                    }
-                    i++;
-                    EXPECT(RightBracket, "Expected ']', got %s");
-                } else {
-                    EXPECT(Eof, "Expected comma or ']', got %s");
-                }
-            } else if (eq(mnemonic, "str")) {
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
-                i++;
-                EXPECT(Comma, "Expected comma, got %s");
-                i++;
-                EXPECT(LeftBracket, "Expected '[', got %s");
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
-                i++;
-                if (tokens.items[i].type == RightBracket) {
-                    ins.generic.type = OP_RRI;
-                    ins.rri.op = OP_RRI_str;
-                    ins.rri.r1 = r1;
-                    ins.rri.r2 = r2;
-                    ins.rri.imm = 0;
-                } else if (tokens.items[i].type == Comma) {
-                    i++;
-                    if (tokens.items[i].type == Register) {
-                        ins.generic.type = OP_RRR;
-                        ins.rrr.op = OP_RRR_str;
-                        ins.rrr.r1 = r1;
-                        ins.rrr.r2 = r2;
-                        ins.rrr.r3 = parse_reg(tokens.items[i].value);
-                    } else if (tokens.items[i].type == Number) {
-                        ins.generic.type = OP_RRI;
-                        ins.rri.op = OP_RRI_str;
-                        ins.rri.r1 = r1;
-                        ins.rri.r2 = r2;
-                        uint16_t num = parse16(tokens.items[i].value);
-                        if (num & 0x8000) {
-                            EXPECT(Eof, "Number too large: %s");
-                        }
-                        ins.rri.imm = num;
-                    } else {
-                        EXPECT(Eof, "Expected register or number, got %s");
-                    }
-                    i++;
-                    EXPECT(RightBracket, "Expected ']', got %s");
-                } else {
-                    EXPECT(Eof, "Expected comma or ']', got %s");
-                }
-            } else if (eq(mnemonic, "ldrb")) {
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
-                i++;
-                EXPECT(Comma, "Expected comma, got %s");
-                i++;
-                EXPECT(LeftBracket, "Expected '[', got %s");
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
-                i++;
-                if (tokens.items[i].type == RightBracket) {
-                    ins.generic.type = OP_RRI;
-                    ins.rri.op = OP_RRI_ldrb;
-                    ins.rri.r1 = r1;
-                    ins.rri.r2 = r2;
-                    ins.rri.imm = 0;
-                } else if (tokens.items[i].type == Comma) {
-                    i++;
-                    if (tokens.items[i].type == Register) {
-                        ins.generic.type = OP_RRR;
-                        ins.rrr.op = OP_RRR_ldrb;
-                        ins.rrr.r1 = r1;
-                        ins.rrr.r2 = r2;
-                        ins.rrr.r3 = parse_reg(tokens.items[i].value);
-                    } else if (tokens.items[i].type == Number) {
-                        ins.generic.type = OP_RRI;
-                        ins.rri.op = OP_RRI_ldrb;
-                        ins.rri.r1 = r1;
-                        ins.rri.r2 = r2;
-                        uint16_t num = parse16(tokens.items[i].value);
-                        if (num & 0x8000) {
-                            EXPECT(Eof, "Number too large: %s");
-                        }
-                        ins.rri.imm = num;
-                    } else {
-                        EXPECT(Eof, "Expected register or number, got %s");
-                    }
-                    i++;
-                    EXPECT(RightBracket, "Expected ']', got %s");
-                } else {
-                    EXPECT(Eof, "Expected comma or ']', got %s");
-                }
-            } else if (eq(mnemonic, "strb")) {
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
-                i++;
-                EXPECT(Comma, "Expected comma, got %s");
-                i++;
-                EXPECT(LeftBracket, "Expected '[', got %s");
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
-                i++;
-                if (tokens.items[i].type == RightBracket) {
-                    ins.generic.type = OP_RRI;
-                    ins.rri.op = OP_RRI_strb;
-                    ins.rri.r1 = r1;
-                    ins.rri.r2 = r2;
-                    ins.rri.imm = 0;
-                } else if (tokens.items[i].type == Comma) {
-                    i++;
-                    if (tokens.items[i].type == Register) {
-                        ins.generic.type = OP_RRR;
-                        ins.rrr.op = OP_RRR_strb;
-                        ins.rrr.r1 = r1;
-                        ins.rrr.r2 = r2;
-                        ins.rrr.r3 = parse_reg(tokens.items[i].value);
-                    } else if (tokens.items[i].type == Number) {
-                        ins.generic.type = OP_RRI;
-                        ins.rri.op = OP_RRI_strb;
-                        ins.rri.r1 = r1;
-                        ins.rri.r2 = r2;
-                        uint16_t num = parse16(tokens.items[i].value);
-                        if (num & 0x8000) {
-                            EXPECT(Eof, "Number too large: %s");
-                        }
-                        ins.rri.imm = num;
-                    } else {
-                        EXPECT(Eof, "Expected register or number, got %s");
-                    }
-                    i++;
-                    EXPECT(RightBracket, "Expected ']', got %s");
-                } else {
-                    EXPECT(Eof, "Expected comma or ']', got %s");
-                }
+            } else if (eq(mnemonic, "ldr") || eq(mnemonic, "ldrq")) {
+                LDR(0)
+            } else if (eq(mnemonic, "str") || eq(mnemonic, "strq")) {
+                STR(0)
+            } else if (eq(mnemonic, "ldrd")) {
+                LDR(1)
+            } else if (eq(mnemonic, "strd")) {
+                STR(1)
             } else if (eq(mnemonic, "ldrw")) {
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
-                i++;
-                EXPECT(Comma, "Expected comma, got %s");
-                i++;
-                EXPECT(LeftBracket, "Expected '[', got %s");
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
-                i++;
-                if (tokens.items[i].type == RightBracket) {
-                    ins.generic.type = OP_RRI;
-                    ins.rri.op = OP_RRI_ldrw;
-                    ins.rri.r1 = r1;
-                    ins.rri.r2 = r2;
-                    ins.rri.imm = 0;
-                } else if (tokens.items[i].type == Comma) {
-                    i++;
-                    if (tokens.items[i].type == Register) {
-                        ins.generic.type = OP_RRR;
-                        ins.rrr.op = OP_RRR_ldrw;
-                        ins.rrr.r1 = r1;
-                        ins.rrr.r2 = r2;
-                        ins.rrr.r3 = parse_reg(tokens.items[i].value);
-                    } else if (tokens.items[i].type == Number) {
-                        ins.generic.type = OP_RRI;
-                        ins.rri.op = OP_RRI_ldrw;
-                        ins.rri.r1 = r1;
-                        ins.rri.r2 = r2;
-                        uint16_t num = parse16(tokens.items[i].value);
-                        if (num & 0x8000) {
-                            EXPECT(Eof, "Number too large: %s");
-                        }
-                        ins.rri.imm = num;
-                    } else {
-                        EXPECT(Eof, "Expected register or number, got %s");
-                    }
-                    i++;
-                    EXPECT(RightBracket, "Expected ']', got %s");
-                } else {
-                    EXPECT(Eof, "Expected comma or ']', got %s");
-                }
+                LDR(2)
             } else if (eq(mnemonic, "strw")) {
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
-                i++;
-                EXPECT(Comma, "Expected comma, got %s");
-                i++;
-                EXPECT(LeftBracket, "Expected '[', got %s");
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
-                i++;
-                if (tokens.items[i].type == RightBracket) {
-                    ins.generic.type = OP_RRI;
-                    ins.rri.op = OP_RRI_strw;
-                    ins.rri.r1 = r1;
-                    ins.rri.r2 = r2;
-                    ins.rri.imm = 0;
-                } else if (tokens.items[i].type == Comma) {
-                    i++;
-                    if (tokens.items[i].type == Register) {
-                        ins.generic.type = OP_RRR;
-                        ins.rrr.op = OP_RRR_strw;
-                        ins.rrr.r1 = r1;
-                        ins.rrr.r2 = r2;
-                        ins.rrr.r3 = parse_reg(tokens.items[i].value);
-                    } else if (tokens.items[i].type == Number) {
-                        ins.generic.type = OP_RRI;
-                        ins.rri.op = OP_RRI_strw;
-                        ins.rri.r1 = r1;
-                        ins.rri.r2 = r2;
-                        uint16_t num = parse16(tokens.items[i].value);
-                        if (num & 0x8000) {
-                            EXPECT(Eof, "Number too large: %s");
-                        }
-                        ins.rri.imm = num;
-                    } else {
-                        EXPECT(Eof, "Expected register or number, got %s");
-                    }
-                    i++;
-                    EXPECT(RightBracket, "Expected ']', got %s");
-                } else {
-                    EXPECT(Eof, "Expected comma or ']', got %s");
-                }
+                STR(2)
+            } else if (eq(mnemonic, "ldrb")) {
+                LDR(3)
+            } else if (eq(mnemonic, "strb")) {
+                STR(3)
+            } else if (eq(mnemonic, "ldp") || eq(mnemonic, "ldpq")) {
+                LDP(0)
+            } else if (eq(mnemonic, "stp") || eq(mnemonic, "stpq")) {
+                STP(0)
+            } else if (eq(mnemonic, "ldpd")) {
+                LDP(1)
+            } else if (eq(mnemonic, "stpd")) {
+                STP(1)
+            } else if (eq(mnemonic, "ldpw")) {
+                LDP(2)
+            } else if (eq(mnemonic, "stpw")) {
+                STP(2)
+            } else if (eq(mnemonic, "ldpb")) {
+                LDP(3)
+            } else if (eq(mnemonic, "stpb")) {
+                STP(3)
             } else if (eq(mnemonic, "cbz")) {
                 i++;
                 EXPECT(Register, "Expected register, got %s");
@@ -1103,10 +1084,57 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 EXPECT(Register, "Expected register, got %s");
                 uint8_t r2 = parse_reg(tokens.items[i].value);
                 ins.generic.type = OP_RRI;
-                ins.rri.op = OP_RRI_mov;
+                ins.rri.op = OP_RRI_shl;
                 ins.rri.r1 = r1;
                 ins.rri.r2 = r2;
+                ins.rri.imm = 0;
             } else if (eq(mnemonic, "tst")) {
+                i++;
+                EXPECT(Register, "Expected register, got %s");
+                uint8_t r1 = parse_reg(tokens.items[i].value);
+                i++;
+                EXPECT(Comma, "Expected comma, got %s");
+                i++;
+                if (tokens.items[i].type == Register) {
+                    uint8_t r2 = parse_reg(tokens.items[i].value);
+                    ins.generic.type = OP_RRR;
+                    ins.rri.op = OP_RRR_tst;
+                    ins.rri.r1 = r1;
+                    ins.rri.r2 = r2;
+                } else if (tokens.items[i].type == Number) {
+                    uint32_t num = parse32(tokens.items[i].value);
+                    ins.generic.type = OP_RI;
+                    ins.ri.op = OP_RI_tst;
+                    ins.ri.r1 = r1;
+                    ins.ri.imm = num;
+                } else {
+                    EXPECT(Eof, "Expected register or number, got %s");
+                }
+            } else if (eq(mnemonic, "cmp")) {
+                i++;
+                EXPECT(Register, "Expected register, got %s");
+                uint8_t r1 = parse_reg(tokens.items[i].value);
+                i++;
+                EXPECT(Comma, "Expected comma, got %s");
+                i++;
+                if (tokens.items[i].type == Register) {
+                    uint8_t r2 = parse_reg(tokens.items[i].value);
+                    ins.generic.type = OP_RRR;
+                    ins.rri.op = OP_RRR_cmp;
+                    ins.rri.r1 = r1;
+                    ins.rri.r2 = r2;
+                } else if (tokens.items[i].type == Number) {
+                    uint32_t num = parse32(tokens.items[i].value);
+                    ins.generic.type = OP_RI;
+                    ins.ri.op = OP_RI_cmp;
+                    ins.ri.r1 = r1;
+                    ins.ri.imm = num;
+                } else {
+                    EXPECT(Eof, "Expected register or number, got %s");
+                }
+            } else if (eq(mnemonic, "sbxt") || eq(mnemonic, "ubxt")) {
+                ins.generic.data = OP_RRI;
+                ins.rri_bit.sign_extend = (mnemonic[0] == 's');
                 i++;
                 EXPECT(Register, "Expected register, got %s");
                 uint8_t r1 = parse_reg(tokens.items[i].value);
@@ -1115,12 +1143,60 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 i++;
                 EXPECT(Register, "Expected register, got %s");
                 uint8_t r2 = parse_reg(tokens.items[i].value);
-                ins.generic.type = OP_RRR;
-                ins.rri.op = OP_RRR_tst;
-                ins.rri.r1 = r1;
-                ins.rri.r2 = r1;
+                i++;
+                EXPECT(Comma, "Expected comma, got %s");
+                i++;
+                EXPECT(Number, "Expected number, got %s");
+                uint8_t lowest = parse8(tokens.items[i].value);
+                if (lowest >= 64) {
+                    EXPECT(Eof, "Lowest bit out of range: %s");
+                }
+                i++;
+                EXPECT(Comma, "Expected comma, got %s");
+                i++;
+                EXPECT(Number, "Expected number, got %s");
+                uint8_t nbits = parse8(tokens.items[i].value);
+                if (nbits >= 64) {
+                    EXPECT(Eof, "Number of bits out of range: %s");
+                }
+                ins.rri_bit.op = OP_RRI_bext;
+                ins.rri_bit.r1 = r1;
+                ins.rri_bit.r2 = r2;
+                ins.rri_bit.lowest = lowest;
+                ins.rri_bit.nbits = nbits;
+            } else if (eq(mnemonic, "sbdp") || eq(mnemonic, "ubdp")) {
+                ins.generic.data = OP_RRI;
+                ins.rri_bit.sign_extend = (mnemonic[0] == 's');
+                i++;
+                EXPECT(Register, "Expected register, got %s");
+                uint8_t r1 = parse_reg(tokens.items[i].value);
+                i++;
+                EXPECT(Comma, "Expected comma, got %s");
+                i++;
+                EXPECT(Register, "Expected register, got %s");
+                uint8_t r2 = parse_reg(tokens.items[i].value);
+                i++;
+                EXPECT(Comma, "Expected comma, got %s");
+                i++;
+                EXPECT(Number, "Expected number, got %s");
+                uint8_t lowest = parse8(tokens.items[i].value);
+                if (lowest >= 64) {
+                    EXPECT(Eof, "Lowest bit out of range: %s");
+                }
+                i++;
+                EXPECT(Comma, "Expected comma, got %s");
+                i++;
+                EXPECT(Number, "Expected number, got %s");
+                uint8_t nbits = parse8(tokens.items[i].value);
+                if (nbits >= 64) {
+                    EXPECT(Eof, "Number of bits out of range: %s");
+                }
+                ins.rri_bit.op = OP_RRI_bdep;
+                ins.rri_bit.r1 = r1;
+                ins.rri_bit.r2 = r2;
+                ins.rri_bit.lowest = lowest;
+                ins.rri_bit.nbits = nbits;
             }
-
 
             if (ins.generic.type == OP_DATA && ins.data.op >= OP_DATA_b && ins.data.op <= OP_DATA_blne) {
                 i++;
@@ -1150,6 +1226,9 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 str = unquote(str);
                 nob_sb_append_cstr(&data, str);
                 if (eq(tokens.items[i - 1].value, "asciz")) {
+                    nob_sb_append_null(&data);
+                }
+                while (data.count % 4) {
                     nob_sb_append_null(&data);
                 }
             } else if (eq(tokens.items[i].value, "byte")) {
@@ -1207,6 +1286,9 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 i++;
                 EXPECT(Number, "Expected number, got %s");
                 uint64_t size = parse64(tokens.items[i].value);
+                if (size % 4) {
+                    size += (4 - (size % 4));
+                }
                 while (size > 0) {
                     if (size >= 8) {
                         nob_da_append_many(&data, &(uint64_t){0}, 8);
@@ -1224,6 +1306,10 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                         break;
                     }
                 }
+            } else if (eq(tokens.items[i].value, "global") || eq(tokens.items[i].value, "globl")) {
+                i++;
+                EXPECT(Identifier, "Expected identifier, got %s");
+                nob_da_append(&exported_symbols, tokens.items[i].value);
             } else {
                 EXPECT(Eof, "Unknown directive: %s");
             }
@@ -1232,11 +1318,72 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
             str = unquote(str);
             struct symbol_offset off = {
                 .name = str,
-                .offset = data.count
+                .offset = data.count,
             };
             nob_da_append(syms, off);
         }
     }
+
+    Symbol_Offsets extern_relocs = {0};
+
+    for (size_t i = 0; i < syms->count; i++) {
+        for (size_t j = 0; j < exported_symbols.count; j++) {
+            if (eq(syms->items[i].name, exported_symbols.items[j])) {
+                syms->items[i].flags |= sf_exported;
+                break;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < relocations->count; i++) {
+        struct symbol_offset reloc = relocations->items[i];
+        uint64_t current_address = reloc.offset;
+        struct symbol_offset symbol = find_symbol(*syms, reloc.name);
+        uint64_t target_address = symbol.offset;
+
+        if (target_address == -1) {
+            nob_da_append(&extern_relocs, reloc);
+            continue;
+        }
+
+        switch (reloc.type) {
+            case st_abs:
+                *((QWord_t*) &data.items[current_address]) = target_address;
+                nob_da_append(&extern_relocs, reloc);
+                break;
+            case st_data: {
+                    hive_instruction_t* s = ((hive_instruction_t*) &data.items[current_address]);
+                    int32_t diff = target_address - (current_address + sizeof(*s));
+                    if (diff % 4) {
+                        fprintf(stderr, "Relative target not aligned!");
+                        exit(1);
+                    }
+                    diff >>= 2;
+                    if (diff >= 0b1000000000000000000000000 || diff < -0b1000000000000000000000000) {
+                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &data.items[current_address], target_address);
+                        exit(1);
+                    }
+                    s->data_s.data = diff;
+                }
+                break;
+            case st_ri: {
+                    hive_instruction_t* s = ((hive_instruction_t*) &data.items[current_address]);
+                    int32_t diff = target_address - (current_address + sizeof(*s));
+                    if (diff % 4) {
+                        fprintf(stderr, "Relative target not aligned!");
+                        exit(1);
+                    }
+                    diff >>= 2;
+                    if (diff >= 0b10000000000000000000 || diff < -0b10000000000000000000) {
+                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &data.items[current_address], target_address);
+                        exit(1);
+                    }
+                    s->ri_s.imm = diff;
+                }
+                break;
+        }
+    }
+    *relocations = extern_relocs;
 
     return data;
 }

@@ -1,21 +1,19 @@
 #define OP_DATA         0
 
-#define OP_DATA_nop     0
-#define OP_DATA_ret     1
-#define OP_DATA_b       2
-#define OP_DATA_bl      3
-#define OP_DATA_blt     4
-#define OP_DATA_bgt     5
-#define OP_DATA_bge     6
-#define OP_DATA_ble     7
-#define OP_DATA_beq     8
-#define OP_DATA_bne     9
-#define OP_DATA_bllt    10
-#define OP_DATA_blgt    11
-#define OP_DATA_blge    12
-#define OP_DATA_blle    13
-#define OP_DATA_bleq    14
-#define OP_DATA_blne    15
+#define OP_DATA_b       0
+#define OP_DATA_bl      1
+#define OP_DATA_blt     2
+#define OP_DATA_bgt     3
+#define OP_DATA_bge     4
+#define OP_DATA_ble     5
+#define OP_DATA_beq     6
+#define OP_DATA_bne     7
+#define OP_DATA_bllt    8
+#define OP_DATA_blgt    9
+#define OP_DATA_blge    10
+#define OP_DATA_blle    11
+#define OP_DATA_bleq    12
+#define OP_DATA_blne    13
 #define OP_DATA_MAX     31
 
 #define OP_RRI          1
@@ -34,11 +32,10 @@
 #define OP_RRI_ror      11
 #define OP_RRI_ldr      12
 #define OP_RRI_str      13
-#define OP_RRI_ldrb     14
-#define OP_RRI_strb     15
-#define OP_RRI_ldrw     16
-#define OP_RRI_strw     17
-#define OP_RRI_mov      18
+#define OP_RRI_bext     14
+#define OP_RRI_bdep     15
+#define OP_RRI_ldp      16
+#define OP_RRI_stp      17
 #define OP_RRI_MAX      31
 
 #define OP_RRR          2
@@ -57,11 +54,10 @@
 #define OP_RRR_ror      11
 #define OP_RRR_ldr      12
 #define OP_RRR_str      13
-#define OP_RRR_ldrb     14
-#define OP_RRR_strb     15
-#define OP_RRR_ldrw     16
-#define OP_RRR_strw     17
-#define OP_RRR_tst      18
+#define OP_RRR_tst      14
+#define OP_RRR_cmp      15
+#define OP_RRR_ldp      16
+#define OP_RRR_stp      17
 #define OP_RRR_MAX      63
 
 #define OP_RI           3
@@ -86,4 +82,6 @@
 #define OP_RI_blrle     17
 #define OP_RI_blreq     18
 #define OP_RI_blrne     19
+#define OP_RI_tst       20
+#define OP_RI_cmp       21
 #define OP_RI_MAX       31

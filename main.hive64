@@ -1,14 +1,16 @@
-_start:
-    movz r8, 1
-    movz r0, 1
-    lea r1, msg
-    movz r2, 14
-    svc
+.global _main
+_main:
+    sub sp, sp, 16
+    str lr, [sp, 8]
+    
+    lea r0, msg
+    bl _puts
+    
+    movz r0, 0
 
-    movz r0, 123
-    movz r8, 0
-    mov r0, r0
-    svc
+    ldr lr, [sp, 8]
+    add sp, sp, 16
+    ret
 
 msg:
-    .asciz "Hello, World!\n"
+    .asciz "Hello, World!"
