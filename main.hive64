@@ -1,15 +1,15 @@
 .global _main
 _main:
-    sub sp, sp, 16
+    sub sp, 16
     str lr, [sp, 8]
     
     lea r0, msg
     bl _puts
-    
-    movz r0, 0
+
+    xor r0, r0
 
     ldr lr, [sp, 8]
-    add sp, sp, 16
+    add sp, 16
     ret
 
 msg:

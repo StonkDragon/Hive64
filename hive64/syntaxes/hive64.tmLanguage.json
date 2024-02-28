@@ -9,6 +9,18 @@
 			"include": "#mnemonics"
 		},
 		{
+			"include": "#float_mnemonics"
+		},
+		{
+			"include": "#branch_mnemonics"
+		},
+		{
+			"include": "#math_mnemonics"
+		},
+		{
+			"include": "#vector_mnemonics"
+		},
+		{
 			"include": "#directives"
 		},
 		{
@@ -42,7 +54,31 @@
 		"mnemonics": {
 			"patterns": [{
 				"name": "keyword.control",
-				"match": "\\b(nop|ret|br?|blr?|br?lt|br?gt|br?ge|br?le|br?eq|br?ne|blr?lt|blr?gt|blr?ge|blr?le|blr?eq|blr?ne|add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|ld(r|p)(q|d|w|b)?|st(r|p)(q|d|w|b)?|mov(z|k)?|br?z|br?nz|lea|svc|tst|cmp|(s|u)b(xt|dp))\\b"
+				"match": "\\b(nop|ret|ld(r|p)(q|d|w|b)?|st(r|p)(q|d|w|b)?|mov(z|k)?|lea|svc|(s|u)b(xt|dp))\\b"
+			}]
+		},
+		"float_mnemonics": {
+			"patterns": [{
+				"name": "keyword.control",
+				"match": "\\b(f(add|sub|mul|div|mod)i?|fcmpi?|i2f|f2i|f(sqrt|sin))\\b"
+			}]
+		},
+		"branch_mnemonics": {
+			"patterns": [{
+				"name": "keyword.control",
+				"match": "\\b(br?|blr?|br?lt|br?gt|br?ge|br?le|br?eq|br?ne|blr?lt|blr?gt|blr?ge|blr?le|blr?eq|blr?ne|br?z|br?nz|cbn?z)\\b"
+			}]
+		},
+		"math_mnemonics": {
+			"patterns": [{
+				"name": "keyword.control",
+				"match": "\\b(add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|tst|cmp)\\b"
+			}]
+		},
+		"vector_mnemonics": {
+			"patterns": [{
+				"name": "keyword.control",
+				"match": "\\bv(.*)\\b"
 			}]
 		},
 		"registers": {

@@ -28,31 +28,6 @@
 #include "nob.h"
 #include "new_ops.h"
 
-hive_register_file_t register_file = {0};
-hive_simd_register_t simd_registers[8] = {0};
-
-char* strformat(const char* fmt, ...);
-
-char* reg_str(int i) {
-    if (i < 28) {
-        return strformat("r%d", i);
-    }
-    return (char*[]) {
-        "flags",
-        "lr",
-        "sp",
-        "pc"
-    }[i - 28];
-}
-
-void handler(int sig) {
-    printf("Registers:\n");
-    for (int i = 0; i < 32; i++) {
-        printf("  %s\t= %016llx %lld %f\n", reg_str(i), register_file.r[i].asQWord, register_file.r[i].asSQWord, register_file.r[i].asFloat64);
-    }
-    if (sig) exit(sig);
-}
-
 typedef QWord_t(*svc_call)(QWord_t,QWord_t,QWord_t,QWord_t,QWord_t,QWord_t,QWord_t,QWord_t);
 
 #define SVC_exit        0
@@ -77,17 +52,18 @@ svc_call svcs[] = {
     SVC(mprotect),
 };
 
-void exec_svc(register hive_register_file_t* const restrict regs) {
-    regs->r[0].asQWord = svcs[regs->r[8].asQWord](
-        regs->r[0].asQWord,
-        regs->r[1].asQWord,
-        regs->r[2].asQWord,
-        regs->r[3].asQWord,
-        regs->r[4].asQWord,
-        regs->r[5].asQWord,
-        regs->r[6].asQWord,
-        regs->r[7].asQWord
+hive_register_file_t exec_svc(hive_register_file_t regs) {
+    regs.r[0].asQWord = svcs[regs.r[8].asQWord](
+        regs.r[0].asQWord,
+        regs.r[1].asQWord,
+        regs.r[2].asQWord,
+        regs.r[3].asQWord,
+        regs.r[4].asQWord,
+        regs.r[5].asQWord,
+        regs.r[6].asQWord,
+        regs.r[7].asQWord
     );
+    return regs;
 }
     // lt, mi   -> negative
     // gt       -> !equal && !negative
@@ -97,168 +73,230 @@ void exec_svc(register hive_register_file_t* const restrict regs) {
     // ne, nz   -> !equal
 #define set_flags(fr, res) ({ \
     typeof(res) _res = (res); \
-    (fr)->equal = (_res == 0); \
-    (fr)->negative = (_res < 0); \
+    (fr).equal = (_res == 0); \
+    (fr).negative = (_res < 0); \
     _res; \
 })
 #define test(fr, a, b) set_flags((fr), (a) & (b))
 #define cmp(fr, a, b) set_flags((fr), (a) - (b))
 
-#define BRANCH(to)                  (regs->spec.pc.asInstrPtr = (hive_instruction_t*) (to))
-#define LINK()                      (regs->spec.lr.asQWord = regs->spec.pc.asQWord)
+#define BRANCH(to)                  ({ regs.pc.asInstrPtr = (hive_instruction_t*) (to); return regs; })
+#define LINK()                      (regs.lr.asQWord = regs.pc.asQWord)
+#define LINK_ON(what)               ({ if ((what)) { LINK(); } })
 #define BRANCH_LINK(to)             (LINK(), BRANCH(to))
 #define BRANCH_ON(to, what)         ({ if ((what)) { BRANCH(to); } })
 #define BRANCH_LINK_ON(to, what)    ({ if ((what)) { BRANCH_LINK(to); } })
-#define PC_REL(what)                (regs->spec.pc.asQWord + (what) * sizeof(hive_instruction_t))
+#define PC_REL(what)                (regs.pc.asQWord + (what) * sizeof(hive_instruction_t))
 
-void exec_data_type(hive_instruction_t ins, register hive_register_file_t* const restrict regs, register hive_simd_register_t simd_regs[8]) {
-    switch (ins.data.op) {
-        case OP_DATA_b:
-            BRANCH(PC_REL(ins.data_s.data));
+hive_register_file_t exec_fpu_type(hive_register_file_t regs, hive_instruction_t ins) {
+    switch (ins.float_rrr.op) {
+        case OP_FLOAT_add:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, regs.r[ins.float_rrr.r2].asFloat64 + regs.r[ins.float_rrr.r3].asFloat64);
             break;
-        case OP_DATA_bl:
-            BRANCH_LINK(PC_REL(ins.data_s.data));
+        case OP_FLOAT_addi:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, regs.r[ins.float_rrr.r2].asFloat64 + regs.r[ins.float_rrr.r3].asSQWord);
             break;
-        case OP_DATA_blt:
-            BRANCH_ON(PC_REL(ins.data_s.data), regs->spec.flags.negative);
+        case OP_FLOAT_sub:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, regs.r[ins.float_rrr.r2].asFloat64 - regs.r[ins.float_rrr.r3].asFloat64);
             break;
-        case OP_DATA_bgt:
-            BRANCH_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative && !regs->spec.flags.equal);
+        case OP_FLOAT_subi:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, regs.r[ins.float_rrr.r2].asFloat64 - regs.r[ins.float_rrr.r3].asSQWord);
             break;
-        case OP_DATA_bge:
-            BRANCH_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative);
+        case OP_FLOAT_mul:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, regs.r[ins.float_rrr.r2].asFloat64 * regs.r[ins.float_rrr.r3].asFloat64);
             break;
-        case OP_DATA_ble:
-            BRANCH_ON(PC_REL(ins.data_s.data), regs->spec.flags.negative || regs->spec.flags.equal);
+        case OP_FLOAT_muli:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, regs.r[ins.float_rrr.r2].asFloat64 * regs.r[ins.float_rrr.r3].asSQWord);
             break;
-        case OP_DATA_beq:
-            BRANCH_ON(PC_REL(ins.data_s.data), regs->spec.flags.equal);
+        case OP_FLOAT_div:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, regs.r[ins.float_rrr.r2].asFloat64 / regs.r[ins.float_rrr.r3].asFloat64);
             break;
-        case OP_DATA_bne:
-            BRANCH_ON(PC_REL(ins.data_s.data), regs->spec.flags.equal);
+        case OP_FLOAT_divi:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, regs.r[ins.float_rrr.r2].asFloat64 / regs.r[ins.float_rrr.r3].asSQWord);
             break;
-        case OP_DATA_bllt:
-            BRANCH_LINK_ON(PC_REL(ins.data_s.data), regs->spec.flags.negative);
+        case OP_FLOAT_mod:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, fmod(regs.r[ins.float_rrr.r2].asFloat64, regs.r[ins.float_rrr.r3].asFloat64));
             break;
-        case OP_DATA_blgt:
-            BRANCH_LINK_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative && !regs->spec.flags.equal);
+        case OP_FLOAT_modi:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, fmod(regs.r[ins.float_rrr.r2].asFloat64, (Float64_t) regs.r[ins.float_rrr.r3].asSQWord));
             break;
-        case OP_DATA_blge:
-            BRANCH_LINK_ON(PC_REL(ins.data_s.data), !regs->spec.flags.negative);
+        case OP_FLOAT_i2f:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, (Float64_t) regs.r[ins.float_rrr.r2].asSQWord);
             break;
-        case OP_DATA_blle:
-            BRANCH_LINK_ON(PC_REL(ins.data_s.data), regs->spec.flags.negative || regs->spec.flags.equal);
+        case OP_FLOAT_f2i:
+            regs.r[ins.float_rrr.r1].asSQWord = set_flags(regs.flags, (SQWord_t) regs.r[ins.float_rrr.r2].asFloat64);
             break;
-        case OP_DATA_bleq:
-            BRANCH_LINK_ON(PC_REL(ins.data_s.data), regs->spec.flags.equal);
+        case OP_FLOAT_sin:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, sin(regs.r[ins.float_rrr.r2].asFloat64));
             break;
-        case OP_DATA_blne:
-            BRANCH_LINK_ON(PC_REL(ins.data_s.data), regs->spec.flags.equal);
+        case OP_FLOAT_sqrt:
+            regs.r[ins.float_rrr.r1].asFloat64 = set_flags(regs.flags, sqrt(regs.r[ins.float_rrr.r2].asFloat64));
+            break;
+        case OP_FLOAT_cmp:
+            set_flags(regs.flags, regs.r[ins.float_rrr.r2].asFloat64 - regs.r[ins.float_rrr.r3].asFloat64);
+            break;
+        case OP_FLOAT_cmpi:
+            set_flags(regs.flags, regs.r[ins.float_rrr.r2].asFloat64 - regs.r[ins.float_rrr.r3].asSQWord);
             break;
         default:
             raise(SIGILL);
             break;
     }
+    return regs;
 }
 
-void exec_rri_type(hive_instruction_t ins, register hive_register_file_t* const restrict regs, register hive_simd_register_t simd_regs[8]) {
+#define ROL(_a, _b) ((_a) >> (_b)) | ((_a) << ((sizeof(typeof(_a)) << 3) - (_b)))
+#define ROR(_a, _b) ((_a) << (_b)) | ((_a) >> ((sizeof(typeof(_a)) << 3) - (_b)))
+
+hive_register_file_t exec_branch_type(hive_register_file_t regs, hive_instruction_t ins) {
+    switch (ins.branch.op) {
+        case OP_BRANCH_b:
+            if (ins.branch.link) LINK();
+            BRANCH(PC_REL(ins.branch.offset));
+            break;
+        case OP_BRANCH_blt:
+            if (ins.branch.link) LINK_ON(regs.flags.negative);
+            BRANCH_ON(PC_REL(ins.branch.offset), regs.flags.negative);
+            break;
+        case OP_BRANCH_bgt:
+            if (ins.branch.link) LINK_ON(!regs.flags.negative && !regs.flags.equal);
+            BRANCH_ON(PC_REL(ins.branch.offset), !regs.flags.negative && !regs.flags.equal);
+            break;
+        case OP_BRANCH_bge:
+            if (ins.branch.link) LINK_ON(!regs.flags.negative);
+            BRANCH_ON(PC_REL(ins.branch.offset), !regs.flags.negative);
+            break;
+        case OP_BRANCH_ble:
+            if (ins.branch.link) LINK_ON(regs.flags.negative || regs.flags.equal);
+            BRANCH_ON(PC_REL(ins.branch.offset), regs.flags.negative || regs.flags.equal);
+            break;
+        case OP_BRANCH_beq:
+            if (ins.branch.link) LINK_ON(regs.flags.equal);
+            BRANCH_ON(PC_REL(ins.branch.offset), regs.flags.equal);
+            break;
+        case OP_BRANCH_bne:
+            if (ins.branch.link) LINK_ON(!regs.flags.equal);
+            BRANCH_ON(PC_REL(ins.branch.offset), !regs.flags.equal);
+            break;
+        case OP_BRANCH_cb:
+            set_flags(regs.flags, regs.r[ins.comp_branch.r1].asQWord);
+                if (ins.branch.link) LINK_ON(regs.flags.equal == ins.comp_branch.zero);
+            BRANCH_ON(PC_REL(ins.comp_branch.offset), regs.flags.equal == ins.comp_branch.zero);
+            break;
+        default:
+            raise(SIGILL);
+            break;
+    }
+    regs.pc.asInstrPtr++;
+    return regs;
+}
+
+hive_register_file_t exec_rri_type(hive_register_file_t regs, hive_instruction_t ins) {
     switch (ins.rri.op) {
         case OP_RRI_add:
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rri.r2].asQWord + (QWord_t) ins.rri.imm);
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, regs.r[ins.rri.r2].asQWord + (QWord_t) ins.rri.imm);
             break;
         case OP_RRI_sub:
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rri.r2].asQWord - (QWord_t) ins.rri.imm);
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, regs.r[ins.rri.r2].asQWord - (QWord_t) ins.rri.imm);
             break;
         case OP_RRI_mul:
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rri.r2].asQWord * (QWord_t) ins.rri.imm);
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, regs.r[ins.rri.r2].asQWord * (QWord_t) ins.rri.imm);
             break;
         case OP_RRI_div:
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rri.r2].asQWord / (QWord_t) ins.rri.imm);
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, regs.r[ins.rri.r2].asQWord / (QWord_t) ins.rri.imm);
             break;
         case OP_RRI_mod:
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rri.r2].asQWord % (QWord_t) ins.rri.imm);
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, regs.r[ins.rri.r2].asQWord % (QWord_t) ins.rri.imm);
             break;
         case OP_RRI_and:
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rri.r2].asQWord & (QWord_t) ins.rri.imm);
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, regs.r[ins.rri.r2].asQWord & (QWord_t) ins.rri.imm);
             break;
         case OP_RRI_or:
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rri.r2].asQWord | (QWord_t) ins.rri.imm);
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, regs.r[ins.rri.r2].asQWord | (QWord_t) ins.rri.imm);
             break;
         case OP_RRI_xor:
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rri.r2].asQWord ^ (QWord_t) ins.rri.imm);
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, regs.r[ins.rri.r2].asQWord ^ (QWord_t) ins.rri.imm);
             break;
         case OP_RRI_shl:
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rri.r2].asQWord << (QWord_t) ins.rri.imm);
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, regs.r[ins.rri.r2].asQWord << (QWord_t) ins.rri.imm);
             break;
         case OP_RRI_shr:
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rri.r2].asQWord >> (QWord_t) ins.rri.imm);
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, regs.r[ins.rri.r2].asQWord >> (QWord_t) ins.rri.imm);
             break;
         case OP_RRI_rol:
-            #define ROL(_a, _b) ((_a) >> (_b)) | ((_a) << ((sizeof(typeof(_a)) << 3) - (_b)))
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, ROL(regs->r[ins.rri.r2].asQWord, ins.rri.imm));
+            #ifdef __aarch64__
+            asm("ror %0, %1, %2" : "=r"(regs.r[ins.rri.r1].asQWord) : "r"(regs.r[ins.rri.r2].asQWord), "r"((sizeof(QWord_t) * 8) - (QWord_t) ins.rri.imm));
+            set_flags(regs.flags, regs.r[ins.rri.r1].asQWord);
+            #else
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, ROL(regs.r[ins.rri.r2].asQWord, ins.rri.imm));
+            #endif
             break;
         case OP_RRI_ror:
-            #define ROR(_a, _b) ((_a) << (_b)) | ((_a) >> ((sizeof(typeof(_a)) << 3) - (_b)))
-            regs->r[ins.rri.r1].asQWord = set_flags(&regs->spec.flags, ROR(regs->r[ins.rri.r2].asQWord, ins.rri.imm));
+            #ifdef __aarch64__
+            asm("ror %0, %1, %2" : "=r"(regs.r[ins.rri.r1].asQWord) : "r"(regs.r[ins.rri.r2].asQWord), "r"((QWord_t) ins.rri.imm));
+            set_flags(regs.flags, regs.r[ins.rri.r1].asQWord);
+            #else
+            regs.r[ins.rri.r1].asQWord = set_flags(regs.flags, ROR(regs.r[ins.rri.r2].asQWord, ins.rri.imm));
+            #endif
             break;
         case OP_RRI_ldr:
             switch (ins.rri_ls.size) {
-                case 0: regs->r[ins.rri.r1].asSQWord = set_flags(&regs->spec.flags, *(SQWord_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm)); break;
-                case 1: regs->r[ins.rri.r1].asSDWord = set_flags(&regs->spec.flags, *(SDWord_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm)); break;
-                case 2: regs->r[ins.rri.r1].asSWord = set_flags(&regs->spec.flags, *(SWord_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm)); break;
-                case 3: regs->r[ins.rri.r1].asSByte = set_flags(&regs->spec.flags, *(SByte_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm)); break;
+                case 0: regs.r[ins.rri_ls.r1].asSQWord = set_flags(regs.flags, *(SQWord_t*) (regs.r[ins.rri_ls.r2].asQWord + ins.rri_ls.imm)); break;
+                case 1: regs.r[ins.rri_ls.r1].asSDWord = set_flags(regs.flags, *(SDWord_t*) (regs.r[ins.rri_ls.r2].asQWord + ins.rri_ls.imm)); break;
+                case 2: regs.r[ins.rri_ls.r1].asSWord = set_flags(regs.flags, *(SWord_t*) (regs.r[ins.rri_ls.r2].asQWord + ins.rri_ls.imm)); break;
+                case 3: regs.r[ins.rri_ls.r1].asSByte = set_flags(regs.flags, *(SByte_t*) (regs.r[ins.rri_ls.r2].asQWord + ins.rri_ls.imm)); break;
             }
             break;
         case OP_RRI_str:
             switch (ins.rri_ls.size) {
-                case 0: *(SQWord_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm) = set_flags(&regs->spec.flags, regs->r[ins.rri.r1].asSQWord); break;
-                case 1: *(SDWord_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm) = set_flags(&regs->spec.flags, regs->r[ins.rri.r1].asSDWord); break;
-                case 2: *(SWord_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm) = set_flags(&regs->spec.flags, regs->r[ins.rri.r1].asSWord); break;
-                case 3: *(SByte_t*) (regs->r[ins.rri.r2].asQWord + ins.rri_s.imm) = set_flags(&regs->spec.flags, regs->r[ins.rri.r1].asSByte); break;
+                case 0: *(SQWord_t*) (regs.r[ins.rri_ls.r2].asQWord + ins.rri_ls.imm) = set_flags(regs.flags, regs.r[ins.rri_ls.r1].asSQWord); break;
+                case 1: *(SDWord_t*) (regs.r[ins.rri_ls.r2].asQWord + ins.rri_ls.imm) = set_flags(regs.flags, regs.r[ins.rri_ls.r1].asSDWord); break;
+                case 2: *(SWord_t*) (regs.r[ins.rri_ls.r2].asQWord + ins.rri_ls.imm) = set_flags(regs.flags, regs.r[ins.rri_ls.r1].asSWord); break;
+                case 3: *(SByte_t*) (regs.r[ins.rri_ls.r2].asQWord + ins.rri_ls.imm) = set_flags(regs.flags, regs.r[ins.rri_ls.r1].asSByte); break;
             }
             break;
         case OP_RRI_bext: {
                 uint8_t lowest = ins.rri_bit.lowest;
                 uint8_t num = ins.rri_bit.nbits;
                 uint64_t mask = ((1ULL << num) - 1);
-                uint64_t val = (regs->r[ins.rri.r2].asQWord & (mask << lowest)) >> lowest;
+                uint64_t val = (regs.r[ins.rri.r2].asQWord & (mask << lowest)) >> lowest;
                 if (ins.rri_bit.sign_extend) {
                     uint8_t sign_bit_mask = (1ULL << (num - 1));
                     if (val & sign_bit_mask) {
                         val |= ~mask;
                     }
                 }
-                regs->r[ins.rri.r1].asQWord = val;
+                regs.r[ins.rri.r1].asQWord = val;
             }
             break;
         case OP_RRI_bdep: {
                 uint8_t lowest = ins.rri_bit.lowest;
                 uint8_t num = ins.rri_bit.nbits;
                 uint64_t mask = ((1ULL << num) - 1);
-                regs->r[ins.rri.r1].asQWord &= ~(mask << lowest);
-                regs->r[ins.rri.r1].asQWord |= (regs->r[ins.rri.r2].asQWord & mask) << lowest;
+                regs.r[ins.rri.r1].asQWord &= ~(mask << lowest);
+                regs.r[ins.rri.r1].asQWord |= (regs.r[ins.rri.r2].asQWord & mask) << lowest;
             }
             break;
         case OP_RRI_ldp:
             switch (ins.rri_rpairs.size) {
                 case 0: {
-                        regs->r[ins.rri_rpairs.r1].asQWord = *(QWord_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm);
-                        regs->r[ins.rri_rpairs.r2].asQWord = *(QWord_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(QWord_t));
+                        regs.r[ins.rri_rpairs.r1].asQWord = *(QWord_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm);
+                        regs.r[ins.rri_rpairs.r2].asQWord = *(QWord_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(QWord_t));
                     }
                     break;
                 case 1: {
-                        regs->r[ins.rri_rpairs.r1].asDWord = *(DWord_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm);
-                        regs->r[ins.rri_rpairs.r1].asDWord = *(DWord_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(DWord_t));
+                        regs.r[ins.rri_rpairs.r1].asDWord = *(DWord_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm);
+                        regs.r[ins.rri_rpairs.r1].asDWord = *(DWord_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(DWord_t));
                     }
                     break;
                 case 2: {
-                        regs->r[ins.rri_rpairs.r1].asWord = *(Word_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm);
-                        regs->r[ins.rri_rpairs.r1].asWord = *(Word_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(Word_t));
+                        regs.r[ins.rri_rpairs.r1].asWord = *(Word_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm);
+                        regs.r[ins.rri_rpairs.r1].asWord = *(Word_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(Word_t));
                     }
                     break;
                 case 3: {
-                        regs->r[ins.rri_rpairs.r1].asByte = *(Byte_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm);
-                        regs->r[ins.rri_rpairs.r1].asByte = *(Byte_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(Byte_t));
+                        regs.r[ins.rri_rpairs.r1].asByte = *(Byte_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm);
+                        regs.r[ins.rri_rpairs.r1].asByte = *(Byte_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(Byte_t));
                     }
                     break;
             }
@@ -266,23 +304,23 @@ void exec_rri_type(hive_instruction_t ins, register hive_register_file_t* const 
         case OP_RRI_stp:
             switch (ins.rri_rpairs.size) {
                 case 0: {
-                        *(QWord_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm) = regs->r[ins.rri_rpairs.r1].asQWord;
-                        *(QWord_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(QWord_t)) = regs->r[ins.rri_rpairs.r2].asQWord;
+                        *(QWord_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm) = regs.r[ins.rri_rpairs.r1].asQWord;
+                        *(QWord_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(QWord_t)) = regs.r[ins.rri_rpairs.r2].asQWord;
                     }
                     break;
                 case 1: {
-                        *(DWord_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm) = regs->r[ins.rri_rpairs.r1].asDWord;
-                        *(DWord_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(DWord_t)) = regs->r[ins.rri_rpairs.r2].asDWord;
+                        *(DWord_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm) = regs.r[ins.rri_rpairs.r1].asDWord;
+                        *(DWord_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(DWord_t)) = regs.r[ins.rri_rpairs.r2].asDWord;
                     }
                     break;
                 case 2: {
-                        *(Word_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm) = regs->r[ins.rri_rpairs.r1].asWord;
-                        *(Word_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(Word_t)) = regs->r[ins.rri_rpairs.r2].asWord;
+                        *(Word_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm) = regs.r[ins.rri_rpairs.r1].asWord;
+                        *(Word_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(Word_t)) = regs.r[ins.rri_rpairs.r2].asWord;
                     }
                     break;
                 case 3: {
-                        *(Byte_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm) = regs->r[ins.rri_rpairs.r1].asByte;
-                        *(Byte_t*) (regs->r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(Byte_t)) = regs->r[ins.rri_rpairs.r2].asByte;
+                        *(Byte_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm) = regs.r[ins.rri_rpairs.r1].asByte;
+                        *(Byte_t*) (regs.r[ins.rri_rpairs.r3].asQWord + ins.rri_rpairs.imm + sizeof(Byte_t)) = regs.r[ins.rri_rpairs.r2].asByte;
                     }
                     break;
             }
@@ -291,87 +329,99 @@ void exec_rri_type(hive_instruction_t ins, register hive_register_file_t* const 
             raise(SIGILL);
             break;
     }
+    regs.pc.asInstrPtr++;
+    return regs;
 }
-void exec_rrr_type(hive_instruction_t ins, register hive_register_file_t* const restrict regs, register hive_simd_register_t simd_regs[8]) {
+hive_register_file_t exec_rrr_type(hive_register_file_t regs, hive_instruction_t ins) {
     switch (ins.rrr.op) {
         case OP_RRR_add:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rrr.r2].asQWord + regs->r[ins.rrr.r3].asQWord);
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, regs.r[ins.rrr.r2].asQWord + regs.r[ins.rrr.r3].asQWord);
             break;
         case OP_RRR_sub:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rrr.r2].asQWord - regs->r[ins.rrr.r3].asQWord);
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, regs.r[ins.rrr.r2].asQWord - regs.r[ins.rrr.r3].asQWord);
             break;
         case OP_RRR_mul:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rrr.r2].asQWord * regs->r[ins.rrr.r3].asQWord);
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, regs.r[ins.rrr.r2].asQWord * regs.r[ins.rrr.r3].asQWord);
             break;
         case OP_RRR_div:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rrr.r2].asQWord / regs->r[ins.rrr.r3].asQWord);
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, regs.r[ins.rrr.r2].asQWord / regs.r[ins.rrr.r3].asQWord);
             break;
         case OP_RRR_mod:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rrr.r2].asQWord % regs->r[ins.rrr.r3].asQWord);
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, regs.r[ins.rrr.r2].asQWord % regs.r[ins.rrr.r3].asQWord);
             break;
         case OP_RRR_and:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rrr.r2].asQWord & regs->r[ins.rrr.r3].asQWord);
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, regs.r[ins.rrr.r2].asQWord & regs.r[ins.rrr.r3].asQWord);
             break;
         case OP_RRR_or:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rrr.r2].asQWord | regs->r[ins.rrr.r3].asQWord);
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, regs.r[ins.rrr.r2].asQWord | regs.r[ins.rrr.r3].asQWord);
             break;
         case OP_RRR_xor:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rrr.r2].asQWord ^ regs->r[ins.rrr.r3].asQWord);
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, regs.r[ins.rrr.r2].asQWord ^ regs.r[ins.rrr.r3].asQWord);
             break;
         case OP_RRR_shl:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rrr.r2].asQWord << regs->r[ins.rrr.r3].asQWord);
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, regs.r[ins.rrr.r2].asQWord << regs.r[ins.rrr.r3].asQWord);
             break;
         case OP_RRR_shr:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, regs->r[ins.rrr.r2].asQWord >> regs->r[ins.rrr.r3].asQWord);
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, regs.r[ins.rrr.r2].asQWord >> regs.r[ins.rrr.r3].asQWord);
             break;
         case OP_RRR_rol:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, ROL(regs->r[ins.rrr.r2].asQWord, regs->r[ins.rrr.r3].asQWord));
+            #ifdef __aarch64__
+            asm("ror %0, %1, %2" : "=r"(regs.r[ins.rrr.r1].asQWord) : "r"(regs.r[ins.rrr.r2].asQWord), "r"((sizeof(QWord_t) * 8) - regs.r[ins.rrr.r3].asQWord));
+            set_flags(regs.flags, regs.r[ins.rrr.r1].asQWord);
+            #else
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, ROL(regs.r[ins.rrr.r2].asQWord, regs.r[ins.rrr.r3].asQWord));
+            #endif
             break;
         case OP_RRR_ror:
-            regs->r[ins.rrr.r1].asQWord = set_flags(&regs->spec.flags, ROR(regs->r[ins.rrr.r2].asQWord, regs->r[ins.rrr.r3].asQWord));
+            #ifdef __aarch64__
+            asm("ror %0, %1, %2" : "=r"(regs.r[ins.rrr.r1].asQWord) : "r"(regs.r[ins.rrr.r2].asQWord), "r"(regs.r[ins.rrr.r3].asQWord));
+            set_flags(regs.flags, regs.r[ins.rrr.r1].asQWord);
+            #else
+            regs.r[ins.rrr.r1].asQWord = set_flags(regs.flags, ROR(regs.r[ins.rrr.r2].asQWord, regs.r[ins.rrr.r3].asQWord));
+            #endif
             break;
         case OP_RRR_ldr:
             switch (ins.rrr_ls.size) {
-                case 0: regs->r[ins.rrr_ls.r1].asSQWord = set_flags(&regs->spec.flags, *(SQWord_t*) (regs->r[ins.rrr_ls.r2].asQWord + regs->r[ins.rrr_ls.r3].asQWord)); break;
-                case 1: regs->r[ins.rrr_ls.r1].asSDWord = set_flags(&regs->spec.flags, *(SDWord_t*) (regs->r[ins.rrr_ls.r2].asQWord + regs->r[ins.rrr_ls.r3].asQWord)); break;
-                case 2: regs->r[ins.rrr_ls.r1].asSWord = set_flags(&regs->spec.flags, *(SWord_t*) (regs->r[ins.rrr_ls.r2].asQWord + regs->r[ins.rrr_ls.r3].asQWord)); break;
-                case 3: regs->r[ins.rrr_ls.r1].asSByte = set_flags(&regs->spec.flags, *(SByte_t*) (regs->r[ins.rrr_ls.r2].asQWord + regs->r[ins.rrr_ls.r3].asQWord)); break;
+                case 0: regs.r[ins.rrr_ls.r1].asSQWord = set_flags(regs.flags, *(SQWord_t*) (regs.r[ins.rrr_ls.r2].asQWord + regs.r[ins.rrr_ls.r3].asQWord)); break;
+                case 1: regs.r[ins.rrr_ls.r1].asSDWord = set_flags(regs.flags, *(SDWord_t*) (regs.r[ins.rrr_ls.r2].asQWord + regs.r[ins.rrr_ls.r3].asQWord)); break;
+                case 2: regs.r[ins.rrr_ls.r1].asSWord = set_flags(regs.flags, *(SWord_t*) (regs.r[ins.rrr_ls.r2].asQWord + regs.r[ins.rrr_ls.r3].asQWord)); break;
+                case 3: regs.r[ins.rrr_ls.r1].asSByte = set_flags(regs.flags, *(SByte_t*) (regs.r[ins.rrr_ls.r2].asQWord + regs.r[ins.rrr_ls.r3].asQWord)); break;
             }
             break;
         case OP_RRR_str:
             switch (ins.rrr_ls.size) {
-                case 0: *(SQWord_t*) (regs->r[ins.rrr_ls.r2].asQWord + regs->r[ins.rrr_ls.r3].asQWord) = set_flags(&regs->spec.flags, regs->r[ins.rrr_ls.r1].asSQWord); break;
-                case 1: *(SDWord_t*) (regs->r[ins.rrr_ls.r2].asQWord + regs->r[ins.rrr_ls.r3].asQWord) = set_flags(&regs->spec.flags, regs->r[ins.rrr_ls.r1].asSDWord); break;
-                case 2: *(SWord_t*) (regs->r[ins.rrr_ls.r2].asQWord + regs->r[ins.rrr_ls.r3].asQWord) = set_flags(&regs->spec.flags, regs->r[ins.rrr_ls.r1].asSWord); break;
-                case 3: *(SByte_t*) (regs->r[ins.rrr_ls.r2].asQWord + regs->r[ins.rrr_ls.r3].asQWord) = set_flags(&regs->spec.flags, regs->r[ins.rrr_ls.r1].asSByte); break;
+                case 0: *(SQWord_t*) (regs.r[ins.rrr_ls.r2].asQWord + regs.r[ins.rrr_ls.r3].asQWord) = set_flags(regs.flags, regs.r[ins.rrr_ls.r1].asSQWord); break;
+                case 1: *(SDWord_t*) (regs.r[ins.rrr_ls.r2].asQWord + regs.r[ins.rrr_ls.r3].asQWord) = set_flags(regs.flags, regs.r[ins.rrr_ls.r1].asSDWord); break;
+                case 2: *(SWord_t*) (regs.r[ins.rrr_ls.r2].asQWord + regs.r[ins.rrr_ls.r3].asQWord) = set_flags(regs.flags, regs.r[ins.rrr_ls.r1].asSWord); break;
+                case 3: *(SByte_t*) (regs.r[ins.rrr_ls.r2].asQWord + regs.r[ins.rrr_ls.r3].asQWord) = set_flags(regs.flags, regs.r[ins.rrr_ls.r1].asSByte); break;
             }
             break;
         case OP_RRR_tst:
-            test(&regs->spec.flags, regs->r[ins.rrr.r1].asQWord, regs->r[ins.rrr.r2].asQWord);
+            test(regs.flags, regs.r[ins.rrr.r1].asQWord, regs.r[ins.rrr.r2].asQWord);
             break;
         case OP_RRR_cmp:
-            cmp(&regs->spec.flags, regs->r[ins.rrr.r1].asQWord, regs->r[ins.rrr.r2].asQWord);
+            cmp(regs.flags, regs.r[ins.rrr.r1].asQWord, regs.r[ins.rrr.r2].asQWord);
             break;
         case OP_RRR_ldp:
             switch (ins.rrr_rpairs.size) {
                 case 0: {
-                        regs->r[ins.rrr_rpairs.r1].asQWord = *(QWord_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord);
-                        regs->r[ins.rrr_rpairs.r2].asQWord = *(QWord_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord + sizeof(QWord_t));
+                        regs.r[ins.rrr_rpairs.r1].asQWord = *(QWord_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord);
+                        regs.r[ins.rrr_rpairs.r2].asQWord = *(QWord_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord + sizeof(QWord_t));
                     }
                     break;
                 case 1: {
-                        regs->r[ins.rrr_rpairs.r1].asDWord = *(DWord_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord);
-                        regs->r[ins.rrr_rpairs.r1].asDWord = *(DWord_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord + sizeof(DWord_t));
+                        regs.r[ins.rrr_rpairs.r1].asDWord = *(DWord_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord);
+                        regs.r[ins.rrr_rpairs.r1].asDWord = *(DWord_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord + sizeof(DWord_t));
                     }
                     break;
                 case 2: {
-                        regs->r[ins.rrr_rpairs.r1].asWord = *(Word_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord);
-                        regs->r[ins.rrr_rpairs.r1].asWord = *(Word_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord + sizeof(Word_t));
+                        regs.r[ins.rrr_rpairs.r1].asWord = *(Word_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord);
+                        regs.r[ins.rrr_rpairs.r1].asWord = *(Word_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord + sizeof(Word_t));
                     }
                     break;
                 case 3: {
-                        regs->r[ins.rrr_rpairs.r1].asByte = *(Byte_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord);
-                        regs->r[ins.rrr_rpairs.r1].asByte = *(Byte_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord + sizeof(Byte_t));
+                        regs.r[ins.rrr_rpairs.r1].asByte = *(Byte_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord);
+                        regs.r[ins.rrr_rpairs.r1].asByte = *(Byte_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord + sizeof(Byte_t));
                     }
                     break;
             }
@@ -379,111 +429,103 @@ void exec_rrr_type(hive_instruction_t ins, register hive_register_file_t* const 
         case OP_RRR_stp:
             switch (ins.rrr_rpairs.size) {
                 case 0: {
-                        *(QWord_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord) = regs->r[ins.rrr_rpairs.r1].asQWord;
-                        *(QWord_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord + sizeof(QWord_t)) = regs->r[ins.rrr_rpairs.r2].asQWord;
+                        *(QWord_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord) = regs.r[ins.rrr_rpairs.r1].asQWord;
+                        *(QWord_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord + sizeof(QWord_t)) = regs.r[ins.rrr_rpairs.r2].asQWord;
                     }
                     break;
                 case 1: {
-                        *(DWord_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord) = regs->r[ins.rrr_rpairs.r1].asDWord;
-                        *(DWord_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord + sizeof(DWord_t)) = regs->r[ins.rrr_rpairs.r2].asDWord;
+                        *(DWord_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord) = regs.r[ins.rrr_rpairs.r1].asDWord;
+                        *(DWord_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord + sizeof(DWord_t)) = regs.r[ins.rrr_rpairs.r2].asDWord;
                     }
                     break;
                 case 2: {
-                        *(Word_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord) = regs->r[ins.rrr_rpairs.r1].asWord;
-                        *(Word_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord + sizeof(Word_t)) = regs->r[ins.rrr_rpairs.r2].asWord;
+                        *(Word_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord) = regs.r[ins.rrr_rpairs.r1].asWord;
+                        *(Word_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord + sizeof(Word_t)) = regs.r[ins.rrr_rpairs.r2].asWord;
                     }
                     break;
                 case 3: {
-                        *(Byte_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord) = regs->r[ins.rrr_rpairs.r1].asByte;
-                        *(Byte_t*) (regs->r[ins.rrr_rpairs.r3].asQWord + regs->r[ins.rrr_rpairs.r4].asQWord + sizeof(Byte_t)) = regs->r[ins.rrr_rpairs.r2].asByte;
+                        *(Byte_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord) = regs.r[ins.rrr_rpairs.r1].asByte;
+                        *(Byte_t*) (regs.r[ins.rrr_rpairs.r3].asQWord + regs.r[ins.rrr_rpairs.r4].asQWord + sizeof(Byte_t)) = regs.r[ins.rrr_rpairs.r2].asByte;
                     }
                     break;
             }
             break;
+        case OP_RRR_fpu:
+            regs = exec_fpu_type(regs, ins);
+            break;
         default:
             raise(SIGILL);
             break;
     }
+    regs.pc.asInstrPtr++;
+    return regs;
 }
-void exec_ri_type(hive_instruction_t ins, register hive_register_file_t* const restrict regs, register hive_simd_register_t simd_regs[8]) {
-    switch (ins.ri.op) {
-        case OP_RI_cbz:
-            if (regs->spec.flags.equal) {
-                regs->spec.pc.asInstrPtr += ins.data_s.data;
-            }
-            break;
-        case OP_RI_cbnz:
-            if (!regs->spec.flags.equal) {
-                regs->spec.pc.asInstrPtr += ins.data_s.data;
-            }
-            break;
-        case OP_RI_lea:
-            regs->r[ins.ri.r1].asInstrPtr = regs->spec.pc.asInstrPtr + ins.ri_s.imm;
-            break;
-        case OP_RI_movk:
-            regs->r[ins.ri_mov.r1].asQWord &= ROL(0xFFFFFFFFFFFF0000, (16 * ins.ri_mov.shift));
-            regs->r[ins.ri_mov.r1].asQWord |= ROL((uint64_t) ins.ri_mov.imm, (16 * ins.ri_mov.shift));
-            set_flags(&regs->spec.flags, regs->r[ins.ri_mov.r1].asQWord);
-            break;
-        case OP_RI_movz:
-            regs->r[ins.ri_mov.r1].asQWord = ROL((uint64_t) ins.ri_mov.imm, (16 * ins.ri_mov.shift));
-            set_flags(&regs->spec.flags, regs->r[ins.ri_mov.r1].asQWord);
-            break;
-        case OP_RI_svc:
-            exec_svc(regs);
-            break;
-        case OP_RI_br:
-            BRANCH(regs->r[ins.ri.r1].asQWord);
-            break;
-        case OP_RI_blr:
-            BRANCH_LINK(regs->r[ins.ri.r1].asQWord);
-            break;
-        case OP_RI_brlt:
-            BRANCH_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.negative);
-            break;
-        case OP_RI_brgt:
-            BRANCH_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative && !regs->spec.flags.equal);
-            break;
-        case OP_RI_brge:
-            BRANCH_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative);
-            break;
-        case OP_RI_brle:
-            BRANCH_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.negative || regs->spec.flags.equal);
-            break;
-        case OP_RI_breq:
-            BRANCH_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.equal);
-            break;
-        case OP_RI_brne:
-            BRANCH_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.equal);
-            break;
-        case OP_RI_blrlt:
-            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.negative);
-            break;
-        case OP_RI_blrgt:
-            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative && !regs->spec.flags.equal);
-            break;
-        case OP_RI_blrge:
-            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, !regs->spec.flags.negative);
-            break;
-        case OP_RI_blrle:
-            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.negative || regs->spec.flags.equal);
-            break;
-        case OP_RI_blreq:
-            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.equal);
-            break;
-        case OP_RI_blrne:
-            BRANCH_LINK_ON(regs->r[ins.ri.r1].asQWord, regs->spec.flags.equal);
-            break;
-        case OP_RI_tst:
-            test(&regs->spec.flags, regs->r[ins.ri.r1].asQWord, ins.ri.imm);
-            break;
-        case OP_RI_cmp:
-            cmp(&regs->spec.flags, regs->r[ins.ri.r1].asQWord, ins.ri.imm);
-            break;
-        default:
-            raise(SIGILL);
-            break;
+hive_register_file_t exec_ri_type(hive_register_file_t regs, hive_instruction_t ins) {
+    if (ins.ri.is_branch) {
+        switch (ins.ri_branch.op) {
+            case OP_RI_br:
+                if (ins.ri_branch.link) LINK();
+                BRANCH(regs.r[ins.ri_branch.r1].asQWord);
+                break;
+            case OP_RI_brlt:
+                if (ins.ri_branch.link) LINK_ON(regs.flags.negative);
+                BRANCH_ON(regs.r[ins.ri_branch.r1].asQWord, regs.flags.negative);
+                break;
+            case OP_RI_brgt:
+                if (ins.ri_branch.link) LINK_ON(!regs.flags.negative && !regs.flags.equal);
+                BRANCH_ON(regs.r[ins.ri_branch.r1].asQWord, !regs.flags.negative && !regs.flags.equal);
+                break;
+            case OP_RI_brge:
+                if (ins.ri_branch.link) LINK_ON(!regs.flags.negative);
+                BRANCH_ON(regs.r[ins.ri_branch.r1].asQWord, !regs.flags.negative);
+                break;
+            case OP_RI_brle:
+                if (ins.ri_branch.link) LINK_ON(regs.flags.negative || regs.flags.equal);
+                BRANCH_ON(regs.r[ins.ri_branch.r1].asQWord, regs.flags.negative || regs.flags.equal);
+                break;
+            case OP_RI_breq:
+                if (ins.ri_branch.link) LINK_ON(regs.flags.equal);
+                BRANCH_ON(regs.r[ins.ri_branch.r1].asQWord, regs.flags.equal);
+                break;
+            case OP_RI_brne:
+                if (ins.ri_branch.link) LINK_ON(!regs.flags.equal);
+                BRANCH_ON(regs.r[ins.ri_branch.r1].asQWord, !regs.flags.equal);
+                break;
+            case OP_RI_cbr:
+                set_flags(regs.flags, regs.r[ins.ri_cbranch.r1].asQWord);
+                if (ins.ri_branch.link) LINK_ON(regs.flags.equal == ins.ri_cbranch.zero);
+                BRANCH_ON(regs.r[ins.ri_cbranch.r1].asQWord, regs.flags.equal == ins.ri_cbranch.zero);
+                break;
+        }
+    } else {
+        switch (ins.ri.op) {
+            case OP_RI_lea:
+                regs.r[ins.ri.r1].asInstrPtr = regs.pc.asInstrPtr + ins.ri_s.imm;
+                break;
+            case OP_RI_movzk: {
+                    QWord_t shift = (16 * ins.ri_mov.shift);
+                    QWord_t mask = (~(0xFFFFULL) << shift);
+                    QWord_t value = ((QWord_t) ins.ri_mov.imm) << shift;
+                    regs.r[ins.ri_mov.r1].asQWord = ((regs.r[ins.ri_mov.r1].asQWord) & (ins.ri_mov.no_zero * mask)) | value;
+                    set_flags(regs.flags, regs.r[ins.ri_mov.r1].asQWord);
+                }
+                break;
+            case OP_RI_tst:
+                test(regs.flags, regs.r[ins.ri.r1].asQWord, ins.ri.imm);
+                break;
+            case OP_RI_cmp:
+                cmp(regs.flags, regs.r[ins.ri.r1].asQWord, ins.ri.imm);
+                break;
+            case OP_RI_svc:
+                regs = exec_svc(regs);
+                break;
+            default:
+                raise(SIGILL);
+                break;
+        }
     }
+    regs.pc.asInstrPtr++;
+    return regs;
 }
 
 #pragma region tostring
@@ -508,21 +550,21 @@ char* strformat(const char* fmt, ...) {
 }
 
 char* str_data_type(hive_instruction_t ins) {
-    switch (ins.data.op) {
-        case OP_DATA_b: return strformat("b %d", ins.data_s.data);
-        case OP_DATA_bl: return strformat("bl %d", ins.data_s.data);
-        case OP_DATA_blt: return strformat("blt %d", ins.data_s.data);
-        case OP_DATA_bgt: return strformat("bgt %d", ins.data_s.data);
-        case OP_DATA_bge: return strformat("bge %d", ins.data_s.data);
-        case OP_DATA_ble: return strformat("ble %d", ins.data_s.data);
-        case OP_DATA_beq: return strformat("beq %d", ins.data_s.data);
-        case OP_DATA_bne: return strformat("bne %d", ins.data_s.data);
-        case OP_DATA_bllt: return strformat("bllt %d", ins.data_s.data);
-        case OP_DATA_blgt: return strformat("blgt %d", ins.data_s.data);
-        case OP_DATA_blge: return strformat("blge %d", ins.data_s.data);
-        case OP_DATA_blle: return strformat("blle %d", ins.data_s.data);
-        case OP_DATA_bleq: return strformat("bleq %d", ins.data_s.data);
-        case OP_DATA_blne: return strformat("blne %d", ins.data_s.data);
+    if (ins.branch.op <= OP_BRANCH_bne) {
+        switch (ins.branch.op) {
+            case OP_BRANCH_b: return strformat("b%s %d", (ins.branch.link ? "l" : ""), ins.branch.offset);
+            case OP_BRANCH_blt: return strformat("b%slt %d", (ins.branch.link ? "l" : ""), ins.branch.offset);
+            case OP_BRANCH_bgt: return strformat("b%sgt %d", (ins.branch.link ? "l" : ""), ins.branch.offset);
+            case OP_BRANCH_bge: return strformat("b%sge %d", (ins.branch.link ? "l" : ""), ins.branch.offset);
+            case OP_BRANCH_ble: return strformat("b%sle %d", (ins.branch.link ? "l" : ""), ins.branch.offset);
+            case OP_BRANCH_beq: return strformat("b%seq %d", (ins.branch.link ? "l" : ""), ins.branch.offset);
+            case OP_BRANCH_bne: return strformat("b%sne %d", (ins.branch.link ? "l" : ""), ins.branch.offset);
+            case OP_BRANCH_cb: if (ins.ri_cbranch.zero) {
+                return strformat("cb%sz r%d, %d", (ins.branch.link ? "l" : ""), ins.comp_branch.r1, ins.branch.offset);
+            } else {
+                return strformat("cb%snz r%d, %d", (ins.branch.link ? "l" : ""), ins.comp_branch.r1, ins.branch.offset);
+            }
+        }
     }
     return NULL;
 }
@@ -562,18 +604,18 @@ char* str_rri_type(hive_instruction_t ins) {
         case OP_RRI_ror: return strformat("ror r%d, r%d, %d", ins.rri.r1, ins.rri.r2, ins.rri.imm);
         case OP_RRI_ldr: {
             switch (ins.rri_ls.size) {
-                case 0: return strformat("ldr r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
-                case 1: return strformat("ldrd r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
-                case 2: return strformat("ldrw r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
-                case 3: return strformat("ldrb r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
+                case 0: return strformat("ldr r%d, [r%d, %d]", ins.rri_ls.r1, ins.rri_ls.r2, ins.rri_ls.imm);
+                case 1: return strformat("ldrd r%d, [r%d, %d]", ins.rri_ls.r1, ins.rri_ls.r2, ins.rri_ls.imm);
+                case 2: return strformat("ldrw r%d, [r%d, %d]", ins.rri_ls.r1, ins.rri_ls.r2, ins.rri_ls.imm);
+                case 3: return strformat("ldrb r%d, [r%d, %d]", ins.rri_ls.r1, ins.rri_ls.r2, ins.rri_ls.imm);
             }
         }
         case OP_RRI_str: {
             switch (ins.rri_ls.size) {
-                case 0: return strformat("str r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
-                case 1: return strformat("strd r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
-                case 2: return strformat("strw r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
-                case 3: return strformat("strb r%d, [r%d, %d]", ins.rri.r1, ins.rri.r2, ins.rri_s.imm);
+                case 0: return strformat("str r%d, [r%d, %d]", ins.rri_ls.r1, ins.rri_ls.r2, ins.rri_ls.imm);
+                case 1: return strformat("strd r%d, [r%d, %d]", ins.rri_ls.r1, ins.rri_ls.r2, ins.rri_ls.imm);
+                case 2: return strformat("strw r%d, [r%d, %d]", ins.rri_ls.r1, ins.rri_ls.r2, ins.rri_ls.imm);
+                case 3: return strformat("strb r%d, [r%d, %d]", ins.rri_ls.r1, ins.rri_ls.r2, ins.rri_ls.imm);
             }
         }
         case OP_RRI_bext: {
@@ -606,6 +648,27 @@ char* str_rri_type(hive_instruction_t ins) {
                 case 3: return strformat("stpb r%d, r%d, [r%d, %d]", ins.rri_rpairs.r1, ins.rri_rpairs.r2, ins.rri_rpairs.r3, ins.rri_rpairs.imm);
             }
         }
+    }
+    return NULL;
+}
+char* str_fpu_type(hive_instruction_t ins) {
+    switch (ins.float_rrr.op) {
+        case OP_FLOAT_add: return strformat("fadd r%d, r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2, ins.float_rrr.r3);
+        case OP_FLOAT_addi: return strformat("faddi r%d, r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2, ins.float_rrr.r3);
+        case OP_FLOAT_sub: return strformat("fsub r%d, r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2, ins.float_rrr.r3);
+        case OP_FLOAT_subi: return strformat("fsubi r%d, r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2, ins.float_rrr.r3);
+        case OP_FLOAT_mul: return strformat("fmul r%d, r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2, ins.float_rrr.r3);
+        case OP_FLOAT_muli: return strformat("fmuli r%d, r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2, ins.float_rrr.r3);
+        case OP_FLOAT_div: return strformat("fdiv r%d, r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2, ins.float_rrr.r3);
+        case OP_FLOAT_divi: return strformat("fdivi r%d, r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2, ins.float_rrr.r3);
+        case OP_FLOAT_mod: return strformat("fmod r%d, r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2, ins.float_rrr.r3);
+        case OP_FLOAT_modi: return strformat("fmodi r%d, r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2, ins.float_rrr.r3);
+        case OP_FLOAT_i2f: return strformat("i2f r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2);
+        case OP_FLOAT_f2i: return strformat("f2i r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2);
+        case OP_FLOAT_sin: return strformat("fsin r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2);
+        case OP_FLOAT_sqrt: return strformat("fsqrt r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2);
+        case OP_FLOAT_cmp: return strformat("fcmp r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2);
+        case OP_FLOAT_cmpi: return strformat("fcmpi r%d, r%d", ins.float_rrr.r1, ins.float_rrr.r2);
     }
     return NULL;
 }
@@ -657,33 +720,38 @@ char* str_rrr_type(hive_instruction_t ins) {
                 case 3: return strformat("stpb r%d, r%d, [r%d, r%d]", ins.rrr_rpairs.r1, ins.rrr_rpairs.r2, ins.rrr_rpairs.r3, ins.rrr_rpairs.r4);
             }
         }
+        case OP_RRR_fpu: return str_fpu_type(ins);
     }
     return NULL;
 }
 char* str_ri_type(hive_instruction_t ins) {
-    switch (ins.ri.op) {
-        case OP_RI_cbz: return strformat("cbz r%d, 0x%08x", ins.ri_s.r1, ins.ri_s.imm);
-        case OP_RI_cbnz: return strformat("cbnz r%d, 0x%08x", ins.ri_s.r1, ins.ri_s.imm);
-        case OP_RI_lea: return strformat("lea r%d, 0x%08x", ins.ri_s.r1, ins.ri_s.imm);
-        case OP_RI_movk: return strformat("movk r%d, %d, shl %d", ins.ri.r1, ins.ri_mov.imm, ins.ri_mov.shift);
-        case OP_RI_movz: return strformat("movz r%d, %d, shl %d", ins.ri.r1, ins.ri_mov.imm, ins.ri_mov.shift);
-        case OP_RI_svc: return strformat("svc");
-        case OP_RI_br: return strformat("br r%d", ins.ri.r1);
-        case OP_RI_blr: return strformat("blr r%d", ins.ri.r1);
-        case OP_RI_brlt: return strformat("brlt r%d", ins.ri.r1);
-        case OP_RI_brgt: return strformat("brgt r%d", ins.ri.r1);
-        case OP_RI_brge: return strformat("brge r%d", ins.ri.r1);
-        case OP_RI_brle: return strformat("brle r%d", ins.ri.r1);
-        case OP_RI_breq: return strformat("breq r%d", ins.ri.r1);
-        case OP_RI_brne: return strformat("brne r%d", ins.ri.r1);
-        case OP_RI_blrlt: return strformat("blrlt r%d", ins.ri.r1);
-        case OP_RI_blrgt: return strformat("blrgt r%d", ins.ri.r1);
-        case OP_RI_blrge: return strformat("blrge r%d", ins.ri.r1);
-        case OP_RI_blrle: return strformat("blrle r%d", ins.ri.r1);
-        case OP_RI_blreq: return strformat("blreq r%d", ins.ri.r1);
-        case OP_RI_blrne: return strformat("blrne r%d", ins.ri.r1);
-        case OP_RI_tst: return strformat("tst r%d, %d", ins.ri.r1, ins.ri.imm);
-        case OP_RI_cmp: return strformat("cmp r%d, %d", ins.ri.r1, ins.ri.imm);
+    if (ins.ri.is_branch) {
+        switch (ins.ri_branch.op) {
+            case OP_RI_br: return strformat("b%sr r%d", (ins.ri_branch.link ? "l" : ""), ins.ri_branch.r1);
+            case OP_RI_brlt: return strformat("b%srlt r%d", (ins.ri_branch.link ? "l" : ""), ins.ri_branch.r1);
+            case OP_RI_brgt: return strformat("b%srgt r%d", (ins.ri_branch.link ? "l" : ""), ins.ri_branch.r1);
+            case OP_RI_brge: return strformat("b%srge r%d", (ins.ri_branch.link ? "l" : ""), ins.ri_branch.r1);
+            case OP_RI_brle: return strformat("b%srle r%d", (ins.ri_branch.link ? "l" : ""), ins.ri_branch.r1);
+            case OP_RI_breq: return strformat("b%sreq r%d", (ins.ri_branch.link ? "l" : ""), ins.ri_branch.r1);
+            case OP_RI_brne: return strformat("b%srne r%d", (ins.ri_branch.link ? "l" : ""), ins.ri_branch.r1);
+            case OP_RI_cbr: if (ins.ri_cbranch.zero) {
+                return strformat("cb%sz r%d, 0x%08x", (ins.ri_branch.link ? "l" : ""), ins.ri_s.r1, ins.ri_s.imm);
+            } else {
+                return strformat("cb%snz r%d, 0x%08x", (ins.ri_branch.link ? "l" : ""), ins.ri_s.r1, ins.ri_s.imm);
+            }
+        }
+    } else {
+        switch (ins.ri.op) {
+            case OP_RI_lea: return strformat("lea r%d, 0x%08x", ins.ri_s.r1, ins.ri_s.imm);
+            case OP_RI_movzk: if (ins.ri_mov.no_zero) {
+                return strformat("movk r%d, %d, shl %d", ins.ri.r1, ins.ri_mov.imm, ins.ri_mov.shift);
+            } else {
+                return strformat("movz r%d, %d, shl %d", ins.ri.r1, ins.ri_mov.imm, ins.ri_mov.shift);
+            }
+            case OP_RI_svc: return strformat("svc");
+            case OP_RI_tst: return strformat("tst r%d, %d", ins.ri.r1, ins.ri.imm);
+            case OP_RI_cmp: return strformat("cmp r%d, %d", ins.ri.r1, ins.ri.imm);
+        }
     }
     return NULL;
 }
@@ -701,19 +769,18 @@ char* dis(hive_instruction_t ins) {
 
 #pragma endregion
 
-__attribute__((noreturn))
-void exec(register hive_register_file_t* const restrict regs, register hive_simd_register_t simd_regs[8]) {
-    while (1) {
-        // printf("0x%016llx: ", regs->spec.pc.asQWord);
-        hive_instruction_t ins = *(regs->spec.pc.asInstrPtr++);
-        // dis(ins);
+hive_register_file_t exec(hive_register_file_t regs) {
+    while (regs.pc.asQWord != 4) {
+        hive_instruction_t ins = *(regs.pc.asInstrPtr);
+        // printf("0x%016llx: 0x%08x %s\n", regs.pc.asQWord, *regs.pc.asDWordPtr, dis(ins));
         switch (ins.generic.type) {
-            case 0: exec_data_type(ins, regs, simd_regs); break;
-            case 1: exec_rri_type(ins, regs, simd_regs); break;
-            case 2: exec_rrr_type(ins, regs, simd_regs); break;
-            case 3: exec_ri_type(ins, regs, simd_regs); break;
+            case 0: regs = exec_branch_type(regs, ins); break;
+            case 1: regs = exec_rri_type(regs, ins); break;
+            case 2: regs = exec_rrr_type(regs, ins); break;
+            case 3: regs = exec_ri_type(regs, ins); break;
         }
     }
+    return regs;
 }
 
 void disassemble(Section code_sect) {
@@ -939,22 +1006,22 @@ void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) 
                 break;
             case st_data: {
                     hive_instruction_t* s = ((hive_instruction_t*) &code_sect.data[current_address]);
-                    int32_t diff = target_address - (uint64_t) (s + 1);
+                    int32_t diff = target_address - (uint64_t) s;
                     if (diff % 4) {
                         fprintf(stderr, "Relative target not aligned!");
                         exit(1);
                     }
                     diff >>= 2;
-                    if (diff >= 0b1000000000000000000000000 || diff < -0b1000000000000000000000000) {
-                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (uint64_t) &code_sect.data[current_address], target_address);
+                    if (diff >= 0b10000000000000000000000000 || diff < -0b10000000000000000000000000) {
+                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &code_sect.data[current_address], target_address);
                         exit(1);
                     }
-                    s->data_s.data = diff;
+                    s->branch.offset = diff;
                 }
                 break;
             case st_ri: {
                     hive_instruction_t* s = ((hive_instruction_t*) &code_sect.data[current_address]);
-                    int32_t diff = target_address - (uint64_t) (s + 1);
+                    int32_t diff = target_address - (uint64_t) s;
                     if (diff % 4) {
                         fprintf(stderr, "Relative target not aligned!");
                         exit(1);
@@ -1087,17 +1154,15 @@ int main(int argc, char **argv) {
             return 0;
         }
 
-        register_file.spec.pc.asPointer = (void*) find_symbol_address(all_syms, "_start");
+        hive_register_file_t regs = {0};
 
-        signal(SIGSEGV, handler);
-        signal(SIGBUS, handler);
-        signal(SIGILL, handler);
+        regs.pc.asPointer = (void*) find_symbol_address(all_syms, "_start");
 
-        if (register_file.spec.pc.asSQWord != -1) {
+        if (regs.pc.asSQWord != -1) {
             char stack[1024 * 1024];
-            register_file.spec.sp.asPointer = ((void*) stack) + sizeof(stack);
-            exec(&register_file, simd_registers);
-            return register_file.r[0].asQWord;
+            regs.sp.asPointer = ((void*) stack) + sizeof(stack);
+            regs = exec(regs);
+            return regs.r[0].asQWord;
         }
         
         fprintf(stderr, "Could not find _start symbol\n");

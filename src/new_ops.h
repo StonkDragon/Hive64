@@ -10,7 +10,7 @@
 
 #include "opcode.h"
 
-typedef __uint128_t Word128_t;
+typedef __uint128_t DQWord_t;
 typedef uint64_t QWord_t;
 typedef uint32_t DWord_t;
 typedef uint16_t Word_t;
@@ -25,150 +25,193 @@ typedef uint16_t* Uint16Ptr_t;
 typedef double Float64_t;
 typedef float Float32_t;
 
+#define CONCAT_(a, b) a ## b
+#define CONCAT(a, b) CONCAT_(a, b)
+
+#define PAD(_n) uint32_t CONCAT(_, __LINE__) : _n
+#define TYPE_PAD PAD(2)
+
 typedef union {
     struct {
         uint8_t type: 2;
-        uint32_t data: 30;
+        PAD(30);
     } PACKED generic;
     struct {
-        uint8_t type: 2;
-        uint8_t op: 5;
-        uint32_t data: 25;
-    } PACKED data;
+        TYPE_PAD;
+        uint8_t op: 3;
+        uint8_t link: 1;
+        int32_t offset: 26;
+    } PACKED branch;
     struct {
-        uint8_t type: 2;
-        uint8_t op: 5;
-        int32_t data: 25;
-    } PACKED data_s;
+        TYPE_PAD;
+        uint8_t op: 3;
+        uint8_t link: 1;
+        uint8_t r1: 5;
+        uint8_t zero: 1;
+        int32_t offset: 20;
+    } PACKED comp_branch;
     struct {
-        uint8_t type: 2;
+        TYPE_PAD;
         uint8_t op: 5;
-        uint16_t imm: 15;
         uint8_t r1: 5;
         uint8_t r2: 5;
+        uint16_t imm: 15;
     } PACKED rri;
     struct {
-        uint8_t type: 2;
+        TYPE_PAD;
         uint8_t op: 5;
         uint8_t size: 2;
-        uint8_t imm: 8;
         uint8_t r1: 5;
         uint8_t r2: 5;
         uint8_t r3: 5;
+        uint8_t imm: 8;
     } PACKED rri_rpairs;
     struct {
-        uint8_t type: 2;
+        TYPE_PAD;
         uint8_t op: 5;
-        uint16_t imm: 13;
-        uint8_t size: 2;
         uint8_t r1: 5;
         uint8_t r2: 5;
+        uint8_t size: 2;
+        int16_t imm: 13;
     } PACKED rri_ls;
     struct {
-        uint8_t type: 2;
+        TYPE_PAD;
         uint8_t op: 5;
-        uint8_t pad: 2;
-        uint8_t sign_extend: 1;
-        uint8_t nbits: 6;
-        uint8_t lowest: 6;
         uint8_t r1: 5;
+        uint8_t sign_extend: 1;
         uint8_t r2: 5;
+        uint8_t nbits: 6;
+        PAD(2);
+        uint8_t lowest: 6;
     } PACKED rri_bit;
     struct {
-        uint8_t type: 2;
-        uint8_t op: 5;
-        int16_t imm: 15;
-        uint8_t r1: 5;
-        uint8_t r2: 5;
-    } PACKED rri_s;
-    struct {
-        uint8_t type: 2;
+        TYPE_PAD;
         uint8_t op: 6;
-        uint16_t _: 9;
-        uint8_t r1: 5;
-        uint8_t r2: 5;
-        uint8_t r3: 5;
+        uint8_t r1;
+        uint8_t r2;
+        uint8_t r3;
     } PACKED rrr;
     struct {
-        uint8_t type: 2;
-        uint8_t op: 6;
-        uint8_t _: 2;
-        uint8_t size: 2;
+        TYPE_PAD;
+        PAD(6);
+        uint8_t op: 4;
         uint8_t r1: 5;
+        PAD(2);
         uint8_t r2: 5;
+        uint8_t r3;
+    } PACKED float_rrr;
+    struct {
+        TYPE_PAD;
+        uint8_t op: 6;
+        uint8_t r1: 5;
+        PAD(1);
+        uint8_t r2: 5;
+        PAD(1);
+        uint8_t size: 2;
         uint8_t r3: 5;
         uint8_t r4: 5;
     } PACKED rrr_rpairs;
     struct {
-        uint8_t type: 2;
+        TYPE_PAD;
         uint8_t op: 6;
-        uint16_t _: 7;
+        PAD(1);
         uint16_t size: 2;
         uint8_t r1: 5;
-        uint8_t r2: 5;
-        uint8_t r3: 5;
+        uint8_t r2;
+        uint8_t r3;
     } PACKED rrr_ls;
     struct {
-        uint8_t type: 2;
-        uint8_t op: 5;
-        uint32_t imm: 20;
+        TYPE_PAD;
+        uint8_t is_branch: 1;
+        uint8_t op: 4;
         uint8_t r1: 5;
+        uint32_t imm: 20;
     } PACKED ri;
     struct {
-        uint8_t type: 2;
-        uint8_t op: 5;
-        uint8_t shift: 4;
-        uint16_t imm: 16;
+        TYPE_PAD;
+        uint8_t op: 4;
+        uint8_t link: 1;
         uint8_t r1: 5;
-    } PACKED ri_mov;
+        PAD(20);
+    } PACKED ri_branch;
     struct {
-        uint8_t type: 2;
-        uint8_t op: 5;
-        int32_t imm: 20;
+        TYPE_PAD;
+        uint8_t op: 4;
+        uint8_t link: 1;
         uint8_t r1: 5;
+        PAD(14);
+        uint8_t zero: 1;
+        uint8_t r2: 5;
+    } PACKED ri_cbranch;
+    struct {
+        TYPE_PAD;
+        uint8_t is_branch: 1;
+        uint8_t op: 4;
+        uint8_t r1: 5;
+        int32_t imm: 20;
     } PACKED ri_s;
+    struct {
+        TYPE_PAD;
+        uint8_t is_branch: 1;
+        uint8_t op: 4;
+        PAD(1);
+        uint8_t no_zero: 1;
+        uint8_t shift: 2;
+        uint8_t r1: 5;
+        uint16_t imm;
+    } PACKED ri_mov;
 } PACKED hive_instruction_t;
 
+#ifdef static_assert
+static_assert(sizeof(hive_instruction_t) == sizeof(DWord_t), "hive_instruction_t is wrong size");
+#endif
+
+typedef union {
+    Byte_t      asBytes[32];
+    Word_t      asWords[16];
+    DWord_t     asDWords[8];
+    QWord_t     asQWords[4];
+    DQWord_t    asDQWords[2];
+    Float32_t   asFloat32s[8];
+    Float64_t   asFloat64s[4];
+} hive_vector_register_t;
+
 typedef union hive_register_t {
-    QWord_t             asQWord;
-    Word_t              asWords[4];
-    DWord_t             asDWord;
-    Word_t              asWord;
-    Byte_t              asByte;
-    SQWord_t            asSQWord;
-    SDWord_t            asSDWord;
-    SWord_t             asSWord;
-    SByte_t             asSByte;
-    Pointer_t           asPointer;
-    Byte_t*             asBytePtr;
-    SByte_t*            asSBytePtr;
-    Word_t*             asWordPtr;
-    SWord_t*            asSWordPtr;
-    DWord_t*            asDWordPtr;
-    SDWord_t*           asSDWordPtr;
-    QWord_t*            asQWordPtr;
-    SQWord_t*           asSQWordPtr;
-    Float64_t           asFloat64;
-    Float32_t           asFloat32;
-    hive_instruction_t* asInstrPtr;
-    uint8_t             bytes[8];
+    QWord_t                 asQWord;
+    DWord_t                 asDWord;
+    Word_t                  asWord;
+    Byte_t                  asByte;
+    SQWord_t                asSQWord;
+    SDWord_t                asSDWord;
+    SWord_t                 asSWord;
+    SByte_t                 asSByte;
+    Pointer_t               asPointer;
+    Byte_t*                 asBytePtr;
+    SByte_t*                asSBytePtr;
+    Word_t*                 asWordPtr;
+    SWord_t*                asSWordPtr;
+    DWord_t*                asDWordPtr;
+    SDWord_t*               asSDWordPtr;
+    QWord_t*                asQWordPtr;
+    SQWord_t*               asSQWordPtr;
+    Float64_t               asFloat64;
+    Float32_t               asFloat32;
+    hive_instruction_t*     asInstrPtr;
 } hive_register_t;
 
 typedef struct {
     uint8_t             negative:1;
     uint8_t             equal:1;
-    uint64_t            reserved:62;
+    uint64_t            reserved:30;
 } PACKED hive_flag_register_t;
 
-typedef union {
-    hive_register_t r[32];
-    struct {
-        hive_register_t r[28];
-        hive_flag_register_t flags;
-        hive_register_t lr;
-        hive_register_t sp;
-        hive_register_t pc;
-    } spec PACKED;
+typedef struct {
+    hive_register_t r[29];
+    hive_register_t lr;
+    hive_register_t sp;
+    hive_register_t pc;
+    hive_flag_register_t flags;
+    hive_vector_register_t v[8];
 } hive_register_file_t;
 
 enum exec_mode {
@@ -177,20 +220,6 @@ enum exec_mode {
     MODE_USER,
     MODE_COUNT
 };
-
-typedef union {
-    Word128_t           asWord128[4];
-    QWord_t             asQWords[8];
-    Float64_t           asFloat64s[8];
-    DWord_t             asDWords[16];
-    Float32_t           asFloat32s[16];
-    Word_t              asWords[32];
-    Byte_t              asBytes[64];
-    SQWord_t            asSQWords[8];
-    SDWord_t            asSDWords[16];
-    SWord_t             asSWords[32];
-    SByte_t             asSBytes[64];
-} hive_simd_register_t;
 
 typedef enum _TokenType {
     Eof,

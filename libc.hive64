@@ -1,13 +1,17 @@
 .global _start
 _start:
+    sub sp, 16
+    str lr, [sp, 8]
+
     bl _main
 
-    movz r8, 0
-    svc
+    ldr lr, [sp, 8]
+    add sp, 16
+    ret
 
 .global _puts
 _puts:
-    sub sp, sp, 48
+    sub sp, 48
     str lr, [sp, 32]
 
     stp r0, r1, [sp, 16]
@@ -29,7 +33,7 @@ _puts:
     ldp r0, r1, [sp, 16]
 
     ldr lr, [sp, 32]
-    add sp, sp, 48
+    add sp, 48
     ret
 
 _puts$newline_str:
@@ -37,7 +41,7 @@ _puts$newline_str:
 
 .global _strlen
 _strlen:
-    sub sp, sp, 32
+    sub sp, 32
     stp lr, r2, [sp, 16]
     str r1, [sp]
 
@@ -54,5 +58,5 @@ _strlen:
 
     ldr r1, [sp]
     ldp lr, r2, [sp, 16]
-    add sp, sp, 32
+    add sp, 32
     ret
