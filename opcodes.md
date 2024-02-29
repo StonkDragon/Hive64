@@ -122,6 +122,25 @@
               |        +--------------> Register 1
               +-----------------------> Operation
 
+|Operation|Name|
+|-|-|
+|`0000`|`add`|
+|`0001`|`addi`|
+|`0010`|`sub`|
+|`0011`|`subi`|
+|`0100`|`mul`|
+|`0101`|`muli`|
+|`0110`|`div`|
+|`0111`|`divi`|
+|`1000`|`mod`|
+|`1001`|`modi`|
+|`1010`|`i2f`|
+|`1011`|`f2i`|
+|`1100`|`sin`|
+|`1101`|`sqrt`|
+|`1110`|`cmp`|
+|`1111`|`cmpi`|
+
 ## Reg-Imm type opcodes (0b11xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
     0b11bxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
         |

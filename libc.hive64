@@ -1,13 +1,9 @@
 .global _start
 _start:
-    sub sp, 16
-    str lr, [sp, 8]
-
     bl _main
 
-    ldr lr, [sp, 8]
-    add sp, 16
-    ret
+    movz r8, 0
+    svc
 
 .global _puts
 _puts:

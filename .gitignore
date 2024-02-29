@@ -1,8 +1,8 @@
-build
-build/*
 .vscode
 .vscode/*
 dump.txt
 *.rcx
 *.dump
 a.out
+h64*
+build

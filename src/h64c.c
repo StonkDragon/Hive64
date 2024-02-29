@@ -3,7 +3,6 @@
 #include <string.h>
 #include <ctype.h>
 
-#include "nob.h"
 #include "new_ops.h"
 
 Token_Array parse(char* src);
@@ -462,8 +461,6 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
     for (size_t i = 0; i < tokens.count; i++) {
         if (tokens.items[i].type == Identifier) {
             char* mnemonic = lower(tokens.items[i].value);
-
-            Token instruction_token = tokens.items[i];
 
             hive_instruction_t ins = {0};
             if (eq(mnemonic, "nop")) {
@@ -1148,19 +1145,11 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                         exit(1);
                     }
                     diff >>= 2;
-                    if (s->branch.op == OP_BRANCH_cb) {
-                        if (diff >= 0b10000000000000000000 || diff < -0b10000000000000000000) {
-                            fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &data.items[current_address], target_address);
-                            exit(1);
-                        }
-                        s->comp_branch.offset = diff;
-                    } else {
-                        if (diff >= 0b10000000000000000000000000 || diff < -0b10000000000000000000000000) {
-                            fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &data.items[current_address], target_address);
-                            exit(1);
-                        }
-                        s->branch.offset = diff;
+                    if (diff >= 0x2000000 || diff < -0x2000000) {
+                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &data.items[current_address], target_address);
+                        exit(1);
                     }
+                    s->branch.offset = diff;
                 }
                 break;
             case st_ri: {
@@ -1171,7 +1160,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                         exit(1);
                     }
                     diff >>= 2;
-                    if (diff >= 0b10000000000000000000 || diff < -0b10000000000000000000) {
+                    if (diff >= 0x80000 || diff < -0x80000) {
                         fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &data.items[current_address], target_address);
                         exit(1);
                     }
@@ -1226,14 +1215,13 @@ char* unquote(const char* str) {
     return ret;
 }
 
-Token nextToken();
+Token nextToken(void);
 
 static char* src;
 static int line = 1;
 
 Token_Array parse(char* data) {
     Token_Array tokens = {0};
-    size_t i = 0;
     src = data;
     while (*src) {
         Token t = nextToken();
@@ -1244,7 +1232,7 @@ Token_Array parse(char* data) {
     return tokens;
 }
 
-Token nextToken() {
+Token nextToken(void) {
     while (*src == ' ' || *src == '\n' || *src == '\r') {
         if (*src == '\n')
             line++;
