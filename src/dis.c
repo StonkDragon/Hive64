@@ -74,16 +74,16 @@ char* str_rri_type(hive_instruction_t ins) {
         }
         case OP_RRI_bext: {
             if (ins.rri_bit.sign_extend) {
-                return strformat("sbxt r%d, r%d, %d, %d", ins.rri.r1, ins.rri.r2, ins.rri_bit.lowest, ins.rri_bit.nbits);
+                return strformat("sbxt r%d, r%d, %d, %d", ins.rri_bit.r1, ins.rri_bit.r2, ins.rri_bit.lowest, ins.rri_bit.nbits);
             } else {
-                return strformat("ubxt r%d, r%d, %d, %d", ins.rri.r1, ins.rri.r2, ins.rri_bit.lowest, ins.rri_bit.nbits);
+                return strformat("ubxt r%d, r%d, %d, %d", ins.rri_bit.r1, ins.rri_bit.r2, ins.rri_bit.lowest, ins.rri_bit.nbits);
             }
         }
         case OP_RRI_bdep: {
             if (ins.rri_bit.sign_extend) {
-                return strformat("sbdp r%d, r%d, %d, %d", ins.rri.r1, ins.rri.r2, ins.rri_bit.lowest, ins.rri_bit.nbits);
+                return strformat("sbdp r%d, r%d, %d, %d", ins.rri_bit.r1, ins.rri_bit.r2, ins.rri_bit.lowest, ins.rri_bit.nbits);
             } else {
-                return strformat("ubdp r%d, r%d, %d, %d", ins.rri.r1, ins.rri.r2, ins.rri_bit.lowest, ins.rri_bit.nbits);
+                return strformat("ubdp r%d, r%d, %d, %d", ins.rri_bit.r1, ins.rri_bit.r2, ins.rri_bit.lowest, ins.rri_bit.nbits);
             }
         }
         case OP_RRI_ldp: {
@@ -198,9 +198,9 @@ char* str_ri_type(hive_instruction_t ins) {
         switch (ins.ri.op) {
             case OP_RI_lea: return strformat("lea r%d, 0x%08x", ins.ri_s.r1, ins.ri_s.imm);
             case OP_RI_movzk: if (ins.ri_mov.no_zero) {
-                return strformat("movk r%d, %d, shl %d", ins.ri.r1, ins.ri_mov.imm, ins.ri_mov.shift);
+                return strformat("movk r%d, %d, shl %d", ins.ri_mov.r1, ins.ri_mov.imm, ins.ri_mov.shift);
             } else {
-                return strformat("movz r%d, %d, shl %d", ins.ri.r1, ins.ri_mov.imm, ins.ri_mov.shift);
+                return strformat("movz r%d, %d, shl %d", ins.ri_mov.r1, ins.ri_mov.imm, ins.ri_mov.shift);
             }
             case OP_RI_svc: return strformat("svc");
             case OP_RI_tst: return strformat("tst r%d, %d", ins.ri.r1, ins.ri.imm);
