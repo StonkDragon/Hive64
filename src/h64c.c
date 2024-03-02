@@ -524,6 +524,17 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 ins.generic.type = OP_BRANCH;
                 ins.branch.op = OP_BRANCH_bne;
                 ins.branch.link = 1;
+            } else if (eq(mnemonic, "cbz") || eq(mnemonic, "cbnz") || eq(mnemonic, "cblz") || eq(mnemonic, "cblnz")) {
+                bool branch_on_zero = eq(mnemonic, "cbz") || eq(mnemonic, "cblz");
+                bool link = eq(mnemonic, "cblz") || eq(mnemonic, "cblnz");
+                ins.generic.type = OP_BRANCH;
+                ins.branch.op = OP_BRANCH_cb;
+                i++;
+                EXPECT(Register, "Expected register, got %s");
+                uint8_t reg = parse_reg(tokens.items[i].value);
+                ins.comp_branch.r1 = reg;
+                ins.comp_branch.zero = branch_on_zero;
+                ins.comp_branch.link = link;
             } else if (eq(mnemonic, "br")) {
                 ins.generic.type = OP_RI;
                 ins.ri_branch.op = OP_RI_br;
@@ -629,6 +640,23 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 EXPECT(Register, "Expected register, got %s");
                 uint8_t reg = parse_reg(tokens.items[i].value);
                 ins.ri.r1 = reg;
+            } else if (eq(mnemonic, "cbrz") || eq(mnemonic, "cbrnz") || eq(mnemonic, "cblrz") || eq(mnemonic, "cblrnz")) {
+                bool branch_on_zero = eq(mnemonic, "cbrz") || eq(mnemonic, "cblrz");
+                bool link = eq(mnemonic, "cblrz") || eq(mnemonic, "cblrnz");
+                ins.generic.type = OP_RI;
+                ins.ri_cbranch.op = OP_RI_cbr;
+                i++;
+                EXPECT(Register, "Expected register, got %s");
+                uint8_t r1 = parse_reg(tokens.items[i].value);
+                i++;
+                EXPECT(Comma, "Expected comma, got %s");
+                i++;
+                EXPECT(Register, "Expected register, got %s");
+                uint8_t r2 = parse_reg(tokens.items[i].value);
+                ins.ri_cbranch.r1 = r1;
+                ins.ri_cbranch.r2 = r2;
+                ins.ri_cbranch.zero = branch_on_zero;
+                ins.ri_cbranch.link = link;
             } else if (eq(mnemonic, "svc")) {
                 ins.generic.type = OP_RI;
                 ins.ri.op = OP_RI_svc;
@@ -688,30 +716,6 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 LDP(3)
             } else if (eq(mnemonic, "stpb")) {
                 STP(3)
-            } else if (eq(mnemonic, "cbz")) {
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t reg = parse_reg(tokens.items[i].value);
-                i++;
-                EXPECT(Comma, "Expected comma, got %s");
-                i++;
-                EXPECT(Identifier, "Expected identifier, got %s");
-                ins.generic.type = OP_BRANCH;
-                ins.comp_branch.op = OP_BRANCH_cb;
-                ins.comp_branch.r1 = reg;
-                ins.comp_branch.zero = 1;
-            } else if (eq(mnemonic, "cbnz")) {
-                i++;
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t reg = parse_reg(tokens.items[i].value);
-                i++;
-                EXPECT(Comma, "Expected comma, got %s");
-                i++;
-                EXPECT(Identifier, "Expected identifier, got %s");
-                ins.generic.type = OP_BRANCH;
-                ins.comp_branch.op = OP_BRANCH_cb;
-                ins.comp_branch.r1 = reg;
-                ins.comp_branch.zero = 0;
             } else if (eq(mnemonic, "lea")) {
                 i++;
                 EXPECT(Register, "Expected register, got %s");
@@ -925,15 +929,15 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 ins.rri_bit.r2 = r2;
                 ins.rri_bit.lowest = lowest;
                 ins.rri_bit.nbits = nbits;
-            } else if (eq(mnemonic, "fadd") || eq(mnemonic, "faddi")) { \
+            } else if (eq(mnemonic, "fadd") || eq(mnemonic, "faddi")) {
                 FLOAT_OP(add)
-            } else if (eq(mnemonic, "fsub") || eq(mnemonic, "fsubi")) { \
+            } else if (eq(mnemonic, "fsub") || eq(mnemonic, "fsubi")) {
                 FLOAT_OP(sub)
-            } else if (eq(mnemonic, "fmul") || eq(mnemonic, "fmuli")) { \
+            } else if (eq(mnemonic, "fmul") || eq(mnemonic, "fmuli")) {
                 FLOAT_OP(mul)
-            } else if (eq(mnemonic, "fdiv") || eq(mnemonic, "fdivi")) { \
+            } else if (eq(mnemonic, "fdiv") || eq(mnemonic, "fdivi")) {
                 FLOAT_OP(div)
-            } else if (eq(mnemonic, "fmod") || eq(mnemonic, "fmodi")) { \
+            } else if (eq(mnemonic, "fmod") || eq(mnemonic, "fmodi")) {
                 FLOAT_OP(mod)
             } else if (eq(mnemonic, "i2f") || eq(mnemonic, "f2i")) {
                 uint8_t i2f = eq(mnemonic, "i2f");
@@ -980,8 +984,6 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 ins.float_rrr.op = fcmp ? OP_FLOAT_cmp : OP_FLOAT_cmpi;
                 ins.float_rrr.r1 = r1;
                 ins.float_rrr.r2 = r2;
-            } else if (mnemonic[0] == 'v') {
-
             }
 
             if (ins.generic.type == OP_BRANCH && ins.branch.op >= OP_BRANCH_b && ins.branch.op <= OP_BRANCH_bne) {
