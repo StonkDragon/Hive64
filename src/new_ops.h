@@ -11,6 +11,9 @@
 #include "nob.h"
 #include "opcode.h"
 
+#define HIVE_FILE_MAGIC 0xFEEDF00D
+#define HIVE_FAT_FILE_MAGIC 0xFEEDFACF
+
 typedef __uint128_t DQWord_t;
 typedef uint64_t QWord_t;
 typedef uint32_t DWord_t;
@@ -61,9 +64,9 @@ typedef union {
     struct {
         TYPE_PAD;
         uint8_t op: 5;
-        uint8_t size: 2;
         uint8_t r1: 5;
         uint8_t r2: 5;
+        uint8_t size: 2;
         uint8_t r3: 5;
         uint8_t imm: 8;
     } PACKED rri_rpairs;
@@ -79,52 +82,46 @@ typedef union {
         TYPE_PAD;
         uint8_t op: 5;
         uint8_t r1: 5;
-        uint8_t sign_extend: 1;
         uint8_t r2: 5;
-        uint8_t nbits: 6;
         PAD(2);
+        uint8_t sign_extend: 1;
+        uint8_t nbits: 6;
         uint8_t lowest: 6;
     } PACKED rri_bit;
     struct {
         TYPE_PAD;
         uint8_t op: 6;
-        PAD(3);
+        PAD(9);
         uint8_t r1: 5;
-        PAD(3);
         uint8_t r2: 5;
-        PAD(3);
         uint8_t r3: 5;
     } PACKED rrr;
     struct {
         TYPE_PAD;
         PAD(6);
         uint8_t op: 4;
+        PAD(5);
         uint8_t r1: 5;
-        PAD(2);
         uint8_t r2: 5;
-        PAD(3);
         uint8_t r3: 5;
     } PACKED float_rrr;
     struct {
         TYPE_PAD;
         uint8_t op: 6;
-        uint8_t r1: 5;
-        PAD(1);
-        uint8_t r2: 5;
-        PAD(1);
+        PAD(2);
         uint8_t size: 2;
-        uint8_t r3: 5;
         uint8_t r4: 5;
+        uint8_t r1: 5;
+        uint8_t r2: 5;
+        uint8_t r3: 5;
     } PACKED rrr_rpairs;
     struct {
         TYPE_PAD;
         uint8_t op: 6;
-        PAD(1);
+        PAD(7);
         uint16_t size: 2;
         uint8_t r1: 5;
-        PAD(3);
         uint8_t r2: 5;
-        PAD(3);
         uint8_t r3: 5;
     } PACKED rrr_ls;
     struct {
@@ -161,10 +158,10 @@ typedef union {
         TYPE_PAD;
         uint8_t is_branch: 1;
         uint8_t op: 4;
+        uint8_t r1: 5;
         PAD(1);
         uint8_t no_zero: 1;
         uint8_t shift: 2;
-        uint8_t r1: 5;
         uint16_t imm;
     } PACKED ri_mov;
 } PACKED hive_instruction_t;
