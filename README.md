@@ -1,6 +1,6 @@
 # The Hive64 Architecture
 - [Instruction encoding](#instruction-encoding)
-- [Instructions](#instruction-encoding)
+- [Instructions](#instructions)
 
 # Instruction Encoding
 ## Branch type opcodes (0b00xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
