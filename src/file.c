@@ -4,7 +4,7 @@
 HiveFile read_hive_file(FILE* fp) {
     HiveFile hf;
     fread(&hf.magic, sizeof(hf.magic), 1, fp);
-    if (hf.magic == 0xFEEDFACF) {
+    if (hf.magic == HIVE_FAT_FILE_MAGIC) {
         fseek(fp, -sizeof(hf.magic), SEEK_CUR);
         return hf;
     }
@@ -37,7 +37,7 @@ bool has_file(HiveFile_Array* arr, const char* name) {
 void read_fat_file(FILE* fp, HiveFile_Array* current) {
     uint32_t magic;
     fread(&magic, sizeof(magic), 1, fp);
-    if (magic != 0xFEEDFACF) {
+    if (magic != HIVE_FAT_FILE_MAGIC) {
         fprintf(stderr, "Invalid file magic: %08x\n", magic);
         exit(1);
     }
@@ -51,7 +51,7 @@ void read_fat_file(FILE* fp, HiveFile_Array* current) {
         fread(name, sizeof(char), name_len, fp);
         HiveFile f = read_hive_file(fp);
         f.name = name;
-        if (f.magic == 0xFEEDFACF) {
+        if (f.magic == HIVE_FAT_FILE_MAGIC) {
             fprintf(stderr, "Cannot nest fat files");
             exit(1);
         }
@@ -77,11 +77,11 @@ void get_all_files(const char* name, HiveFile_Array* current, bool must_be_fat) 
     }
     HiveFile src = read_hive_file(fp);
     src.name = name;
-    if (must_be_fat && src.magic != 0xFEEDFACF) {
+    if (must_be_fat && src.magic != HIVE_FAT_FILE_MAGIC) {
         fprintf(stderr, "Invalid file: %s\n", name);
         return;
     }
-    if (src.magic == 0xFEEDFACF) {
+    if (src.magic == HIVE_FAT_FILE_MAGIC) {
         read_fat_file(fp, current);
     }
     if (!has_file(current, name)) {
@@ -96,7 +96,7 @@ void get_all_files(const char* name, HiveFile_Array* current, bool must_be_fat) 
 
 void write_hive_file(HiveFile hf, FILE* fp) {
     fwrite(&hf.magic, sizeof(hf.magic), 1, fp);
-    if (hf.magic == 0xFEEDFACF) {
+    if (hf.magic == HIVE_FAT_FILE_MAGIC) {
         uint32_t count = (uint32_t) hf.sects.count;
         fwrite(&count, sizeof(count), 1, fp);
         for (size_t i = 0; i < hf.sects.count; i++) {
