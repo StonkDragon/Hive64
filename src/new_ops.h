@@ -313,4 +313,4 @@ struct symbol_offset find_symbol(Symbol_Offsets syms, char* name);
 Nob_String_Builder pack_symbol_table(Symbol_Offsets syms);
 Nob_String_Builder pack_relocation_table(Symbol_Offsets relocs);
 void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols);
-Symbol_Offsets prepare(HiveFile_Array hf);
+Symbol_Offsets prepare(HiveFile_Array hf, bool try_relocate);

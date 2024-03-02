@@ -232,11 +232,20 @@ char* get_symbol_at(Symbol_Offsets syms, uint64_t addr) {
     return NULL;
 }
 
-void disassemble(Section code_sect, Symbol_Offsets syms) {
-    for (hive_instruction_t* p = (hive_instruction_t*) code_sect.data; p < (hive_instruction_t*) (code_sect.data + code_sect.len);) {
-        hive_instruction_t ins = *(p++);
+char* get_relocation_at(Symbol_Offsets relocations, uint64_t addr) {
+    for (size_t i = 0; i < relocations.count; i++) {
+        if (relocations.items[i].offset == addr) {
+            return strformat("stub for %s", relocations.items[i].name);
+        }
+    }
+    return NULL;
+}
+
+void disassemble(Section code_sect, Symbol_Offsets syms, Symbol_Offsets relocations) {
+    for (hive_instruction_t* p = (hive_instruction_t*) code_sect.data; p < (hive_instruction_t*) (code_sect.data + code_sect.len); p++) {
+        hive_instruction_t ins = *p;
         char* s = dis(ins);
-        char* symbol_here = get_symbol_at(syms, (uint64_t) (p - 1));
+        char* symbol_here = get_symbol_at(syms, (uint64_t) p);
         if (symbol_here) {
             printf("%s:\n", symbol_here);
         }
@@ -244,7 +253,7 @@ void disassemble(Section code_sect, Symbol_Offsets syms) {
             printf("    .dword 0x%08x\n", *(uint32_t*) &ins);
         } else {
             printf("    %s", s);
-            uint64_t address = (uint64_t) (p - 1);
+            uint64_t address = (uint64_t) p;
             char* sym = NULL;
             if (ins.generic.type == OP_BRANCH) {
                 if (ins.branch.op == OP_BRANCH_cb) {
@@ -252,11 +261,21 @@ void disassemble(Section code_sect, Symbol_Offsets syms) {
                 } else {
                     address += (ins.branch.offset << 2);
                 }
-                sym = get_symbol_at(syms, address);
+                if (address == (uint64_t) p) {
+                    sym = get_relocation_at(relocations, (uint64_t) p - (uint64_t) code_sect.data);
+                }
+                if (sym == NULL) {
+                    sym = get_symbol_at(syms, address);
+                }
             } else if (ins.generic.type == OP_RI) {
                 if (!ins.ri.is_branch && ins.ri.op == OP_RI_lea) {
                     address += (ins.ri_s.imm << 2);
-                    sym = get_symbol_at(syms, address);
+                    if (address == (uint64_t) p) {
+                        sym = get_relocation_at(relocations, (uint64_t) p - (uint64_t) code_sect.data);
+                    }
+                    if (sym == NULL) {
+                        sym = get_symbol_at(syms, address);
+                    }
                 }
             }
             if (sym) {

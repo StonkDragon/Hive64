@@ -288,7 +288,7 @@ void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) 
     }
 }
 
-Symbol_Offsets prepare(HiveFile_Array hf) {
+Symbol_Offsets prepare(HiveFile_Array hf, bool try_relocate) {
     Symbol_Offsets all_syms = {0};
 
     for (size_t i = 0; i < hf.count; i++) {
@@ -311,19 +311,21 @@ Symbol_Offsets prepare(HiveFile_Array hf) {
         nob_da_append_many(&all_syms, symbols.items, symbols.count);
     }
 
-    for (size_t i = 0; i < hf.count; i++) {
-        Section reloc_sect = get_section(hf.items[i], SECT_TYPE_RELOC);
-        if (!reloc_sect.data) continue;
+    if (try_relocate) {
+        for (size_t i = 0; i < hf.count; i++) {
+            Section reloc_sect = get_section(hf.items[i], SECT_TYPE_RELOC);
+            if (!reloc_sect.data) continue;
 
-        Symbol_Offsets relocs = create_relocation_section(reloc_sect);
-        Section code_sect = get_section(hf.items[i], SECT_TYPE_CODE);
-        
-        if (code_sect.data == NULL) {
-            fprintf(stderr, "File %s has relocations, but no code\n", hf.items[i].name);
-            continue;
+            Symbol_Offsets relocs = create_relocation_section(reloc_sect);
+            Section code_sect = get_section(hf.items[i], SECT_TYPE_CODE);
+            
+            if (code_sect.data == NULL) {
+                fprintf(stderr, "File %s has relocations, but no code\n", hf.items[i].name);
+                continue;
+            }
+
+            relocate(code_sect, relocs, all_syms);
         }
-
-        relocate(code_sect, relocs, all_syms);
     }
 
     return all_syms;

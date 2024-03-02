@@ -614,7 +614,7 @@ void exec(hive_register_file_t* regs) {
     }
 }
 
-void disassemble(Section code_sect, Symbol_Offsets syms);
+void disassemble(Section code_sect, Symbol_Offsets syms, Symbol_Offsets relocations);
 Nob_String_Builder run_compile(const char* file_name, Symbol_Offsets* syms, Symbol_Offsets* relocations);
 
 bool strends(const char* str, const char* suf) {
@@ -765,7 +765,7 @@ int main(int argc, char **argv) {
         HiveFile_Array hf = {0};
         get_all_files(argv[1], &hf, true);
         
-        Symbol_Offsets all_syms = prepare(hf);
+        Symbol_Offsets all_syms = prepare(hf, true);
 
         hive_register_file_t regs = {0};
 
@@ -784,12 +784,12 @@ int main(int argc, char **argv) {
         HiveFile_Array hf = {0};
         get_all_files(argv[1], &hf, false);
         
-        Symbol_Offsets all_syms = prepare(hf);
+        Symbol_Offsets all_syms = prepare(hf, false);
 
         for (size_t i = 0; i < hf.count; i++) {
             if (hf.items[i].magic != HIVE_FAT_FILE_MAGIC) {
                 printf("%s:\n", hf.items[i].name);
-                disassemble(get_section(hf.items[i], SECT_TYPE_CODE), all_syms);
+                disassemble(get_section(hf.items[i], SECT_TYPE_CODE), all_syms, create_relocation_section(get_section(hf.items[i], SECT_TYPE_RELOC)));
             }
         }
         return 0;
