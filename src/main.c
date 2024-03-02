@@ -50,6 +50,7 @@ static inline QWord_t set_flags(hive_flag_register_t* fr, QWord_t res) {
 #define cmp(fr, a, b) set_flags((fr), (a) - (b))
 
 #define BRANCH(to)                  do { regs->pc.asQWord = (QWord_t) (to); return; } while (0)
+#define BRANCH_RELATIVE(offset)     do { BRANCH(PC_REL(offset)); } while (0)
 #define LINK()                      do { regs->lr.asQWord = regs->pc.asQWord; } while (0)
 #define LINK_ON(what)               do { if ((what)) { LINK(); } } while (0)
 #define BRANCH_ON(to, what)         do { if ((what)) { BRANCH(to); } } while (0)
@@ -65,36 +66,50 @@ typedef void(*hive_executor_t)(hive_instruction_t, hive_register_file_t*);
 
 BEGIN_OP(branch_b)
     if (ins.branch.link) LINK();
-    BRANCH(PC_REL(ins.branch.offset));
+    BRANCH_RELATIVE(ins.branch.offset);
 END_OP
 BEGIN_OP(branch_blt)
-    if (ins.branch.link) LINK_ON(regs->flags.negative);
-    BRANCH_ON(PC_REL(ins.branch.offset), regs->flags.negative);
+    if (regs->flags.negative) {
+        if (ins.branch.link) LINK();
+        BRANCH_RELATIVE(ins.branch.offset);
+    }
 END_OP
 BEGIN_OP(branch_bgt)
-    if (ins.branch.link) LINK_ON(!regs->flags.negative && !regs->flags.equal);
-    BRANCH_ON(PC_REL(ins.branch.offset), !regs->flags.negative && !regs->flags.equal);
+    if (!regs->flags.negative && !regs->flags.equal) {
+        if (ins.branch.link) LINK();
+        BRANCH_RELATIVE(ins.branch.offset);
+    }
 END_OP
 BEGIN_OP(branch_bge)
-    if (ins.branch.link) LINK_ON(!regs->flags.negative);
-    BRANCH_ON(PC_REL(ins.branch.offset), !regs->flags.negative);
+    if (!regs->flags.negative) {
+        if (ins.branch.link) LINK();
+        BRANCH_RELATIVE(ins.branch.offset);
+    }
 END_OP
 BEGIN_OP(branch_ble)
-    if (ins.branch.link) LINK_ON(regs->flags.negative || regs->flags.equal);
-    BRANCH_ON(PC_REL(ins.branch.offset), regs->flags.negative || regs->flags.equal);
+    if (regs->flags.negative || regs->flags.equal) {
+        if (ins.branch.link) LINK();
+        BRANCH_RELATIVE(ins.branch.offset);
+    }
 END_OP
 BEGIN_OP(branch_beq)
-    if (ins.branch.link) LINK_ON(regs->flags.equal);
-    BRANCH_ON(PC_REL(ins.branch.offset), regs->flags.equal);
+    if (regs->flags.equal) {
+        if (ins.branch.link) LINK();
+        BRANCH_RELATIVE(ins.branch.offset);
+    }
 END_OP
 BEGIN_OP(branch_bne)
-    if (ins.branch.link) LINK_ON(!regs->flags.equal);
-    BRANCH_ON(PC_REL(ins.branch.offset), !regs->flags.equal);
+    if (!regs->flags.equal) {
+        if (ins.branch.link) LINK();
+        BRANCH_RELATIVE(ins.branch.offset);
+    }
 END_OP
 BEGIN_OP(branch_cb)
     set_flags(&regs->flags, regs->r[ins.comp_branch.r1].asQWord);
-    if (ins.branch.link) LINK_ON(regs->flags.equal == ins.comp_branch.zero);
-    BRANCH_ON(PC_REL(ins.comp_branch.offset), regs->flags.equal == ins.comp_branch.zero);
+    if (regs->flags.equal == ins.comp_branch.zero) {
+        if (ins.branch.link) LINK();
+        BRANCH_RELATIVE(ins.comp_branch.offset);
+    }
 END_OP
 
 BEGIN_OP(rri_add)
@@ -149,27 +164,27 @@ BEGIN_OP(rri_str)
         case 3: *(SByte_t*) (regs->r[ins.rri_ls.r2].asQWord + ins.rri_ls.imm) = set_flags(&regs->flags, regs->r[ins.rri_ls.r1].asSByte); break;
     }
 END_OP
-BEGIN_OP(rri_bext) {
-        uint8_t lowest = ins.rri_bit.lowest;
-        uint8_t num = ins.rri_bit.nbits;
-        uint64_t mask = ((1ULL << num) - 1);
-        uint64_t val = (regs->r[ins.rri.r2].asQWord & (mask << lowest)) >> lowest;
-        if (ins.rri_bit.sign_extend) {
-            uint8_t sign_bit_mask = (1ULL << (num - 1));
-            if (val & sign_bit_mask) {
-                val |= ~mask;
-            }
+BEGIN_OP(rri_bext)
+    uint8_t lowest = ins.rri_bit.lowest;
+    uint8_t num = ins.rri_bit.nbits;
+    uint64_t mask = ((1ULL << num) - 1);
+    uint64_t val = (regs->r[ins.rri.r2].asQWord & (mask << lowest)) >> lowest;
+    if (ins.rri_bit.sign_extend) {
+        uint8_t sign_bit_mask = (1ULL << (num - 1));
+        if (val & sign_bit_mask) {
+            val |= ~mask;
         }
-        regs->r[ins.rri.r1].asQWord = val;
     }
+    regs->r[ins.rri.r1].asQWord = val;
+    set_flags(&regs->flags, regs->r[ins.rri.r1].asQWord);
 END_OP
-BEGIN_OP(rri_bdep) {
-        uint8_t lowest = ins.rri_bit.lowest;
-        uint8_t num = ins.rri_bit.nbits;
-        uint64_t mask = ((1ULL << num) - 1);
-        regs->r[ins.rri.r1].asQWord &= ~(mask << lowest);
-        regs->r[ins.rri.r1].asQWord |= (regs->r[ins.rri.r2].asQWord & mask) << lowest;
-    }
+BEGIN_OP(rri_bdep)
+    uint8_t lowest = ins.rri_bit.lowest;
+    uint8_t num = ins.rri_bit.nbits;
+    uint64_t mask = ((1ULL << num) - 1);
+    regs->r[ins.rri.r1].asQWord &= ~(mask << lowest);
+    regs->r[ins.rri.r1].asQWord |= (regs->r[ins.rri.r2].asQWord & mask) << lowest;
+    set_flags(&regs->flags, regs->r[ins.rri.r1].asQWord);
 END_OP
 BEGIN_OP(rri_ldp)
     switch (ins.rri_rpairs.size) {
@@ -374,39 +389,58 @@ BEGIN_OP(rrr_stp)
             break;
     }
 END_OP
+BEGIN_OP(rrr_fpu)
+    extern hive_executor_t fpu_execs[16];
+    fpu_execs[ins.float_rrr.op](ins, regs);
+    return;
+END_OP
 
 BEGIN_OP(ri_br)
     if (ins.ri_branch.link) LINK();
     BRANCH(regs->r[ins.ri_branch.r1].asQWord);
 END_OP
 BEGIN_OP(ri_brlt)
-    if (ins.ri_branch.link) LINK_ON(regs->flags.negative);
-    BRANCH_ON(regs->r[ins.ri_branch.r1].asQWord, regs->flags.negative);
+    if (regs->flags.negative) {
+        if (ins.ri_branch.link) LINK();
+        BRANCH(regs->r[ins.ri_branch.r1].asQWord);
+    }
 END_OP
 BEGIN_OP(ri_brgt)
-    if (ins.ri_branch.link) LINK_ON(!regs->flags.negative && !regs->flags.equal);
-    BRANCH_ON(regs->r[ins.ri_branch.r1].asQWord, !regs->flags.negative && !regs->flags.equal);
+    if (!regs->flags.negative && !regs->flags.equal) {
+        if (ins.ri_branch.link) LINK();
+        BRANCH(regs->r[ins.ri_branch.r1].asQWord);
+    }
 END_OP
 BEGIN_OP(ri_brge)
-    if (ins.ri_branch.link) LINK_ON(!regs->flags.negative);
-    BRANCH_ON(regs->r[ins.ri_branch.r1].asQWord, !regs->flags.negative);
+    if (!regs->flags.negative) {
+        if (ins.ri_branch.link) LINK();
+        BRANCH(regs->r[ins.ri_branch.r1].asQWord);
+    }
 END_OP
 BEGIN_OP(ri_brle)
-    if (ins.ri_branch.link) LINK_ON(regs->flags.negative || regs->flags.equal);
-    BRANCH_ON(regs->r[ins.ri_branch.r1].asQWord, regs->flags.negative || regs->flags.equal);
+    if (regs->flags.negative || regs->flags.equal) {
+        if (ins.ri_branch.link) LINK();
+        BRANCH(regs->r[ins.ri_branch.r1].asQWord);
+    }
 END_OP
 BEGIN_OP(ri_breq)
-    if (ins.ri_branch.link) LINK_ON(regs->flags.equal);
-    BRANCH_ON(regs->r[ins.ri_branch.r1].asQWord, regs->flags.equal);
+    if (regs->flags.equal) {
+        if (ins.ri_branch.link) LINK();
+        BRANCH(regs->r[ins.ri_branch.r1].asQWord);
+    }
 END_OP
 BEGIN_OP(ri_brne)
-    if (ins.ri_branch.link) LINK_ON(!regs->flags.equal);
-    BRANCH_ON(regs->r[ins.ri_branch.r1].asQWord, !regs->flags.equal);
+    if (!regs->flags.equal) {
+        if (ins.ri_branch.link) LINK();
+        BRANCH(regs->r[ins.ri_branch.r1].asQWord);
+    }
 END_OP
 BEGIN_OP(ri_cbr)
     set_flags(&regs->flags, regs->r[ins.ri_cbranch.r1].asQWord);
-    if (ins.ri_branch.link) LINK_ON(regs->flags.equal == ins.ri_cbranch.zero);
-    BRANCH_ON(regs->r[ins.ri_cbranch.r1].asQWord, regs->flags.equal == ins.ri_cbranch.zero);
+    if (regs->flags.equal == ins.ri_cbranch.zero) {
+        if (ins.ri_branch.link) LINK();
+        BRANCH(regs->r[ins.ri_cbranch.r1].asQWord);
+    }
 END_OP
 BEGIN_OP(ri_lea)
     regs->r[ins.ri.r1].asQWord = set_flags(&regs->flags, PC_REL(ins.ri_s.imm));
@@ -504,6 +538,7 @@ hive_executor_t rrr_execs[] = {
     [OP_RRR_cmp] = exec_rrr_cmp,
     [OP_RRR_ldp] = exec_rrr_ldp,
     [OP_RRR_stp] = exec_rrr_stp,
+    [OP_RRR_fpu] = exec_rrr_fpu,
 };
 hive_executor_t branchr_execs[] = {
     [OP_RI_br] = exec_ri_br,
@@ -523,23 +558,21 @@ hive_executor_t ri_execs[] = {
     [OP_RI_svc] = exec_ri_svc,
 };
 
-hive_executor_t get_exec_branch_type(hive_instruction_t ins) {
-    return branch_execs[ins.branch.op];
+void exec_branch_type(hive_instruction_t ins, hive_register_file_t* regs) {
+    branch_execs[ins.branch.op](ins, regs);
 }
-hive_executor_t get_exec_rri_type(hive_instruction_t ins) {
-    return rri_execs[ins.rri.op];
+void exec_rri_type(hive_instruction_t ins, hive_register_file_t* regs) {
+    rri_execs[ins.rri.op](ins, regs);
 }
-hive_executor_t get_exec_rrr_type(hive_instruction_t ins) {
-    if (ins.rrr.op == OP_RRR_fpu) {
-        return fpu_execs[ins.float_rrr.op];
-    }
-    return rrr_execs[ins.rrr.op];
+void exec_rrr_type(hive_instruction_t ins, hive_register_file_t* regs) {
+    rrr_execs[ins.rrr.op](ins, regs);
 }
-hive_executor_t get_exec_ri_type(hive_instruction_t ins) {
+void exec_ri_type(hive_instruction_t ins, hive_register_file_t* regs) {
     if (ins.ri.is_branch) {
-        return branchr_execs[ins.ri_branch.op];
+        branchr_execs[ins.ri_branch.op](ins, regs);
+    } else {
+        ri_execs[ins.ri.op](ins, regs);
     }
-    return ri_execs[ins.ri.op];
 }
 
 #pragma region tostring
@@ -568,16 +601,16 @@ char* dis(hive_instruction_t);
 #pragma endregion
 
 void exec(hive_register_file_t* regs) {
-    hive_executor_t(*execs[4])(hive_instruction_t) = {
-        get_exec_branch_type,
-        get_exec_rri_type,
-        get_exec_rrr_type,
-        get_exec_ri_type,
+    void(*execs[4])(hive_instruction_t, hive_register_file_t*) = {
+        exec_branch_type,
+        exec_rri_type,
+        exec_rrr_type,
+        exec_ri_type,
     };
     while (1) {
         hive_instruction_t ins = *regs->pc.asInstrPtr;
         // printf("0x%016llx: 0x%08x %s\n", regs->pc.asQWord, *regs->pc.asDWordPtr, dis(ins));
-        execs[ins.generic.type](ins)(ins, regs);
+        execs[ins.generic.type](ins, regs);
     }
 }
 
@@ -638,16 +671,16 @@ int main(int argc, char **argv) {
         for (size_t i = 0; i < files.count; i++) {
             Symbol_Offsets syms = {0};
             Symbol_Offsets relocations = {0};
-            Nob_String_Builder obj = run_compile(files.items[i], &syms, &relocations);
+            Nob_String_Builder code = run_compile(files.items[i], &syms, &relocations);
 
-            if (obj.items == NULL) {
+            if (code.items == NULL) {
                 fprintf(stderr, "Failed to compile file %s\n", files.items[i]);
                 continue;
             }
 
             Section code_sect = {
-                .data = obj.items,
-                .len = obj.count,
+                .data = code.items,
+                .len = code.count,
                 .type = SECT_TYPE_CODE
             };
             Nob_String_Builder sym_sect_data = pack_symbol_table(syms);
@@ -671,7 +704,7 @@ int main(int argc, char **argv) {
             nob_da_append(&sa, reloc_sect);
 
             HiveFile hf = {
-                .magic = 0xFEEDF00D,
+                .magic = HIVE_FILE_MAGIC,
                 .sects = sa
             };
             
@@ -701,7 +734,7 @@ int main(int argc, char **argv) {
             get_all_files(link_with.items[i], &hf, false);
         }
         HiveFile dummy = {
-            .magic = 0xFEEDFACF,
+            .magic = HIVE_FAT_FILE_MAGIC,
             .sects = {0}
         };
 
@@ -754,8 +787,10 @@ int main(int argc, char **argv) {
         Symbol_Offsets all_syms = prepare(hf);
 
         for (size_t i = 0; i < hf.count; i++) {
-            printf("%s:\n", hf.items[i].name);
-            disassemble(get_section(hf.items[i], SECT_TYPE_CODE), all_syms);
+            if (hf.items[i].magic != HIVE_FAT_FILE_MAGIC) {
+                printf("%s:\n", hf.items[i].name);
+                disassemble(get_section(hf.items[i], SECT_TYPE_CODE), all_syms);
+            }
         }
         return 0;
     } else {
