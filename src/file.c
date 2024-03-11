@@ -1,5 +1,11 @@
 #include <stdio.h>
+#include <sys/mman.h>
 #include "new_ops.h"
+
+static inline size_t pad_to_page_size(size_t x) {
+    size_t page_size = sysconf(_SC_PAGESIZE);
+    return x + (page_size - (x % page_size));
+}
 
 HiveFile read_hive_file(FILE* fp) {
     HiveFile hf;
@@ -15,7 +21,20 @@ HiveFile read_hive_file(FILE* fp) {
         fread(&hf.sects.items[i].len, sizeof(hf.sects.items[i].len), 1, fp);
         fread(&hf.sects.items[i].type, sizeof(hf.sects.items[i].type), 1, fp);
         if (hf.sects.items[i].len) {
-            hf.sects.items[i].data = malloc(hf.sects.items[i].len);
+            if (hf.sects.items[i].type == SECT_TYPE_CODE) {
+                size_t s = pad_to_page_size(hf.sects.items[i].len);
+                hf.sects.items[i].data = mmap(
+                    NULL,
+                    s,
+                    PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS,
+                    0,
+                    0
+                );
+                memset(hf.sects.items[i].data, 0, s);
+            } else {
+                hf.sects.items[i].data = malloc(hf.sects.items[i].len);
+            }
             fread(hf.sects.items[i].data, sizeof(char), hf.sects.items[i].len, fp);
         }
     }
@@ -262,7 +281,7 @@ void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) 
                         exit(1);
                     }
                     diff >>= 2;
-                    if (diff >= 0x2000000 || diff < -0x2000000) {
+                    if (diff >= 0x1000000 || diff < -0x1000000) {
                         fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &code_sect.data[current_address], target_address);
                         exit(1);
                     }
@@ -282,6 +301,21 @@ void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) 
                         exit(1);
                     }
                     s->ri_s.imm = diff;
+                }
+                break;
+            case st_cb: {
+                    hive_instruction_t* s = ((hive_instruction_t*) &code_sect.data[current_address]);
+                    int32_t diff = target_address - (uint64_t) s;
+                    if (diff % 4) {
+                        fprintf(stderr, "Relative target not aligned!");
+                        exit(1);
+                    }
+                    diff >>= 2;
+                    if (diff >= 0x40000 || diff < -0x40000) {
+                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (uint64_t) &code_sect.data[current_address], target_address);
+                        exit(1);
+                    }
+                    s->comp_branch.offset = diff;
                 }
                 break;
         }

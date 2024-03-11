@@ -54,7 +54,7 @@
 		"mnemonics": {
 			"patterns": [{
 				"name": "keyword.control",
-				"match": "\\b(nop|ret|ld(r|p)(q|d|w|b)?|st(r|p)(q|d|w|b)?|mov(z|k)?|lea|svc|(s|u)b(xt|dp))\\b"
+				"match": "\\b(nop|ret|ldr(q|d|w|b)?|str(q|d|w|b)?|mov(z|k)?|lea|svc|(s|u)b(xt|dp)|psh|pp)\\b"
 			}]
 		},
 		"float_mnemonics": {
@@ -72,19 +72,19 @@
 		"math_mnemonics": {
 			"patterns": [{
 				"name": "keyword.control",
-				"match": "\\b(add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|tst|cmp)\\b"
+				"match": "\\b(add|sub|mul|div|mod|and|or|xor|shl|shr|rol|ror|neg|not|asr|asl|swe|tst|cmp)\\b"
 			}]
 		},
 		"vector_mnemonics": {
 			"patterns": [{
 				"name": "keyword.control",
-				"match": "\\bv(.*)\\b"
+				"match": "\\bv([a-zA-Z]*)\\b"
 			}]
 		},
 		"registers": {
 			"patterns": [{
 				"name": "storage",
-				"match": "\\b(r([1-2][0-9]|3[0-1]|[0-9])|sp|bp|lr|pc)\\b"
+				"match": "\\b(r([1-2][0-9]|3[0-1]|[0-9])|sp|lr|pc)\\b"
 			}]
 		},
 		"labels": {

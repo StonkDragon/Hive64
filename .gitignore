@@ -6,3 +6,4 @@ dump.txt
 a.out
 h64*
 build
+*.s

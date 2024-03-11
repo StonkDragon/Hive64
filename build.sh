@@ -4,6 +4,7 @@ set -xe
 
 mkdir -p build
 
+# clang -O0 -g -std=c99 -o build/h64 -Isrc/ src/**/*.c -pedantic
 clang -O3 -std=c99 -o build/h64 -Isrc/ src/**/*.c -pedantic
 
 cp build/h64 h64-as

@@ -1,1298 +1,374 @@
-# The Hive64 Architecture
-- [Instruction encoding](#instruction-encoding)
-- [Instructions](#instructions)
+# The Hive 64 Architecture
+## Data type sizes
+|Name|Size in bits|Appropriate type in C|
+|-|-|-|
+|byte|`8`|`char`|
+|word|`16`|`short`|
+|doubleword|`32`|`int`|
+|quadword|`64`|`long long int`|
+|longword|`128`|Standard C does not specify an integer type of longword size|
+|single precision float|`32`|`float`|
+|double precision float|`64`|`double`|
 
-# Instruction Encoding
-## Branch type opcodes (0b00xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
-    0b00kkkxxxxxxxxxxxxxxxxxxxxxxxxxxx
-        |
-        +-----------------------------> Branch type
+## Registers
+Hive64 has 32 general purpose/scalar registers.
+All scalar registers have a size of 64 bits.
+These registers can hold both integers and floating point numbers.
+Of the 32 registers 3 are reserved for special use:
+- `r29`: The link register
+- `r30`: The stack pointer
+- `r31`: The program counter
 
-|Branch type|Name|
+Hive64 has 16 vector registers.
+All vector registers have a size of 256 bits.
+They can be accessed as:
+- 32 byte sized elements
+- 16 word sized elements
+- 8 doubleword sized elements
+- 4 quadword sized elements
+- 2 longword sized elements
+- 8 single precision float elements
+- 4 double precision float elements
+Additionally, vector instructions also allow operations on just the first quadword element.
+
+Vector instruction mnemonics differentiate between the element type by a prefix.
+|Instruction starting with|Element type|
 |-|-|
-|`000`|`b`|
-|`001`|`blt`|
-|`010`|`bgt`|
-|`011`|`bge`|
-|`100`|`ble`|
-|`101`|`beq`|
-|`110`|`bne`|
-|`111`|`cbz`/`cbnz`|
+|`vb`|byte|
+|`vw`|word|
+|`vd`|doubleword|
+|`vq`|quadword|
+|`vl`|longword|
+|`vs`|single precision float|
+|`vf`|double precision float|
+|`vo`|first quadword|
 
-## Reg-Reg-Imm type opcodes (0b01xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
-    0b01kkkkkxxxxxxxxxxxxxxxxxxxxxxxxx
-        |
-        +-----------------------------> Operation
+## Instructions
+Instructions are encoded as 32-bit values.
 
-|Operation|Name|
+### Instruction encoding description
+- `[]`: all bits in brackets belong to some argument
+- `.`: this bit is ignored by the instruction
+- `0`: this bit is `0` ignored by the instruction
+- `1`: this bit is `1` ignored by the instruction
+
+### List of instructions
+- [Branches](#branches)
+- [Integer Arithmetic](#integer-arithmetic)
+- [Floating point Arithmetic](#floating-point-arithmetic)
+- [Utility](#utility)
+- [Data transfer](#data-transfer)
+- [Vector Operations](#vector-operations)
+
+### Branches
+|Mnemonic|Encoding|Description|
+|-|-|-|
+|`ret                        `|`00110001111111110...000000000000`|Returns from a subroutine|
+|`b offset                   `|`0000000[---------imm25---------]`|Branches to an address|
+|`bl offset                  `|`0000001[---------imm25---------]`|Branches to a subroutine|
+|`blt offset                 `|`0000010[---------imm25---------]`|Branches to an address if less than|
+|`bllt offset                `|`0000011[---------imm25---------]`|Branches to a subroutine if less than|
+|`bgt offset                 `|`0000100[---------imm25---------]`|Branches to an address if greater than|
+|`blgt offset                `|`0000101[---------imm25---------]`|Branches to a subroutine if greater than|
+|`bge offset                 `|`0000110[---------imm25---------]`|Branches to an address if greater than or equal|
+|`blge offset                `|`0000111[---------imm25---------]`|Branches to a subroutine if greater than or equal|
+|`ble offset                 `|`0001000[---------imm25---------]`|Branches to an address if less than or equal|
+|`blle offset                `|`0001001[---------imm25---------]`|Branches to a subroutine if less than or equal|
+|`beq offset                 `|`0001010[---------imm25---------]`|Branches to an address if equal|
+|`bleq offset                `|`0001011[---------imm25---------]`|Branches to a subroutine if equal|
+|`bne offset                 `|`0001100[---------imm25---------]`|Branches to an address if not equal|
+|`blne offset                `|`0001101[---------imm25---------]`|Branches to a subroutine if not equal|
+|`cbnz r1, offset            `|`0001110[r1-]0[------imm19------]`|Branches to an address if register is not zero|
+|`cblnz r1, offset           `|`0001111[r1-]0[------imm19------]`|Branches to a subroutine if register is not zero|
+|`cbz r1, offset             `|`0001110[r1-]1[------imm19------]`|Branches to an address if register is zero|
+|`clbz r1, offset            `|`0001111[r1-]1[------imm19------]`|Branches to a subroutine if register is zero|
+|`br r1                      `|`1010000[r1-]....................`|Branches to a register value|
+|`blr r1                     `|`1010001[r1-]....................`|Branches and links to a register value|
+|`brlt r1                    `|`1010010[r1-]....................`|Branches to a register value if less than|
+|`blrlt r1                   `|`1010011[r1-]....................`|Branches and links to a register value if less than|
+|`brgt r1                    `|`1010100[r1-]....................`|Branches to a register value if greater than|
+|`blrgt r1                   `|`1010101[r1-]....................`|Branches and links to a register value if greater than|
+|`brge r1                    `|`1010110[r1-]....................`|Branches to a register value if greater than or equal|
+|`blrge r1                   `|`1010111[r1-]....................`|Branches and links to a register value if greater than or equal|
+|`brle r1                    `|`1011000[r1-]....................`|Branches to a register value if less than or equal|
+|`blrle r1                   `|`1011001[r1-]....................`|Branches and links to a register value if less than or equal|
+|`breq r1                    `|`1011010[r1-]....................`|Branches to a register value if equal|
+|`blreq r1                   `|`1011011[r1-]....................`|Branches and links to a register value if equal|
+|`brne r1                    `|`1011100[r1-]....................`|Branches to a register value if not equal|
+|`blrne r1                   `|`1011101[r1-]....................`|Branches and links to a register value if not equal|
+|`cbrnz r1, r2               `|`1011110[r1-]..............0[r2-]`|Branches to a register value if other register is not zero|
+|`cblrnz r1, r2              `|`1011111[r1-]..............0[r2-]`|Branches and links to a register value if other register is not zero|
+|`cbrz r1, r2                `|`1011110[r1-]..............1[r2-]`|Branches to a register value if other register is zero|
+|`cblrz r1, r2               `|`1011111[r1-]..............1[r2-]`|Branches and links to a register value if other register is zero|
+
+### Integer Arithmetic
+|Mnemonic|Encoding|Description|
+|-|-|-|
+|`add r1, r2, imm            `|`0010000[r1-][r2-]...[--imm12---]`|Adds r2 and an immediate and stores the result in r1|
+|`add r1, r2, r3             `|`0110000..........[r1-][r2-][r3-]`|Adds r2 and r3 and stores the result in r1|
+|`sub r1, r2, imm            `|`0010001[r1-][r2-]...[--imm12---]`|Subtracts an immediate from r2 and stores the result in r1|
+|`sub r1, r2, r3             `|`0110001..........[r1-][r2-][r3-]`|Subtracts r3 from r2 and stores the result in r1|
+|`mul r1, r2, imm            `|`0010010[r1-][r2-]...[--imm12---]`|Multiplies r2 and an immediate and stores the result in r1|
+|`mul r1, r2, r3             `|`0110010..........[r1-][r2-][r3-]`|Multiplies r2 and r3 and stores the result in r1|
+|`div r1, r2, imm            `|`0010011[r1-][r2-]...[--imm12---]`|Divides r2 by an immediate and stores the result in r1|
+|`div r1, r2, r3             `|`0110011..........[r1-][r2-][r3-]`|Divides r2 by r3 and stores the result in r1|
+|`mod r1, r2, imm            `|`0010100[r1-][r2-]...[--imm12---]`|Calculates the remainder of the division of r2 and an immediate and stores it in r1|
+|`mod r1, r2, r3             `|`0110100..........[r1-][r2-][r3-]`|Calculates the remainder of the division of r2 and r3 and stores it in r1|
+|`and r1, r2, imm            `|`0010101[r1-][r2-]...[--imm12---]`|Ands r2 and an immediate and stores the result in r1|
+|`and r1, r2, r3             `|`0110101..........[r1-][r2-][r3-]`|Ands r2 and r3 and stores the result in r1|
+|`or r1, r2, imm             `|`0010110[r1-][r2-]...[--imm12---]`|Ors r2 and an immediate and stores the result in r1|
+|`or r1, r2, r3              `|`0110110..........[r1-][r2-][r3-]`|Ors r2 and r3 and stores the result in r1|
+|`xor r1, r2, imm            `|`0010111[r1-][r2-]...[--imm12---]`|Xors r2 and an immediate and stores the result in r1|
+|`xor r1, r2, r3             `|`0110111..........[r1-][r2-][r3-]`|Xors r2 and r3 and stores the result in r1|
+|`shl r1, r2, imm            `|`0011000[r1-][r2-]...[--imm12---]`|Shifts r2 left by an immediate and stores the result in r1|
+|`shl r1, r2, r3             `|`0111000..........[r1-][r2-][r3-]`|Shifts r2 left by r3 and stores the result in r1|
+|`shr r1, r2, imm            `|`0011001[r1-][r2-]...[--imm12---]`|Shifts r2 right by an immediate and stores the result in r1|
+|`shr r1, r2, r3             `|`0111001..........[r1-][r2-][r3-]`|Shifts r2 right by r3 and stores the result in r1|
+|`rol r1, r2, imm            `|`0011010[r1-][r2-]...[--imm12---]`|Rotates r2 left by an immediate and stores the result in r1|
+|`rol r1, r2, r3             `|`0111010..........[r1-][r2-][r3-]`|Rotates r2 left by r3 and stores the result in r1|
+|`ror r1, r2, imm            `|`0011011[r1-][r2-]...[--imm12---]`|Rotates r2 right by an immediate and stores the result in r1|
+|`ror r1, r2, r3             `|`0111011..........[r1-][r2-][r3-]`|Rotates r2 right by r3 and stores the result in r1|
+|`neg r1, r2                 `|`0111100..........[r1-][r2-].....`|Stores the negative value of r2 in r1|
+|`not r1, r2                 `|`0111101..........[r1-][r2-].....`|Stores the bitwise not of r2 in r1|
+|`asr r1, r2, imm            `|`0011110[r1-][r2-]...[--imm12---]`|Arithmetically shifts r2 right by an immediate and stores the result in r1|
+|`asr r1, r2, r3             `|`0111110..........[r1-][r2-][r3-]`|Arithmetically shifts r2 right by r3 and stores the result in r1|
+|`swe r1, r2                 `|`0111111..........[r1-][r2-].....`|Switches all bytes in r2 and stores the result in r1|
+|`tst r1, r2                 `|`1000010..........[r1-][r2-].....`|Subtracts r2 from r1 and sets the flag based on the result. Result ignored|
+|`tst r1, imm                `|`1100010[r1-][-------imm20------]`|Subtracts an immediate from r1 and sets the flag based on the result. Result ignored|
+|`cmp r1, r2                 `|`1000011..........[r1-][r2-].....`|Ands r1 and r2 and sets the flag based on the result. Result ignored|
+|`cmp r1, imm                `|`1100011[r1-][-------imm20------]`|Ands r1 and an immediate and sets the flag based on the result. Result ignored|
+
+### Floating point Arithmetic
+|Mnemonic|Encoding|Description|
+|-|-|-|
+|`fadd r1, r2, r3            `|`100010000000.....[r1-][r2-][r3-]`|Adds float in r2 and r3 and stores the result in r1|
+|`faddi r1, r2, r3           `|`100010000010.....[r1-][r2-][r3-]`|Adds float in r2 and integer in r3 and stores the result in r1|
+|`fsub r1, r2, r3            `|`100010000100.....[r1-][r2-][r3-]`|Subtracts float in r2 from r3 and stores the result in r1|
+|`fsubi r1, r2, r3           `|`100010000110.....[r1-][r2-][r3-]`|Subtracts float in r2 from integer in r3 and stores the result in r1|
+|`fmul r1, r2, r3            `|`100010001000.....[r1-][r2-][r3-]`|Multiplies float in r2 and r3 and stores the result in r1|
+|`fmuli r1, r2, r3           `|`100010001010.....[r1-][r2-][r3-]`|Multiplies float in r2 and integer in r3 and stores the result in r1|
+|`fdiv r1, r2, r3            `|`100010001100.....[r1-][r2-][r3-]`|Divides float in r2 by r3 and stores the result in r1|
+|`fdivi r1, r2, r3           `|`100010001110.....[r1-][r2-][r3-]`|Divides float in r2 by integer in r3 and stores the result in r1|
+|`fmod r1, r2, r3            `|`100010010000.....[r1-][r2-][r3-]`|Calculates the floating point remainder of dividing float in r2 by r3 and stores it in r1|
+|`fmodi r1, r2, r3           `|`100010010010.....[r1-][r2-][r3-]`|Calculates the floating point remainder of dividing float in r2 by integer in r3 and stores it in r1|
+|`fsin r1, r2                `|`100010011000.....[r1-][r2-].....`|Calculates the sin of float in r2 and stores it in r1|
+|`fsqrt r1, r2               `|`100010011010.....[r1-][r2-].....`|Calculates the sqare root of float in r2 and stores it in r1|
+|`fcmp r1, r2                `|`100010011100.....[r1-][r2-].....`|Subtracts float in r2 from r1 and sets the flag based on the result. Result ignored|
+|`fcmpi r1, r2               `|`100010011110.....[r1-][r2-].....`|Subtracts float in r2 from integer in r1 and sets the flag based on the result. Result ignored|
+|`i2f r1, r2                 `|`100010010100.....[r1-][r2-].....`|Converts the integer in r2 to a float and stores it in r1|
+|`f2i r1, r2                 `|`100010010110.....[r1-][r2-].....`|Converts the float in r2 to an integer and stores it in r1|
+
+### Utility
+|Mnemonic|Encoding|Description|
+|-|-|-|
+|`svc                        `|`1100100.........................`|Supervisor call|
+|`nop                        `|`00110000000000000...000000000000`|No operation (`shl r0, r0, 0`)|
+
+### Data transfer
+|Mnemonic|Encoding|Description|
+|-|-|-|
+|`mov r1, r2                 `|`0011000[r1-][r2-]...000000000000`|Moves the value in r2 to r1 (`shl r1, r2, 0`)|
+|`lea r1, offset             `|`1100000[r1-][-------imm20------]`|Loads the effective address of offset into r1|
+|`movz r1, imm               `|`1100001[r1-]000.[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 1st 16-bit window of r1|
+|`movz r1, imm, shl 16       `|`1100001[r1-]001.[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 2nd 16-bit window of r1|
+|`movz r1, imm, shl 32       `|`1100001[r1-]010.[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 3rd 16-bit window of r1|
+|`movz r1, imm, shl 48       `|`1100001[r1-]011.[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 4th 16-bit window of r1|
+|`movk r1, imm               `|`1100001[r1-]100.[-----imm16----]`|Moves the 16-bit immediate value into the 1st 16-bit window of r1. Only clears the affected 16-bit window|
+|`movk r1, imm, shl 16       `|`1100001[r1-]101.[-----imm16----]`|Moves the 16-bit immediate value into the 2nd 16-bit window of r1. Only clears the affected 16-bit window|
+|`movk r1, imm, shl 32       `|`1100001[r1-]110.[-----imm16----]`|Moves the 16-bit immediate value into the 3rd 16-bit window of r1. Only clears the affected 16-bit window|
+|`movk r1, imm, shl 48       `|`1100001[r1-]111.[-----imm16----]`|Moves the 16-bit immediate value into the 4th 16-bit window of r1. Only clears the affected 16-bit window|
+|`ldr r1, [r2, imm]          `|`0100000[r1-][r2-]000[--imm12---]`|Loads a quadword from memory address r2 + immediate into r1|
+|`ldr r1, [r2, imm]!         `|`0100000[r1-][r2-]001[--imm12---]`|Loads a quadword from memory address r2 into r1 and adds imm to r2|
+|`ldrd r1, [r2, imm]         `|`0100000[r1-][r2-]010[--imm12---]`|Loads a doubleword from memory address r2 + immediate into r1|
+|`ldrd r1, [r2, imm]!        `|`0100000[r1-][r2-]011[--imm12---]`|Loads a doubleword from memory address r2 into r1 and adds imm to r2|
+|`ldrw r1, [r2, imm]         `|`0100000[r1-][r2-]100[--imm12---]`|Loads a word from memory address r2 + immediate into r1|
+|`ldrw r1, [r2, imm]!        `|`0100000[r1-][r2-]101[--imm12---]`|Loads a word from memory address r2 into r1 and adds imm to r2|
+|`ldrb r1, [r2, imm]         `|`0100000[r1-][r2-]110[--imm12---]`|Loads a byte from memory address r2 + immediate into r1|
+|`ldrb r1, [r2, imm]!        `|`0100000[r1-][r2-]111[--imm12---]`|Loads a byte from memory address r2 into r1 and adds imm to r2|
+|`str r1, [r2, imm]          `|`0100001[r1-][r2-]000[--imm12---]`|Stores a quadword from r1 to memory address r2 + immediate|
+|`str r1, [r2, imm]!         `|`0100001[r1-][r2-]001[--imm12---]`|Adds the immediate to r2 and stores a quadword from r1 to memory address now in r2|
+|`strd r1, [r2, imm]         `|`0100001[r1-][r2-]010[--imm12---]`|Stores a doubleword from r1 to memory address r2 + immediate|
+|`strd r1, [r2, imm]!        `|`0100001[r1-][r2-]011[--imm12---]`|Adds the immediate to r2 and stores a doubleword from r1 to memory address now in r2|
+|`strw r1, [r2, imm]         `|`0100001[r1-][r2-]100[--imm12---]`|Stores a word from r1 to memory address r2 + immediate|
+|`strw r1, [r2, imm]!        `|`0100001[r1-][r2-]101[--imm12---]`|Adds the immediate to r2 and stores a word from r1 to memory address now in r2|
+|`strb r1, [r2, imm]         `|`0100001[r1-][r2-]110[--imm12---]`|Stores a byte from r1 to memory address r2 + immediate|
+|`strb r1, [r2, imm]!        `|`0100001[r1-][r2-]111[--imm12---]`|Adds the immediate to r2 and stores a byte from r1 to memory address now in r2|
+|`ubxt r1, r2, a, b          `|`0100010[r1-][r2-]..0[a---][b---]`|Extracts a bits starting at bit b from register r2 and stores the value into r1|
+|`sbxt r1, r2, a, b          `|`0100010[r1-][r2-]..1[a---][b---]`|Extracts a bits starting at bit b from register r2 and stores the sign extended value into r1|
+|`ubdp r1, r2, a, b          `|`0100011[r1-][r2-]..0[a---][b---]`|Deposits the lowest a bits from r2 into r1 starting at bit b|
+|`ldr r1, [r2, r3]           `|`1000000.......000[r1-][r2-][r3-]`|Loads a quadword from memory address r2 + r3 into r1|
+|`ldr r1, [r2, r3]!          `|`1000000.......001[r1-][r2-][r3-]`|Loads a quadword from memory address r2 into r1 and adds r3 to r2|
+|`ldrd r1, [r2, r3]          `|`1000000.......010[r1-][r2-][r3-]`|Loads a doubleword from memory address r2 + r3 into r1|
+|`ldrd r1, [r2, r3]!         `|`1000000.......011[r1-][r2-][r3-]`|Loads a doubleword from memory address r2 into r1 and adds r3 to r2|
+|`ldrw r1, [r2, r3]          `|`1000000.......100[r1-][r2-][r3-]`|Loads a word from memory address r2 + r3 into r1|
+|`ldrw r1, [r2, r3]!         `|`1000000.......101[r1-][r2-][r3-]`|Loads a word from memory address r2 into r1 and adds r3 to r2|
+|`ldrb r1, [r2, r3]          `|`1000000.......110[r1-][r2-][r3-]`|Loads a byte from memory address r2 + r3 into r1|
+|`ldrb r1, [r2, r3]!         `|`1000000.......111[r1-][r2-][r3-]`|Loads a byte from memory address r2 into r1 and adds r3 to r2|
+|`str r1, [r2, r3]           `|`1000001.......000[r1-][r2-][r3-]`|Stores a quadword from r1 to memory address r2 + r3|
+|`str r1, [r2, r3]!          `|`1000001.......001[r1-][r2-][r3-]`|Adds r3 to r2 and stores a quadword from r1 to memory address now in r2|
+|`strd r1, [r2, r3]          `|`1000001.......010[r1-][r2-][r3-]`|Stores a doubleword from r1 to memory address r2 + r3|
+|`strd r1, [r2, r3]!         `|`1000001.......011[r1-][r2-][r3-]`|Adds r3 to r2 and stores a doubleword from r1 to memory address now in r2|
+|`strw r1, [r2, r3]          `|`1000001.......100[r1-][r2-][r3-]`|Stores a word from r1 to memory address r2 + r3|
+|`strw r1, [r2, r3]!         `|`1000001.......101[r1-][r2-][r3-]`|Adds r3 to r2 and stores a word from r1 to memory address now in r2|
+|`strb r1, [r2, r3]          `|`1000001.......110[r1-][r2-][r3-]`|Stores a byte from r1 to memory address r2 + r3|
+|`strb r1, [r2, r3]!         `|`1000001.......111[r1-][r2-][r3-]`|Adds r3 to r2 and stores a byte from r1 to memory address now in r2|
+
+### Vector Operations
+|Mnemonic|Encoding|Description|
+|-|-|-|
+|`vbadd v1, v2, v3           `|`10001010000001......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
+|`voadd v1, v2, v3           `|`10001010000000......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
+|`vwadd v1, v2, v3           `|`10001010000010......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
+|`vdadd v1, v2, v3           `|`10001010000011......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
+|`vqadd v1, v2, v3           `|`10001010000100......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
+|`vladd v1, v2, v3           `|`10001010000101......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
+|`vsadd v1, v2, v3           `|`10001010000110......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
+|`vfadd v1, v2, v3           `|`10001010000111......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
+|`vosub v1, v2, v3           `|`10001010001000......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
+|`vbsub v1, v2, v3           `|`10001010001001......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
+|`vwsub v1, v2, v3           `|`10001010001010......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
+|`vdsub v1, v2, v3           `|`10001010001011......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
+|`vqsub v1, v2, v3           `|`10001010001100......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
+|`vlsub v1, v2, v3           `|`10001010001101......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
+|`vssub v1, v2, v3           `|`10001010001110......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
+|`vfsub v1, v2, v3           `|`10001010001111......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
+|`vomul v1, v2, v3           `|`10001010010000......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
+|`vbmul v1, v2, v3           `|`10001010010001......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
+|`vwmul v1, v2, v3           `|`10001010010010......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
+|`vdmul v1, v2, v3           `|`10001010010011......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
+|`vqmul v1, v2, v3           `|`10001010010100......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
+|`vlmul v1, v2, v3           `|`10001010010101......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
+|`vsmul v1, v2, v3           `|`10001010010110......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
+|`vfmul v1, v2, v3           `|`10001010010111......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
+|`vodiv v1, v2, v3           `|`10001010011000......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
+|`vbdiv v1, v2, v3           `|`10001010011001......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
+|`vwdiv v1, v2, v3           `|`10001010011010......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
+|`vddiv v1, v2, v3           `|`10001010011011......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
+|`vqdiv v1, v2, v3           `|`10001010011100......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
+|`vldiv v1, v2, v3           `|`10001010011101......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
+|`vsdiv v1, v2, v3           `|`10001010011110......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
+|`vfdiv v1, v2, v3           `|`10001010011111......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
+|`voaddsub v1, v2, v3        `|`10001010100000......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vbaddsub v1, v2, v3        `|`10001010100001......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vwaddsub v1, v2, v3        `|`10001010100010......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vdaddsub v1, v2, v3        `|`10001010100011......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vqaddsub v1, v2, v3        `|`10001010100100......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vladdsub v1, v2, v3        `|`10001010100101......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vsaddsub v1, v2, v3        `|`10001010100110......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vfaddsub v1, v2, v3        `|`10001010100111......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vomadd v1, v2, v3          `|`10001010101000......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vbmadd v1, v2, v3          `|`10001010101001......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vwmadd v1, v2, v3          `|`10001010101010......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vdmadd v1, v2, v3          `|`10001010101011......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vqmadd v1, v2, v3          `|`10001010101100......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vlmadd v1, v2, v3          `|`10001010101101......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vsmadd v1, v2, v3          `|`10001010101110......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vfmadd v1, v2, v3          `|`10001010101111......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vomov v1, r2, at           `|`10001010110000....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
+|`vbmov v1, r2, at           `|`10001010110001....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
+|`vwmov v1, r2, at           `|`10001010110010....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
+|`vdmov v1, r2, at           `|`10001010110011....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
+|`vqmov v1, r2, at           `|`10001010110100....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
+|`vlmov v1, r2, at           `|`10001010110101....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
+|`vsmov v1, r2, at           `|`10001010110110....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
+|`vfmov v1, r2, at           `|`10001010110111....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
+|`vomov v1, v2               `|`10001010111000..........[v2][v1]`|Moves v2 to v1|
+|`vbmov v1, v2               `|`10001010111001..........[v2][v1]`|Moves v2 to v1|
+|`vwmov v1, v2               `|`10001010111010..........[v2][v1]`|Moves v2 to v1|
+|`vdmov v1, v2               `|`10001010111011..........[v2][v1]`|Moves v2 to v1|
+|`vqmov v1, v2               `|`10001010111100..........[v2][v1]`|Moves v2 to v1|
+|`vlmov v1, v2               `|`10001010111101..........[v2][v1]`|Moves v2 to v1|
+|`vsmov v1, v2               `|`10001010111110..........[v2][v1]`|Moves v2 to v1|
+|`vfmov v1, v2               `|`10001010111111..........[v2][v1]`|Moves v2 to v1|
+|`voconvT v1, v2             `|`10001011000000TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
+|`vbconvT v1, v2             `|`10001011000001TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
+|`vwconvT v1, v2             `|`10001011000010TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
+|`vdconvT v1, v2             `|`10001011000011TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
+|`vqconvT v1, v2             `|`10001011000100TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
+|`vlconvT v1, v2             `|`10001011000101TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
+|`vsconvT v1, v2             `|`10001011000110TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
+|`vfconvT v1, v2             `|`10001011000111TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
+|`volen r1, v2               `|`10001011001000.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
+|`vblen r1, v2               `|`10001011001001.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
+|`vwlen r1, v2               `|`10001011001010.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
+|`vdlen r1, v2               `|`10001011001011.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
+|`vqlen r1, v2               `|`10001011001100.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
+|`vllen r1, v2               `|`10001011001101.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
+|`vslen r1, v2               `|`10001011001110.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
+|`vflen r1, v2               `|`10001011001111.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
+
+#### Vector convert instruction encoding
+`TTT` in the encoding specifies the target element type as follows:
+
+|Element type|Encoding|
 |-|-|
-|`00000`|`add`|
-|`00001`|`sub`|
-|`00010`|`mul`|
-|`00011`|`div`|
-|`00100`|`mod`|
-|`00101`|`and`|
-|`00110`|`or`|
-|`00111`|`xor`|
-|`01000`|`shl`|
-|`01001`|`shr`|
-|`01010`|`rol`|
-|`01011`|`ror`|
-|`01100`|`ldr`|
-|`01101`|`str`|
-|`01110`|`bxt`|
-|`01111`|`bdp`|
-|`10000`|`ldp`|
-|`10001`|`stp`|
+|first quadword|`000`|
+|byte|`001`|
+|word|`010`|
+|doubleword|`011`|
+|quadword|`100`|
+|longword|`101`|
+|single precision float|`110`|
+|double precision float|`111`|
 
-## Reg-Reg-Reg type opcodes (0b10xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
-    0b10kkkkkkxxxxxxxxxxxxxxxxxxxxxxxx
-        |
-        +-----------------------------> Operation
+`T` in the mnemonic specifies the target element type as follows:
 
-|Operation|Name|
+|Character|Element type|
 |-|-|
-|`000000`|`add`|
-|`000001`|`sub`|
-|`000010`|`mul`|
-|`000011`|`div`|
-|`000100`|`mod`|
-|`000101`|`and`|
-|`000110`|`or`|
-|`000111`|`xor`|
-|`001000`|`shl`|
-|`001001`|`shr`|
-|`001010`|`rol`|
-|`001011`|`ror`|
-|`001100`|`ldr`|
-|`001101`|`str`|
-|`001110`|`tst`|
-|`001111`|`cmp`|
-|`010000`|`ldp`|
-|`010001`|`stp`|
-|`010010`|Float type opcodes|
+|`o`|first quadword|
+|`b`|byte|
+|`w`|word|
+|`d`|doubleword|
+|`q`|quadword|
+|`l`|longword|
+|`s`|single precision float|
+|`f`|double precision float|
 
-## Float type opcodes (0b10010010xxxxxxxxxxxxxxxxxxxxxxxx)
-    0b10010010kkkkxxxxxxxxxxxxxxxxxxxx
-              |
-              +-----------------------> Operation
+## Quirks of the instruction set
+### It's `shl` all the way down
+To save opcodes, `mov`, `ret`, and `nop` are all encoded as `shl` with an immediate value of `0`:
+- `mov rn, rm` is actually `shl rn, rm, 0`
+- `ret` is actually `shl pc, lr, 0`
+- `nop` is actually `shl r0, r0, 0`
 
-|Operation|Name|
+### Why do `cblz` and `cblnz` exist
+Branch instructions are encoded in a way that disconnects link or no link from the opcode of the branch:
+- 3 bits for instruction type (`000` for branch, `101` for branch to register)
+- 3 bits for branch type
+- 1 bit specifying link (`1`) or no link (`0`)
+
+### No `psh` and `pp` instructions
+Even though the assember understands `psh` and `pp` instructions, there is no actual instruction like that:
+- mnemonic `psh rn` is actually `str rn, [sp, -16]!`
+- mnemonic `pp rn` is actually `ldr rn, [sp, 16]!`
+
+The same goes for `inc` and `dec` instructions:
+- `inc rn` is actually `add rn, rn, 1`
+- `dec rn` is actually `sub rn, rn, 1`
+
+### Simplified arithmetic
+The assembler supports `rn, rm` as a a shorthand for `rn, rn, rm` for arithmetic instructions like `add`, `sub`, and so on.
+This is also done to keep the amount of opcodes to a minimum.
+
+### Signed bit deposit?
+The assembler accepts `sbdp` as a mnemonic to provide symmetry with `sbxt` and `ubxt`.
+However, there is no executional difference between a signed and unsigned bit deposit
+
+### `movz` and `movk` only use 4 bits for shift encoding
+This is very simple: As it is only possible to shift the value to load by a multiple of 16 bits, there are only 4 possibilities for the value.
+
+## Assembler directives
+Assembler directives are identifiers prefixed with a `.`
+|Directive|Description|
 |-|-|
-|`0000`|`add`|
-|`0001`|`addi`|
-|`0010`|`sub`|
-|`0011`|`subi`|
-|`0100`|`mul`|
-|`0101`|`muli`|
-|`0110`|`div`|
-|`0111`|`divi`|
-|`1000`|`mod`|
-|`1001`|`modi`|
-|`1010`|`i2f`|
-|`1011`|`f2i`|
-|`1100`|`sin`|
-|`1101`|`sqrt`|
-|`1110`|`cmp`|
-|`1111`|`cmpi`|
-
-## Reg-Imm type opcodes (0b11xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
-    0b11bxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-        |
-        +-----------------------------> Is Branch
-
-### When 'Is Branch' is 0
-    0b110kkkkxxxxxxxxxxxxxxxxxxxxxxxxx
-         |
-         +----------------------------> Operation
-
-|Operation|Name|
-|-|-|
-|`0000`|`lea`|
-|`0001`|`movz`/`movk`|
-|`0010`|`tst`|
-|`0011`|`cmp`|
-|`0100`|`svc`|
-
-### When 'Is Branch' is 1
-    0b111kkkxxxxxxxxxxxxxxxxxxxxxxxxxx
-         |
-         +----------------------------> Operation
-
-|Branch Type|Name|
-|-|-|
-|`000`|`br`|
-|`001`|`brlt`|
-|`010`|`brgt`|
-|`011`|`brge`|
-|`100`|`brle`|
-|`101`|`breq`|
-|`110`|`brne`|
-|`111`|`cbrz`/`cbrnz`|
-
-# Instructions
-## Branches
-### `b` - `bl`
-#### Description
-The `b` and `bl` instructions perform an uncoditional jump to a PC-relative offset.
-The `bl` instruction also saves the current value of PC in LR.
-
-#### Assembler Symbols
-```
-b <label>
-bl <label>
-```
-
-`<label>`: The program label to jump to. It is the signed offset from the current instruction and is encoded as `T` times 4.
-
-#### Pseudocode
-```c
-// 00000 L TTTTTTTTTTTTTTTTTTTTTTTTTT
-
-if (L) {
-    LR = PC;
-}
-PC = PC + sign_extend(T * 4, bits: 26);
-```
-### `br` - `blr`
-#### Description
-The `br` and `blr` instructions perform an uncoditional jump to the address stored in a register.
-The `blr` instruction also saves the current value of PC in LR.
-
-#### Assembler Symbols
-```
-br <Rn>
-blr <Rn>
-```
-
-`<Rn>`: The register containing the address to jump to.
-
-#### Pseudocode
-```c
-// 111001 L TTTTT ____________________
-
-if (L) {
-    LR = PC;
-}
-PC = Registers[T];
-```
-### `blt`/`bmi` - `bllt`/`blmi`
-#### Description
-The `blt` and `bllt` instructions perform a conditional jump to a PC-relative offset.
-The `bllt` instruction also saves the current value of PC in LR.
-The jump is only performed if the `negative` flag is set.
-
-#### Assembler Symbols
-```
-blt <label>
-bllt <label>
-```
-
-`<label>`: The program label to jump to. It is the signed offset from the current instruction and is encoded as `T` times 4.
-
-#### Pseudocode
-```c
-// 00001 L TTTTTTTTTTTTTTTTTTTTTTTTTT
-
-if (flag_set(negative)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = PC + sign_extend(T * 4, bits: 26);
-}
-```
-### `brlt`/`brmi` - `blrlt`/`blrmi`
-#### Description
-The `brlt` and `blrlt` instructions perform a conditional jump to the address stored in a register.
-The `brlt` instruction also saves the current value of PC in LR.
-The jump is only performed if the `negative` flag is set.
-
-#### Assembler Symbols
-```
-brlt <Rn>
-blrlt <Rn>
-```
-
-`<Rn>`: The register containing the address to jump to.
-
-#### Pseudocode
-```c
-// 111001 L TTTTT ____________________
-
-if (flag_set(negative)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = Registers[T];
-}
-```
-
-### `bgt` - `blgt`
-#### Description
-The `bgt` and `blgt` instructions perform a conditional jump to a PC-relative offset.
-The `blgt` instruction also saves the current value of PC in LR.
-The jump is only performed if the `negative` and `equal` flags are both not set.
-
-#### Assembler Symbols
-```
-bgt <label>
-blgt <label>
-```
-
-`<label>`: The program label to jump to. It is the signed offset from the current instruction and is encoded as `T` times 4.
-
-#### Pseudocode
-```c
-// 00010 L TTTTTTTTTTTTTTTTTTTTTTTTTT
-
-if (flag_not_set(negative) and flag_not_set(equal)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = PC + sign_extend(T * 4, bits: 26);
-}
-```
-### `brgt` - `blrgt`
-#### Description
-The `brgt` and `blrgt` instructions perform a conditional jump to the address stored in a register.
-The `brgt` instruction also saves the current value of PC in LR.
-The jump is only performed if the `negative` and `equal` flags are both not set.
-
-#### Assembler Symbols
-```
-brgt <Rn>
-blrgt <Rn>
-```
-
-`<Rn>`: The register containing the address to jump to.
-
-#### Pseudocode
-```c
-// 111010 L TTTTT ____________________
-
-if (flag_not_set(negative) and flag_not_set(equal)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = Registers[T];
-}
-```
-
-### `bge`/`bpl` - `blge`/`blpl`
-#### Description
-The `bge` and `blge` instructions perform a conditional jump to a PC-relative offset.
-The `blge` instruction also saves the current value of PC in LR.
-The jump is only performed if the `negative` flag is not set.
-
-#### Assembler Symbols
-```
-bge <label>
-blge <label>
-```
-
-`<label>`: The program label to jump to. It is the signed offset from the current instruction and is encoded as `T` times 4.
-
-#### Pseudocode
-```c
-// 00011 L TTTTTTTTTTTTTTTTTTTTTTTTTT
-
-if (flag_not_set(negative)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = PC + sign_extend(T * 4, bits: 26);
-}
-```
-### `brge`/`brpl` - `blrge`/`blrpl`
-#### Description
-The `brge` and `blrge` instructions perform a conditional jump to the address stored in a register.
-The `brge` instruction also saves the current value of PC in LR.
-The jump is only performed if the `negative` flag is not set.
-
-#### Assembler Symbols
-```
-brge <Rn>
-blrge <Rn>
-```
-
-`<Rn>`: The register containing the address to jump to.
-
-#### Pseudocode
-```c
-// 111011 L TTTTT ____________________
-
-if (flag_not_set(negative)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = Registers[T];
-}
-```
-
-### `ble` - `blle`
-#### Description
-The `ble` and `blle` instructions perform a conditional jump to a PC-relative offset.
-The `blle` instruction also saves the current value of PC in LR.
-The jump is only performed if the `negative` or `equal` flags are set.
-
-#### Assembler Symbols
-```
-ble <label>
-blle <label>
-```
-
-`<label>`: The program label to jump to. It is the signed offset from the current instruction and is encoded as `T` times 4.
-
-#### Pseudocode
-```c
-// 00100 L TTTTTTTTTTTTTTTTTTTTTTTTTT
-
-if (flag_set(negative) or flag_set(equal)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = PC + sign_extend(T * 4, bits: 26);
-}
-```
-### `brle`
-#### Description
-The `brle` and `blrle` instructions perform a conditional jump to the address stored in a register.
-The `brle` instruction also saves the current value of PC in LR.
-The jump is only performed if the `negative` or `equal` flags are set.
-
-#### Assembler Symbols
-```
-brle <Rn>
-blrle <Rn>
-```
-
-`<Rn>`: The register containing the address to jump to.
-
-#### Pseudocode
-```c
-// 111100 L TTTTT ____________________
-
-if (flag_set(negative) or flag_set(equal)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = Registers[T];
-}
-```
-
-### `beq`/`bz` - `bleq`/`blz`
-#### Description
-The `beq` and `bleq` instructions perform a conditional jump to a PC-relative offset.
-The `bleq` instruction also saves the current value of PC in LR.
-The jump is only performed if the `equal` flag is set.
-
-#### Assembler Symbols
-```
-beq <label>
-bleq <label>
-```
-
-`<label>`: The program label to jump to. It is the signed offset from the current instruction and is encoded as `T` times 4.
-
-#### Pseudocode
-```c
-// 00101 L TTTTTTTTTTTTTTTTTTTTTTTTTT
-
-if (flag_set(equal)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = PC + sign_extend(T * 4, bits: 26);
-}
-```
-### `breq`/`brz` - `blreq`/`blrz`
-#### Description
-The `breq` and `blreq` instructions perform a conditional jump to the address stored in a register.
-The `breq` instruction also saves the current value of PC in LR.
-The jump is only performed if the `equal` flag is set.
-
-#### Assembler Symbols
-```
-breq <Rn>
-blreq <Rn>
-```
-
-`<Rn>`: The register containing the address to jump to.
-
-#### Pseudocode
-```c
-// 111101 L TTTTT ____________________
-
-if (flag_set(equal)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = Registers[T];
-}
-```
-
-### `bne`/`bnz` - `blne`/`blnz`
-#### Description
-The `bne` and `blne` instructions perform a conditional jump to a PC-relative offset.
-The `blne` instruction also saves the current value of PC in LR.
-The jump is only performed if the `equal` flag is not set.
-
-#### Assembler Symbols
-```
-bne <label>
-blne <label>
-```
-
-`<label>`: The program label to jump to. It is the signed offset from the current instruction and is encoded as `T` times 4.
-
-#### Pseudocode
-```c
-// 00110 L TTTTTTTTTTTTTTTTTTTTTTTTTT
-
-if (flag_not_set(equal)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = PC + sign_extend(T * 4, bits: 26);
-}
-```
-### `brne`/`brnz` - `blrne`/`blrnz`
-#### Description
-The `brne` and `blrne` instructions perform a conditional jump to the address stored in a register.
-The `brne` instruction also saves the current value of PC in LR.
-The jump is only performed if the `equal` flag is not set.
-
-#### Assembler Symbols
-```
-brne <Rn>
-blrne <Rn>
-```
-
-`<Rn>`: The register containing the address to jump to.
-
-#### Pseudocode
-```c
-// 111110 L TTTTT ____________________
-
-if (flag_not_set(equal)) {
-    if (L) {
-        LR = PC;
-    }
-    PC = Registers[T];
-}
-```
-
-### `cbz`/`cbnz` - `cblz`/`cblnz`
-#### Description
-The `cbz` and `cbnz` instructions perform a comparison with a register and then conditionally jump to a PC-relative offset.
-The `cblz`/`cblnz` stores the current PC in LR before taking the jump.
-The `cbz` instruction jumps if the comparion sets the `equal` flag.
-The `cbnz` instruction jumps if the comparion unsets the `equal` flag.
-
-#### Assembler Symbols
-```
-cbz <Rn>, <label>
-cbnz <Rn>, <label>
-cblz <Rn>, <label>
-cblnz <Rn>, <label>
-```
-
-`<Rn>`: The register to compare.
-`<label>`: The program label to jump to. It is the signed offset from the current instruction and is encoded as `T` times 4.
-
-#### Pseudocode
-```c
-// 00111 L RRRRR Z TTTTTTTTTTTTTTTTTTTT
-
-set_flags(Registers[R]);
-if (get_flag(equal) == Z) {
-    if (L) {
-        LR = PC;
-    }
-    PC = PC + sign_extend(T * 4, bits: 20);
-}
-```
-### `cbrz`/`cbrnz` - `cblrz`/`cblrnz`
-The `cbrz` and `cbrnz` instructions perform a comparison with a register and then conditionally jump to the address stored in a register.
-The `cblrz`/`cblrnz` stores the current PC in LR before taking the jump.
-The `cbrz` instruction jumps if the comparion sets the `equal` flag.
-The `cbrnz` instruction jumps if the comparion unsets the `equal` flag.
-
-#### Assembler Symbols
-```
-cbrz <Rn>, <Rm>
-cbrnz <Rn>, <Rm>
-cblrz <Rn>, <Rm>
-cblrnz <Rn>, <Rm>
-```
-
-`<Rn>`: The register to compare.
-`<Rm>`: The register containing the address to jump to.
-
-#### Pseudocode
-```c
-// 111111 L TTTTT ______________ Z CCCCC
-
-set_flags(Registers[C]);
-if (get_flag(equal) == Z) {
-    if (L) {
-        LR = PC;
-    }
-    PC = Registers[T];
-}
-```
-
-## Integer math
-### `add`
-#### Description
-The `add` instruction adds two registers together and stores the result in a third register.
-
-#### Assembler Symbols
-```
-add <Rd>, <Rn>, <Rm>
-add <Rd>, <Rn>, <Imm15>
-add <Rd>, <Rn>          ; alias for: add <Rd>, <Rd>, <Rn>
-add <Rd>, <Imm15>       ; alias for: add <Rd>, <Rd>, <Imm15>
-inc <Rd>, <Rn>          ; alias for: add <Rd>, <Rn>, 1
-inc <Rd>                ; alias for: add <Rd>, <Rd>, 1
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0100000 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] + zero_extend(I, bits: 15);
-```
-```c
-// 10000000 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] + Registers[B];
-```
-### `sub`
-The `sub` instruction subtracts two registers from each other and stores the result in a third register.
-
-#### Assembler Symbols
-```
-sub <Rd>, <Rn>, <Rm>
-sub <Rd>, <Rn>, <Imm15>
-sub <Rd>, <Rn>          ; alias for: sub <Rd>, <Rd>, <Rn>
-sub <Rd>, <Imm15>       ; alias for: sub <Rd>, <Rd>, <Imm15>
-dec <Rd>, <Rn>          ; alias for: sub <Rd>, <Rn>, 1
-dec <Rd>                ; alias for: sub <Rd>, <Rd>, 1
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0100001 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] - zero_extend(I, bits: 15);
-```
-```c
-// 10000001 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] - Registers[B];
-```
-### `mul`
-The `mul` instruction multiplies two registers together and stores the result in a third register.
-
-#### Assembler Symbols
-```
-mul <Rd>, <Rn>, <Rm>
-mul <Rd>, <Rn>, <Imm15>
-mul <Rd>, <Rn>          ; alias for: mul <Rd>, <Rd>, <Rn>
-mul <Rd>, <Imm15>       ; alias for: mul <Rd>, <Rd>, <Imm15>
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0100010 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] * zero_extend(I, bits: 15);
-```
-```c
-// 10000010 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] * Registers[B];
-```
-### `div`
-The `div` instruction divides two registers and stores the result in a third register.
-
-#### Assembler Symbols
-```
-div <Rd>, <Rn>, <Rm>
-div <Rd>, <Rn>, <Imm15>
-div <Rd>, <Rn>          ; alias for: div <Rd>, <Rd>, <Rn>
-div <Rd>, <Imm15>       ; alias for: div <Rd>, <Rd>, <Imm15>
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0100011 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] / zero_extend(I, bits: 15);
-```
-```c
-// 10000011 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] / Registers[B];
-```
-### `mod`
-The `mod` instruction calculates the modulo of two registers and stores the result in a third register.
-
-#### Assembler Symbols
-```
-mod <Rd>, <Rn>, <Rm>
-mod <Rd>, <Rn>, <Imm15>
-mod <Rd>, <Rn>          ; alias for: mod <Rd>, <Rd>, <Rn>
-mod <Rd>, <Imm15>       ; alias for: mod <Rd>, <Rd>, <Imm15>
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0100100 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] % zero_extend(I, bits: 15);
-```
-```c
-// 10000100 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] % Registers[B];
-```
-### `and`
-The `and` instruction ands two registers together and stores the result in a third register.
-
-#### Assembler Symbols
-```
-and <Rd>, <Rn>, <Rm>
-and <Rd>, <Rn>, <Imm15>
-and <Rd>, <Rn>          ; alias for: and <Rd>, <Rd>, <Rn>
-and <Rd>, <Imm15>       ; alias for: and <Rd>, <Rd>, <Imm15>
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0100101 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] & zero_extend(I, bits: 15);
-```
-```c
-// 10000101 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] & Registers[B];
-```
-### `or`
-The `or` instruction ors two registers together and stores the result in a third register.
-
-#### Assembler Symbols
-```
-or <Rd>, <Rn>, <Rm>
-or <Rd>, <Rn>, <Imm15>
-or <Rd>, <Rn>          ; alias for: or <Rd>, <Rd>, <Rn>
-or <Rd>, <Imm15>       ; alias for: or <Rd>, <Rd>, <Imm15>
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0100110 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] | zero_extend(I, bits: 15);
-```
-```c
-// 10000110 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] | Registers[B];
-```
-### `xor`
-The `xor` instruction xors two registers together and stores the result in a third register.
-
-#### Assembler Symbols
-```
-xor <Rd>, <Rn>, <Rm>
-xor <Rd>, <Rn>, <Imm15>
-xor <Rd>, <Rn>          ; alias for: xor <Rd>, <Rd>, <Rn>
-xor <Rd>, <Imm15>       ; alias for: xor <Rd>, <Rd>, <Imm15>
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0100111 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] ^ zero_extend(I, bits: 15);
-```
-```c
-// 10000111 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] ^ Registers[B];
-```
-### `shl`
-The `shl` instruction shifts the first register to the left by the amount in the second register and stores the result in the third register.
-
-#### Assembler Symbols
-```
-shl <Rd>, <Rn>, <Rm>
-shl <Rd>, <Rn>, <Imm15>
-shl <Rd>, <Rn>          ; alias for: shl <Rd>, <Rd>, <Rn>
-shl <Rd>, <Imm15>       ; alias for: shl <Rd>, <Rd>, <Imm15>
-mov <Rd>, <Rn>          ; alias for: shl <Rd>, <Rn>, 0
-ret                     ; alias for: shl pc, lr, 0
-nop                     ; alias for: shl r0, r0, 0
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0101000 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] << zero_extend(I, bits: 15);
-```
-```c
-// 10001000 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] << Registers[B];
-```
-### `shr`
-The `shr` instruction shifts the first register to the right by the amount in the second register and stores the result in the third register.
-
-#### Assembler Symbols
-```
-shr <Rd>, <Rn>, <Rm>
-shr <Rd>, <Rn>, <Imm15>
-shr <Rd>, <Rn>          ; alias for: shr <Rd>, <Rd>, <Rn>
-shr <Rd>, <Imm15>       ; alias for: shr <Rd>, <Rd>, <Imm15>
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0101001 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] >> zero_extend(I, bits: 15);
-```
-```c
-// 10001001 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] >> Registers[B];
-```
-### `rol`
-The `rol` instruction rotates the first register to the left by the amount in the second register and stores the result in the third register.
-
-#### Assembler Symbols
-```
-rol <Rd>, <Rn>, <Rm>
-rol <Rd>, <Rn>, <Imm15>
-rol <Rd>, <Rn>          ; alias for: rol <Rd>, <Rd>, <Rn>
-rol <Rd>, <Imm15>       ; alias for: rol <Rd>, <Rd>, <Imm15>
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0101010 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] <<< zero_extend(I, bits: 15);
-```
-```c
-// 10001010 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] <<< Registers[B];
-```
-### `ror`
-The `ror` instruction rotates the first register to the right by the amount in the second register and stores the result in the third register.
-
-#### Assembler Symbols
-```
-ror <Rd>, <Rn>, <Rm>
-ror <Rd>, <Rn>, <Imm15>
-ror <Rd>, <Rn>          ; alias for: ror <Rd>, <Rd>, <Rn>
-ror <Rd>, <Imm15>       ; alias for: ror <Rd>, <Rd>, <Imm15>
-```
-
-`<Rd>`: The destination register.
-`<Rn>`: The left source register.
-`<Rm>`: The right source register.
-`<Imm15>`: A 15-bit immediate value.
-
-#### Pseudocode
-```c
-// 0101011 DDDDD SSSSS IIIIIIIIIIIIIII
-Registers[D] = Registers[S] >>> zero_extend(I, bits: 15);
-```
-```c
-// 10001011 _________ DDDDD AAAAA BBBBB
-Registers[D] = Registers[A] >>> Registers[B];
-```
-
-## Load and Store
-### `ldr`
-#### Description
-The `ldr` instruction loads the given register with a value from a memory address.
-
-#### Assembler Symbols
-```
-; ldr is an alias for ldrq
-
-ldr <Rd>, [<Rs>, <Ro>]
-ldr <Rd>, [<Rs>, <Imm13>]
-ldr <Rd>, [<Rs>]            ; alias for: ldr <Rd>, [<Rs>, 0]
-```
-
-`<Rd>`: The register to load the value into
-`<Rs>`: The register containing the base address to load from.
-`<Ro>`: The register to offset the address by.
-`<Imm13>`: The signed 13-bit immediate value to offset the address by.
-
-#### Load Sizes
-|Mnemonic|Bytes read|
-|-|-|
-|`ldrb`|`1`|
-|`ldrw`|`2`|
-|`ldrd`|`4`|
-|`ldrq`/`ldr`|`8`|
-
-#### Pseudocode
-```c
-// 0101100 DDDDD SSSSS NN IIIIIIIIIIIII
-address = Registers[S] + sign_extend(I, bits: 13);
-
-Registers[D] = memory_read_bytes(address, bytes: N);
-```
-```c
-// 10001100 _______ NN DDDDD SSSSS OOOOO
-address = Registers[S] + Registers[O];
-
-Registers[D] = memory_read_bytes(address, bytes: N);
-```
-### `str`
-#### Description
-The `str` instruction stores the given register to a memory address.
-
-#### Assembler Symbols
-```
-; str is an alias for strq
-
-str <Rd>, [<Rs>, <Ro>]
-str <Rd>, [<Rs>, <Imm13>]
-str <Rd>, [<Rs>]            ; alias for: str <Rd>, [<Rs>, 0]
-```
-
-`<Rd>`: The register to load the value into
-`<Rs>`: The register containing the base address to load from.
-`<Ro>`: The register to offset the address by.
-`<Imm13>`: The signed 13-bit immediate value to offset the address by.
-
-#### Load Sizes
-|Mnemonic|Bytes read|
-|-|-|
-|`strb`|`1`|
-|`strw`|`2`|
-|`strd`|`4`|
-|`strq`/`str`|`8`|
-
-#### Pseudocode
-```c
-// 0101101 SSSSS DDDDD NN IIIIIIIIIIIII
-address = Registers[D] + sign_extend(I, bits: 13);
-
-memory_write_bytes(address, bytes: N, value: Registers[S]);
-```
-```c
-// 10001101 _______ NN SSSSS DDDDD OOOOO
-address = Registers[D] + Registers[O];
-
-memory_write_bytes(address, bytes: N, value: Registers[S]);
-```
-### `ldp`
-#### Description
-The `ldp` instruction loads the given registers with a value from a memory address.
-
-#### Assembler Symbols
-```
-; ldp is an alias for ldpq
-
-ldp <Rd>, <Rn>, [<Rs>, <Ro>]
-ldp <Rd>, <Rn>, [<Rs>, <Imm13>]
-ldp <Rd>, <Rn>, [<Rs>]            ; alias for: ldp <Rd>, <Rn> [<Rs>, 0]
-```
-
-`<Rd>`: The first register to load the value into
-`<Rn>`: The second register to load the value into
-`<Rs>`: The register containing the base address to load from.
-`<Ro>`: The register to offset the address by.
-`<Imm13>`: The signed 13-bit immediate value to offset the address by.
-
-#### Load Sizes
-|Mnemonic|Bytes read|
-|-|-|
-|`ldpb`|`1`|
-|`ldpw`|`2`|
-|`ldpd`|`4`|
-|`ldpq`/`ldp`|`8`|
-
-#### Pseudocode
-```c
-// 0110000 RRRRR DDDDD NN SSSSS IIIIIIII
-flags = get_flags();
-
-address = Registers[S] + sign_extend(I, bits: 8);
-
-Registers[R] = memory_read_bytes(address, bytes: N);
-Registers[D] = memory_read_bytes(address + N, bytes: N);
-
-restore_flags(flags);
-```
-```c
-// 10010000 __ NN RRRRR DDDDD SSSSS OOOOO
-flags = get_flags();
-
-address = Registers[S] + Registers[O];
-
-Registers[R] = memory_read_bytes(address, bytes: N);
-Registers[D] = memory_read_bytes(address + N, bytes: N);
-
-restore_flags(flags);
-```
-### `stp`
-#### Description
-The `stp` instruction stores the given registers to a memory address.
-
-#### Assembler Symbols
-```
-; stp is an alias for stpq
-
-stp <Rd>, <Rn>, [<Rs>, <Ro>]
-stp <Rd>, <Rn>, [<Rs>, <Imm13>]
-stp <Rd>, <Rn>, [<Rs>]            ; alias for: stp <Rd>, <Rn> [<Rs>, 0]
-```
-
-`<Rd>`: The first register to load the value into
-`<Rn>`: The second register to load the value into
-`<Rs>`: The register containing the base address to load from.
-`<Ro>`: The register to offset the address by.
-`<Imm13>`: The signed 13-bit immediate value to offset the address by.
-
-#### Load Sizes
-|Mnemonic|Bytes read|
-|-|-|
-|`stpb`|`1`|
-|`stpw`|`2`|
-|`stpd`|`4`|
-|`stpq`/`stp`|`8`|
-
-#### Pseudocode
-```c
-// 0110000 RRRRR SSSSS NN DDDDD IIIIIIII
-address = Registers[D] + sign_extend(I, bits: 8);
-
-memory_write_bytes(address, bytes: N, value: Registers[R]);
-memory_write_bytes(address + N, bytes: N, value: Registers[S]);
-```
-```c
-// 10010001 __ NN RRRRR SSSSS DDDDD OOOOO
-address = Registers[D] + Registers[O];
-
-memory_write_bytes(address, bytes: N, value: Registers[R]);
-memory_write_bytes(address + N, bytes: N, value: Registers[S]);
-```
-
-## Bit Instructions
-### `bxt`
-#### Description
-The `sbxt` and `ubxt` instructions extract bits from the second register and store them in the first register.
-
-#### Assembler Symbols
-```
-sbxt <Rd>, <Rs>, <ImmStart6>, <ImmCount6>
-ubxt <Rd>, <Rs>, <ImmStart6>, <ImmCount6>
-```
-
-`<Rd>`: The register to store the extracted bits in.
-`<Rs>`: The register to load the bits from
-`<ImmStart6>`: The lowest bit to load.
-`<ImmCount6>`: The amount of bits starting at `<ImmStart6>` to load.
-
-The `sbxt` mnemonic causes sign extention.
-
-#### Pseudocode
-```c
-// 0101110 DDDDD SSSSS __ X NNNNNN LLLLLL
-bitmask = bitmask(bits: N);
-value = Registers[S] & (bitmask << L);
-if (X) {
-    value = sign_extend(value, bits: N);
-}
-Registers[D] = value;
-```
-
-### `bdp`
-#### Description
-The `sbdp` and `ubdp` instructions deposit bits from the second register into the first register.
-
-#### Assembler Symbols
-```
-sbdp <Rd>, <Rs>, <ImmStart6>, <ImmCount6>
-ubdp <Rd>, <Rs>, <ImmStart6>, <ImmCount6>
-```
-
-`<Rd>`: The register to deposit the bits into.
-`<Rs>`: The register to load the bits from.
-`<ImmStart6>`: The location where to store the bits in the destination register.
-`<ImmCount6>`: The amount of bits starting at `<ImmStart6>` to store.
-
-Even though there are two mnemonics for a bit deposit, both `sbdp` and `ubdp` behave in exactly the same way.
-
-#### Pseudocode
-```c
-// 0101111 DDDDD SSSSS __ X NNNNNN LLLLLL
-bitmask = bitmask(bits: N);
-value = (Registers[S] & bitmask) << L;
-Registers[D] = Registers[D] & (invert_mask(bitmask) << L);
-Registers[D] = Registers[D] | value;
-```
-
-## Test and Compare
-### `tst`
-#### Description
-The `tst` instruction calculates the logical and between two values and sets the flags accordingly.
-The result is ignored.
-
-#### Assembler Symbols
-```
-tst <Rn>, <Rm>
-tst <Rn>, <Imm20>
-```
-
-`<Rn>`: The left register of the and operation.
-`<Rm>`: The right register of the and operation.
-`<Imm20>`: The right value of the and operation.
-
-#### Pseudocode
-```c
-// 10001110 _________ AAAAA BBBBB _____
-set_flags(Registers[A] & Registers[B]);
-```
-```c
-// 1100010 RRRRR IIIIIIIIIIIIIIIIIIII
-set_flags(Registers[A] & zero_extend(I, bits: 20));
-```
-### `cmp`
-#### Description
-The `cmp` instruction calculates the difference of the two values and sets the flags accordingly.
-The result is ignored.
-
-#### Assembler Symbols
-```
-cmp <Rn>, <Rm>
-cmp <Rn>, <Imm20>
-```
-
-`<Rn>`: The left register of the subtract operation.
-`<Rm>`: The right register of the subtract operation.
-`<Imm20>`: The right value of the subtract operation.
-
-#### Pseudocode
-```c
-// 10001111 _________ AAAAA BBBBB _____
-set_flags(Registers[A] - Registers[B]);
-```
-```c
-// 1100011 RRRRR IIIIIIIIIIIIIIIIIIII
-set_flags(Registers[A] - zero_extend(I, bits: 20));
-```
-
-## Loading Registers
-### `lea`
-#### Description
-The `lea` instruction loads a register with the effective address of a label.
-
-#### Assembler Symbols
-```
-lea <Rd>, <label>
-```
-
-`<Rn>`: The register to store the address in.
-`<label>`: The program label to load the address of. It is the signed offset from the current instruction and is encoded as `O` times 4.
-
-#### Pseudocode
-```c
-// 1100000 RRRRR OOOOOOOOOOOOOOOOOOOO
-Registers[R] = PC + sign_extend(O, bits: 20);
-```
-
-### `movz`/`movk`
-#### Description
-The `movz` and `movk` instructions load a register with an immediate value.
-The `movz` zeroes out the target register.
-The `movk` zeroes out only the 16 bits selected to contain the immediate.
-
-#### Assembler Symbols
-```
-movz <Rd>, <Imm16>, shl <Shift4>
-movk <Rd>, <Imm16>, shl <Shift4>
-movz <Rd>, <Imm16>                  ; alias for: movz <Rd>, <Imm16>, shl 0
-movk <Rd>, <Imm16>                  ; alias for: movk <Rd>, <Imm16>, shl 0
-```
-
-`<Rn>`: The register to store the immediate value in
-`<Imm16>`: The immediate value to store.
-`<Shift4>`: How many 16-bit slots to shift the value by before storing.
-
-#### Pseudocode
-```c
-// 1100001 RRRRR _ N SS IIIIIIIIIIIIIIII
-mask = invert_mask(bitmask(bits: 16)) << S;
-value = zero_extend(I, bits: 16) << S;
-if (N) {
-    Registers[R] = value;
-} else {
-    Registers[R] = Registers[R] & mask;
-    Registers[R] = Registers[R] | value;
-}
-```
-
-### `svc`
-#### Pseudocode
-```c
-// 1100100 _________________________
-flags = get_flags();
-
-Registers[0] = execute_system_call(
-    Registers[0],
-    Registers[1],
-    Registers[2],
-    Registers[3],
-    Registers[4],
-    Registers[5],
-    Registers[6],
-    Registers[7]
-);
-
-restore_flags(flags);
-```
-
-## Float Operations
-### `fadd`
-#### Pseudocode
-```c
-// 100100100000 _____ DDDDD AAAAA BBBBB
-FloatRegisters[D] = FloatRegisters[A] + FloatRegisters[B];
-```
-### `faddi`
-#### Pseudocode
-```c
-// 100100100001 _____ DDDDD AAAAA BBBBB
-FloatRegisters[D] = FloatRegisters[A] + convert_to_float64(Registers[B]);
-```
-### `fsub`
-#### Pseudocode
-```c
-// 100100100010 _____ DDDDD AAAAA BBBBB
-FloatRegisters[D] = FloatRegisters[A] - FloatRegisters[B];
-```
-### `fsubi`
-#### Pseudocode
-```c
-// 100100100011 _____ DDDDD AAAAA BBBBB
-FloatRegisters[D] = FloatRegisters[A] - convert_to_float64(Registers[B]);
-```
-### `fmul`
-#### Pseudocode
-```c
-// 100100100100 _____ DDDDD AAAAA BBBBB
-FloatRegisters[D] = FloatRegisters[A] * FloatRegisters[B];
-```
-### `fmuli`
-#### Pseudocode
-```c
-// 100100100101 _____ DDDDD AAAAA BBBBB
-FloatRegisters[D] = FloatRegisters[A] * convert_to_float64(Registers[B]);
-```
-### `fdiv`
-#### Pseudocode
-```c
-// 100100100110 _____ DDDDD AAAAA BBBBB
-FloatRegisters[D] = FloatRegisters[A] / FloatRegisters[B];
-```
-### `fdivi`
-#### Pseudocode
-```c
-// 100100100111 _____ DDDDD AAAAA BBBBB
-FloatRegisters[D] = FloatRegisters[A] / convert_to_float64(Registers[B]);
-```
-### `fmod`
-#### Pseudocode
-```c
-// 100100101000 _____ DDDDD AAAAA BBBBB
-FloatRegisters[D] = FloatRegisters[A] % FloatRegisters[B];
-```
-### `fmodi`
-#### Pseudocode
-```c
-// 100100101001 _____ DDDDD AAAAA BBBBB
-FloatRegisters[D] = FloatRegisters[A] % convert_to_float64(Registers[B]);
-```
-### `i2f`
-#### Pseudocode
-```c
-// 100100101010 _____ DDDDD SSSSS
-FloatRegisters[D] = convert_to_float64(Registers[S]);
-```
-### `f2i`
-#### Pseudocode
-```c
-// 100100101011 _____ DDDDD SSSSS
-Registers[D] = convert_to_int64(FloatRegisters[S]);
-```
-### `fsin`
-#### Pseudocode
-```c
-// 100100101100 _____ DDDDD SSSSS
-FloatRegisters[D] = sin(FloatRegisters[S]);
-```
-### `fsqrt`
-#### Pseudocode
-```c
-// 100100101101 _____ DDDDD SSSSS
-FloatRegisters[D] = sqrt(FloatRegisters[S]);
-```
-### `fcmp`
-#### Pseudocode
-```c
-// 100100101110 _____ AAAAA BBBBB
-set_flags(FloatRegisters[A] % FloatRegisters[B]);
-```
-### `fcmpi`
-#### Pseudocode
-```c
-// 100100101111 _____ AAAAA BBBBB
-set_flags(FloatRegisters[A] % convert_to_float64(Registers[B]));
-```
+|`.ascii`|Puts the following string literal into the binary without adding a null terminator|
+|`.asciz`|Puts the following string literal into the binary|
+|`.byte`|Puts a byte into the binary|
+|`.word`|Puts a word into the binary|
+|`.dword`|Puts a doubleword into the binary|
+|`.qword`|Puts a quadword into the binary|
+|`.float`|Puts a single precision float into the binary|
+|`.double`|Puts a double precision float into the binary|
+|`.offset`|Puts the address of a symbol into the binary|
+|`.zerofill n`|Inserts n zero bytes into the binary|
+|`.global label`|Marks the specified label as global, meaning it can be seen from other binary files|
