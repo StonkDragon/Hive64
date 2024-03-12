@@ -27,6 +27,10 @@ typedef QWord_t(*svc_call)(QWord_t,QWord_t,QWord_t,QWord_t,QWord_t,QWord_t,QWord
 
 hive_register_file_t* registers;
 hive_vector_register_t* vector_registers;
+hive_instruction_t* supervisor_entry[MODE_COUNT] = {NULL};
+QWord_t idt_count = 0;
+hive_instruction_t** idt = NULL;
+hive_register_t cr[8] = {0};
 
 QWord_t coredump(QWord_t x) {
     printf("Registers:\n");
@@ -105,6 +109,12 @@ static inline SQWord_t set_flags(hive_flag_register_t* fr, SQWord_t res) {
 #define BRANCH(to)                  (r[REG_PC].asQWord = (to) - sizeof(hive_instruction_t))
 #define BRANCH_RELATIVE(offset)     BRANCH(PC_REL(offset))
 #define LINK()                      (r[REG_LR].asQWord = r[REG_PC].asQWord)
+#define CHECK_PRIV(fr, min)         ((fr)->exec_mode <= (min))
+#define INTERRUPT(int)              do { \
+    fr->exec_mode--; \
+    LINK(); \
+    BRANCH(idt[INT_IP]); \
+} while (0)
 
 #define ROR(_a, _b) ((_a) >> (_b)) | ((_a) << ((sizeof(_a) << 3) - (_b)))
 #define ROL(_a, _b) ROR(_a, (sizeof(_a) << 3) - (_b))
@@ -163,40 +173,40 @@ BEGIN_OP(branch_cb)
 END_OP
 
 BEGIN_OP(ai_add)
-    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord + (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord + ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_sub)
-    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord - (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord - ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_mul)
-    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord * (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord * ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_div)
-    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord / (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord / ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_mod)
-    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord % (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord % ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_and)
-    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord & (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord & ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_or)
-    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord | (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord | ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_xor)
-    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord ^ (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord ^ ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_shl)
-    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord << (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord << ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_shr)
-    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord >> (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asQWord = r[ins.rri.r2].asQWord >> ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_rol)
-    r[ins.rri.r1].asQWord = ROL(r[ins.rri.r2].asQWord, ins.rri.imm);
+    r[ins.rri.r1].asQWord = ROL(r[ins.rri.r2].asQWord, ((QWord_t) ins.rri.imm << ins.rri.shift));
 END_OP
 BEGIN_OP(ai_ror)
-    r[ins.rri.r1].asQWord = ROR(r[ins.rri.r2].asQWord, ins.rri.imm);
+    r[ins.rri.r1].asQWord = ROR(r[ins.rri.r2].asQWord, ((QWord_t) ins.rri.imm << ins.rri.shift));
 END_OP
 BEGIN_OP(ai_neg)
     r[ins.rri.r1].asSQWord = -r[ins.rri.r2].asSQWord;
@@ -205,7 +215,7 @@ BEGIN_OP(ai_not)
     r[ins.rri.r1].asQWord = ~r[ins.rri.r2].asQWord;
 END_OP
 BEGIN_OP(ai_asr)
-    r[ins.rri.r1].asSQWord = r[ins.rri.r2].asSQWord >> (QWord_t) ins.rri.imm;
+    r[ins.rri.r1].asSQWord = r[ins.rri.r2].asSQWord >> ((QWord_t) ins.rri.imm << ins.rri.shift);
 END_OP
 BEGIN_OP(ai_swe)
     r[ins.rri.r1].asQWord = htonll(r[ins.rri.r2].asQWord);
@@ -365,40 +375,40 @@ BEGIN_OP(float32_cmpi)
 END_OP
 
 BEGIN_OP(ar_add)
-    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord + r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord + (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_sub)
-    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord - r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord - (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_mul)
-    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord * r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord * (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_div)
-    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord / r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord / (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_mod)
-    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord % r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord % (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_and)
-    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord & r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord & (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_or)
-    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord | r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord | (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_xor)
-    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord ^ r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord ^ (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_shl)
-    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord << r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord << (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_shr)
-    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord >> r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asQWord = r[ins.rrr.r2].asQWord >> (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_rol)
-    r[ins.rrr.r1].asQWord = ROL(r[ins.rrr.r2].asQWord, r[ins.rrr.r3].asQWord);
+    r[ins.rrr.r1].asQWord = ROL(r[ins.rrr.r2].asQWord, (r[ins.rrr.r3].asQWord << ins.rrr.shift));
 END_OP
 BEGIN_OP(ar_ror)
-    r[ins.rrr.r1].asQWord = ROR(r[ins.rrr.r2].asQWord, r[ins.rrr.r3].asQWord);
+    r[ins.rrr.r1].asQWord = ROR(r[ins.rrr.r2].asQWord, (r[ins.rrr.r3].asQWord << ins.rrr.shift));
 END_OP
 BEGIN_OP(ar_neg)
     r[ins.rrr.r1].asSQWord = -r[ins.rrr.r2].asSQWord;
@@ -407,7 +417,7 @@ BEGIN_OP(ar_not)
     r[ins.rrr.r1].asQWord = ~r[ins.rrr.r2].asQWord;
 END_OP
 BEGIN_OP(ar_asr)
-    r[ins.rrr.r1].asSQWord = r[ins.rrr.r2].asSQWord >> r[ins.rrr.r3].asQWord;
+    r[ins.rrr.r1].asSQWord = r[ins.rrr.r2].asSQWord >> (r[ins.rrr.r3].asQWord << ins.rrr.shift);
 END_OP
 BEGIN_OP(ar_swe)
     r[ins.rrr.r1].asQWord = htonll(r[ins.rrr.r2].asQWord);
@@ -536,16 +546,38 @@ BEGIN_OP(ri_cmp)
     cmp(fr, r[ins.ri.r1].asQWord, ins.ri.imm);
 END_OP
 BEGIN_OP(ri_svc)
-    r[0].asQWord = svcs[r[8].asQWord](
-        r[0].asQWord,
-        r[1].asQWord,
-        r[2].asQWord,
-        r[3].asQWord,
-        r[4].asQWord,
-        r[5].asQWord,
-        r[6].asQWord,
-        r[7].asQWord
-    );
+    if CHECK_PRIV(fr, MODE_HYPERVISOR) {
+        r[0].asQWord = svcs[r[8].asQWord](
+            r[0].asQWord,
+            r[1].asQWord,
+            r[2].asQWord,
+            r[3].asQWord,
+            r[4].asQWord,
+            r[5].asQWord,
+            r[6].asQWord,
+            r[7].asQWord
+        );
+    } else {
+        fr->exec_mode--;
+        LINK();
+        BRANCH(supervisor_entry[fr->exec_mode]);
+    }
+END_OP
+BEGIN_OP(ri_rsv)
+    if CHECK_PRIV(fr, MODE_SUPERVISOR) {
+        fr->exec_mode++;
+        r[REG_PC] = r[REG_LR];
+    } else {
+        INTERRUPT(INT_IP);
+    }
+END_OP
+BEGIN_OP(ri_sidt)
+    if CHECK_PRIV(fr, MODE_SUPERVISOR) {
+        idt_count = r[ins.ri_s.r1].asQWord;
+        idt = PC_REL(ins.ri_s.imm);
+    } else {
+        INTERRUPT(INT_IP);
+    }
 END_OP
 
 #define vop_(_type, _what) for (size_t i = 0; i < sizeof(v[0].as ## _type) / sizeof(v[0].as ## _type[0]); i++) { \
@@ -743,28 +775,7 @@ END_OP
 BEGIN_OP(vpu_f_mov)
     v[ins.vpu_mov.v1].asFloat64s[ins.vpu_mov.slot] = r[ins.vpu_mov.r2].asFloat64;
 END_OP
-BEGIN_OP(vpu_o_mov_vec)
-    v[ins.vpu_mov_vec.v1] = v[ins.vpu_mov_vec.v2];
-END_OP
-BEGIN_OP(vpu_b_mov_vec)
-    v[ins.vpu_mov_vec.v1] = v[ins.vpu_mov_vec.v2];
-END_OP
-BEGIN_OP(vpu_w_mov_vec)
-    v[ins.vpu_mov_vec.v1] = v[ins.vpu_mov_vec.v2];
-END_OP
-BEGIN_OP(vpu_d_mov_vec)
-    v[ins.vpu_mov_vec.v1] = v[ins.vpu_mov_vec.v2];
-END_OP
-BEGIN_OP(vpu_q_mov_vec)
-    v[ins.vpu_mov_vec.v1] = v[ins.vpu_mov_vec.v2];
-END_OP
-BEGIN_OP(vpu_l_mov_vec)
-    v[ins.vpu_mov_vec.v1] = v[ins.vpu_mov_vec.v2];
-END_OP
-BEGIN_OP(vpu_s_mov_vec)
-    v[ins.vpu_mov_vec.v1] = v[ins.vpu_mov_vec.v2];
-END_OP
-BEGIN_OP(vpu_f_mov_vec)
+BEGIN_OP(vpu_mov_vec)
     v[ins.vpu_mov_vec.v1] = v[ins.vpu_mov_vec.v2];
 END_OP
 #define vpu_conv_(_from, _to) { \
@@ -848,6 +859,18 @@ BEGIN_OP(vpu_s_len)
 END_OP
 BEGIN_OP(vpu_f_len)
     vpu_len(vpu_f)
+END_OP
+BEGIN_OP(vpu_ldr)
+    v[ins.vpu_ls.v1] = *(hive_vector_register_t*) (r[ins.vpu_ls.r2].asQWord + r[ins.vpu_ls.r3].asSQWord);
+END_OP
+BEGIN_OP(vpu_str)
+    *(hive_vector_register_t*) (r[ins.vpu_ls.r2].asQWord + r[ins.vpu_ls.r3].asSQWord) = v[ins.vpu_ls.v1];
+END_OP
+BEGIN_OP(vpu_ldr_imm)
+    v[ins.vpu_ls_imm.v1] = *(hive_vector_register_t*) (r[ins.vpu_ls_imm.r2].asQWord + ins.vpu_ls_imm.imm);
+END_OP
+BEGIN_OP(vpu_str_imm)
+    *(hive_vector_register_t*) (r[ins.vpu_ls_imm.r2].asQWord + ins.vpu_ls_imm.imm) = v[ins.vpu_ls_imm.v1];
 END_OP
 
 QWord_t decode_branch_target(QWord_t current_addr, hive_instruction_t ins, hive_register_t* r) {
@@ -981,6 +1004,8 @@ hive_executor_t ri_execs[] = {
     [OP_RI_tst] = exec_ri_tst,
     [OP_RI_cmp] = exec_ri_cmp,
     [OP_RI_svc] = exec_ri_svc,
+    [OP_RI_rsv] = exec_ri_rsv,
+    [OP_RI_sidt] = exec_ri_sidt,
 };
 #define vpu_execs(_type) \
 hive_executor_t vpu_ ## _type ## _execs[] = { \
@@ -991,9 +1016,13 @@ hive_executor_t vpu_ ## _type ## _execs[] = { \
     [OP_VPU_addsub] = exec_vpu_ ## _type ## _addsub, \
     [OP_VPU_madd] = exec_vpu_ ## _type ## _madd, \
     [OP_VPU_mov] = exec_vpu_ ## _type ## _mov, \
-    [OP_VPU_mov_vec] = exec_vpu_ ## _type ## _mov_vec, \
+    [OP_VPU_mov_vec] = exec_vpu_mov_vec, \
     [OP_VPU_conv] = exec_vpu_ ## _type ## _conv, \
     [OP_VPU_len] = exec_vpu_ ## _type ## _len, \
+    [OP_VPU_ldr] = exec_vpu_ldr, \
+    [OP_VPU_str] = exec_vpu_str, \
+    [OP_VPU_ldr_imm] = exec_vpu_ldr_imm, \
+    [OP_VPU_str_imm] = exec_vpu_str_imm, \
 }
 vpu_execs(o);
 vpu_execs(b);

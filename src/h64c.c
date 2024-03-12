@@ -444,6 +444,7 @@ uint8_t parse_vreg_(char* s, char* file, int line, char* value) {
                 ins.rrr.r1 = r1; \
                 ins.rrr.r2 = r2; \
                 ins.rrr.r3 = r3; \
+                ins.rrr.shift = 0; \
             } else { \
                 EXPECT(Eof, "Expected number or register, got %s"); \
             } \
@@ -453,6 +454,22 @@ uint8_t parse_vreg_(char* s, char* file, int line, char* value) {
             ins.rrr.r1 = r1; \
             ins.rrr.r2 = r1; \
             ins.rrr.r3 = r2; \
+            ins.rrr.shift = 0; \
+        } \
+        if (tokens.items[i + 1].type == Comma) { \
+            inc(); \
+            inc(); \
+            EXPECT(Identifier, "Expected 'shl', got %s"); \
+            if (!eq(tokens.items[i].value, "shl")) { \
+                EXPECT(Eof, "Expected 'shl', got %s"); \
+            } \
+            inc(); \
+            EXPECT(Number, "Expected number, got %s"); \
+            if (ins.generic.type == OP_AR) { \
+                ins.rrr.shift = parse8(tokens.items[i].value); \
+            } else if (ins.generic.type == OP_AI) { \
+                ins.rri.shift = parse8(tokens.items[i].value); \
+            } \
         } \
     } else if (tokens.items[i].type == Number) { \
         ins.generic.type = OP_AI; \

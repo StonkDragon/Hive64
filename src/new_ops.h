@@ -54,7 +54,8 @@ typedef union {
     } PACKED comp_branch;
     struct {
         uint16_t imm: 12;
-        PAD(3);
+        uint8_t shift: 2;
+        PAD(1);
         uint8_t r2: 5;
         uint8_t r1: 5;
         uint8_t op: 4;
@@ -98,6 +99,23 @@ typedef union {
     } PACKED vpu_mov;
     struct {
         uint8_t v1: 4;
+        uint8_t r2: 5;
+        uint8_t r3: 5;
+        PAD(7);
+        uint8_t op: 4;
+        PAD(4);
+        TYPE_PAD;
+    } PACKED vpu_ls;
+    struct {
+        uint8_t v1: 4;
+        uint8_t r2: 5;
+        int16_t imm: 12;
+        uint8_t op: 4;
+        PAD(4);
+        TYPE_PAD;
+    } PACKED vpu_ls_imm;
+    struct {
+        uint8_t v1: 4;
         uint8_t v2: 4;
         PAD(10);
         uint8_t mode: 3;
@@ -138,7 +156,8 @@ typedef union {
         uint8_t r3: 5;
         uint8_t r2: 5;
         uint8_t r1: 5;
-        PAD(10);
+        uint8_t shift: 2;
+        PAD(8);
         uint8_t op: 4;
         TYPE_PAD;
     } PACKED rrr;
@@ -202,26 +221,27 @@ typedef union {
 } PACKED hive_instruction_t;
 
 #ifdef static_assert
-static_assert(sizeof(((hive_instruction_t*) NULL)->generic) == sizeof(DWord_t), "hive_instruction_t::generic is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->branch) == sizeof(DWord_t), "hive_instruction_t::branch is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->comp_branch) == sizeof(DWord_t), "hive_instruction_t::comp_branch is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->rri) == sizeof(DWord_t), "hive_instruction_t::rri is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->rri_ls) == sizeof(DWord_t), "hive_instruction_t::rri_ls is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->rri_bit) == sizeof(DWord_t), "hive_instruction_t::rri_bit is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->vpu) == sizeof(DWord_t), "hive_instruction_t::vpu is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->vpu_mov) == sizeof(DWord_t), "hive_instruction_t::vpu_mov is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->vpu_mov_vec) == sizeof(DWord_t), "hive_instruction_t::vpu_mov_vec is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->vpu_conv) == sizeof(DWord_t), "hive_instruction_t::vpu_conv is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->vpu_arith) == sizeof(DWord_t), "hive_instruction_t::vpu_arith is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->vpu_len) == sizeof(DWord_t), "hive_instruction_t::vpu_len is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->rrr) == sizeof(DWord_t), "hive_instruction_t::rrr is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->float_rrr) == sizeof(DWord_t), "hive_instruction_t::float_rrr is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->rrr_ls) == sizeof(DWord_t), "hive_instruction_t::rrr_ls is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->ri) == sizeof(DWord_t), "hive_instruction_t::ri is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->ri_branch) == sizeof(DWord_t), "hive_instruction_t::ri_branch is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->ri_cbranch) == sizeof(DWord_t), "hive_instruction_t::ri_cbranch is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->ri_s) == sizeof(DWord_t), "hive_instruction_t::ri_s is wrong size");
-static_assert(sizeof(((hive_instruction_t*) NULL)->ri_mov) == sizeof(DWord_t), "hive_instruction_t::ri_mov is wrong size");
+#define CHECK(what) static_assert(sizeof(((hive_instruction_t*) NULL)->what) == sizeof(DWord_t), "hive_instruction_t::" #what " is wrong size")
+CHECK(generic);
+CHECK(branch);
+CHECK(comp_branch);
+CHECK(rri);
+CHECK(rri_ls);
+CHECK(rri_bit);
+CHECK(vpu);
+CHECK(vpu_mov);
+CHECK(vpu_mov_vec);
+CHECK(vpu_conv);
+CHECK(vpu_arith);
+CHECK(vpu_len);
+CHECK(rrr);
+CHECK(float_rrr);
+CHECK(rrr_ls);
+CHECK(ri);
+CHECK(ri_branch);
+CHECK(ri_cbranch);
+CHECK(ri_s);
+CHECK(ri_mov);
 #endif
 
 typedef union {
@@ -258,10 +278,17 @@ typedef union hive_register_t {
     hive_instruction_t*     asInstrPtr;
 } hive_register_t;
 
+enum exec_mode {
+    MODE_HYPERVISOR,
+    MODE_SUPERVISOR,
+    MODE_USER,
+    MODE_COUNT
+};
+
 typedef struct {
     uint8_t             negative:1;
     uint8_t             equal:1;
-    uint8_t             pipeline_invalid:1;
+    enum exec_mode      exec_mode:2;
     uint64_t            reserved:29;
 } PACKED hive_flag_register_t;
 
@@ -269,17 +296,15 @@ typedef struct {
 #define REG_SP 30
 #define REG_PC 31
 
+#define INT_UD 0x01 // Undefined opcode
+#define INT_PF 0x02 // Page fault
+#define INT_IL 0x03 // Illegal instruction
+#define INT_IP 0x04 // Insufficient privileges
+
 typedef struct {
     hive_register_t r[32];
     hive_flag_register_t flags;
 } hive_register_file_t;
-
-enum exec_mode {
-    MODE_HYPERVISOR,
-    MODE_SUPERVISOR,
-    MODE_USER,
-    MODE_COUNT
-};
 
 typedef enum _TokenType {
     Eof,

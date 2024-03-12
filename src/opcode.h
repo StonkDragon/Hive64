@@ -90,6 +90,10 @@
 #define OP_VPU_mov_vec  0x7 // 7
 #define OP_VPU_conv     0x8 // 8
 #define OP_VPU_len      0x9 // 9
+#define OP_VPU_ldr      0xA // 10
+#define OP_VPU_str      0xB // 11
+#define OP_VPU_ldr_imm  0xC // 12
+#define OP_VPU_str_imm  0xD // 13
 
 #define OP_BR           0x5
 
@@ -109,3 +113,5 @@
 #define OP_RI_tst       0x2
 #define OP_RI_cmp       0x3
 #define OP_RI_svc       0x4
+#define OP_RI_rsv       0x5
+#define OP_RI_sidt      0x6
