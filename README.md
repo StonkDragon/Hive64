@@ -44,13 +44,25 @@ Vector instruction mnemonics differentiate between the element type by a prefix.
 |`vo`|first quadword|
 
 ## Instructions
-Instructions are encoded as 32-bit values.
+Instructions are encoded as 32-bit values, and every instruction is conditional.
 
 ### Instruction encoding description
 - `[]`: all bits in brackets belong to some argument
 - `.`: this bit is ignored by the instruction
-- `0`: this bit is `0` ignored by the instruction
-- `1`: this bit is `1` ignored by the instruction
+- `ccc`: specifies under which condition the instruction should execute
+
+|Condition|Bit value|
+|-|-|
+|`eq`|`000`|
+|`le`|`001`|
+|`lt`|`010`|
+|`always`|`011`|
+|`ne`|`100`|
+|`gt`|`101`|
+|`ge`|`110`|
+|`never`|`111`|
+
+Every condition except `always` and `never` can be specified in the assembler by putting `.` followed by the condition after the instruction mnemonic.
 
 ### List of instructions
 - [Branches](#branches)
@@ -63,247 +75,215 @@ Instructions are encoded as 32-bit values.
 ### Branches
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`ret`|                     `00110001111111110...000000000000`|Returns from a subroutine|
-|`b offset`|                `0000000[---------imm25---------]`|Branches to an address|
-|`bl offset`|               `0000001[---------imm25---------]`|Branches to a subroutine|
-|`blt offset`|              `0000010[---------imm25---------]`|Branches to an address if less than|
-|`bllt offset`|             `0000011[---------imm25---------]`|Branches to a subroutine if less than|
-|`bgt offset`|              `0000100[---------imm25---------]`|Branches to an address if greater than|
-|`blgt offset`|             `0000101[---------imm25---------]`|Branches to a subroutine if greater than|
-|`bge offset`|              `0000110[---------imm25---------]`|Branches to an address if greater than or equal|
-|`blge offset`|             `0000111[---------imm25---------]`|Branches to a subroutine if greater than or equal|
-|`ble offset`|              `0001000[---------imm25---------]`|Branches to an address if less than or equal|
-|`blle offset`|             `0001001[---------imm25---------]`|Branches to a subroutine if less than or equal|
-|`beq offset`|              `0001010[---------imm25---------]`|Branches to an address if equal|
-|`bleq offset`|             `0001011[---------imm25---------]`|Branches to a subroutine if equal|
-|`bne offset`|              `0001100[---------imm25---------]`|Branches to an address if not equal|
-|`blne offset`|             `0001101[---------imm25---------]`|Branches to a subroutine if not equal|
-|`cbnz r1, offset`|         `0001110[r1-]0[------imm19------]`|Branches to an address if register is not zero|
-|`cblnz r1, offset`|        `0001111[r1-]0[------imm19------]`|Branches to a subroutine if register is not zero|
-|`cbz r1, offset`|          `0001110[r1-]1[------imm19------]`|Branches to an address if register is zero|
-|`clbz r1, offset`|         `0001111[r1-]1[------imm19------]`|Branches to a subroutine if register is zero|
-|`br r1`|                   `1010000[r1-]....................`|Branches to a register value|
-|`blr r1`|                  `1010001[r1-]....................`|Branches and links to a register value|
-|`brlt r1`|                 `1010010[r1-]....................`|Branches to a register value if less than|
-|`blrlt r1`|                `1010011[r1-]....................`|Branches and links to a register value if less than|
-|`brgt r1`|                 `1010100[r1-]....................`|Branches to a register value if greater than|
-|`blrgt r1`|                `1010101[r1-]....................`|Branches and links to a register value if greater than|
-|`brge r1`|                 `1010110[r1-]....................`|Branches to a register value if greater than or equal|
-|`blrge r1`|                `1010111[r1-]....................`|Branches and links to a register value if greater than or equal|
-|`brle r1`|                 `1011000[r1-]....................`|Branches to a register value if less than or equal|
-|`blrle r1`|                `1011001[r1-]....................`|Branches and links to a register value if less than or equal|
-|`breq r1`|                 `1011010[r1-]....................`|Branches to a register value if equal|
-|`blreq r1`|                `1011011[r1-]....................`|Branches and links to a register value if equal|
-|`brne r1`|                 `1011100[r1-]....................`|Branches to a register value if not equal|
-|`blrne r1`|                `1011101[r1-]....................`|Branches and links to a register value if not equal|
-|`cbrnz r1, r2`|            `1011110[r1-]..............0[r2-]`|Branches to a register value if other register is not zero|
-|`cblrnz r1, r2`|           `1011111[r1-]..............0[r2-]`|Branches and links to a register value if other register is not zero|
-|`cbrz r1, r2`|             `1011110[r1-]..............1[r2-]`|Branches to a register value if other register is zero|
-|`cblrz r1, r2`|            `1011111[r1-]..............1[r2-]`|Branches and links to a register value if other register is zero|
+|`ret`|                     `ccc01100001111111101000100000000`|Returns from a subroutine|
+|`b offset`|                `ccc0000[---------imm25---------]`|Branches to an address|
+|`bl offset`|               `ccc0001[---------imm25---------]`|Branches to a subroutine|
+|`br r1`|                   `ccc0010[r1-]....................`|Branches to a register value|
+|`blr r1`|                  `ccc0011[r1-]....................`|Branches and links to a register value|
 
 ### Integer Arithmetic
-Arithmetic instructions with a 12-bit immediate or 3rd register allow scaling of the immediate/register by 1, 2, 4, or 8.
-The shift is encoded as a shift left in the `SL` field in the encoding.
+#### Register and Immediate value
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`add r1, r2, imm`|         `0010000[r1-][r2-].SL[--imm12---]`|Adds r2 and an immediate and stores the result in r1|
-|`add r1, r2, r3`|          `0110000........SL[r1-][r2-][r3-]`|Adds r2 and r3 and stores the result in r1|
-|`sub r1, r2, imm`|         `0010001[r1-][r2-].SL[--imm12---]`|Subtracts an immediate from r2 and stores the result in r1|
-|`sub r1, r2, r3`|          `0110001........SL[r1-][r2-][r3-]`|Subtracts r3 from r2 and stores the result in r1|
-|`mul r1, r2, imm`|         `0010010[r1-][r2-].SL[--imm12---]`|Multiplies r2 and an immediate and stores the result in r1|
-|`mul r1, r2, r3`|          `0110010........SL[r1-][r2-][r3-]`|Multiplies r2 and r3 and stores the result in r1|
-|`div r1, r2, imm`|         `0010011[r1-][r2-].SL[--imm12---]`|Divides r2 by an immediate and stores the result in r1|
-|`div r1, r2, r3`|          `0110011........SL[r1-][r2-][r3-]`|Divides r2 by r3 and stores the result in r1|
-|`mod r1, r2, imm`|         `0010100[r1-][r2-].SL[--imm12---]`|Calculates the remainder of the division of r2 and an immediate and stores it in r1|
-|`mod r1, r2, r3`|          `0110100........SL[r1-][r2-][r3-]`|Calculates the remainder of the division of r2 and r3 and stores it in r1|
-|`and r1, r2, imm`|         `0010101[r1-][r2-].SL[--imm12---]`|Ands r2 and an immediate and stores the result in r1|
-|`and r1, r2, r3`|          `0110101........SL[r1-][r2-][r3-]`|Ands r2 and r3 and stores the result in r1|
-|`or r1, r2, imm`|          `0010110[r1-][r2-].SL[--imm12---]`|Ors r2 and an immediate and stores the result in r1|
-|`or r1, r2, r3`|           `0110110........SL[r1-][r2-][r3-]`|Ors r2 and r3 and stores the result in r1|
-|`xor r1, r2, imm`|         `0010111[r1-][r2-].SL[--imm12---]`|Xors r2 and an immediate and stores the result in r1|
-|`xor r1, r2, r3`|          `0110111........SL[r1-][r2-][r3-]`|Xors r2 and r3 and stores the result in r1|
-|`shl r1, r2, imm`|         `0011000[r1-][r2-].SL[--imm12---]`|Shifts r2 left by an immediate and stores the result in r1|
-|`shl r1, r2, r3`|          `0111000........SL[r1-][r2-][r3-]`|Shifts r2 left by r3 and stores the result in r1|
-|`shr r1, r2, imm`|         `0011001[r1-][r2-].SL[--imm12---]`|Shifts r2 right by an immediate and stores the result in r1|
-|`shr r1, r2, r3`|          `0111001........SL[r1-][r2-][r3-]`|Shifts r2 right by r3 and stores the result in r1|
-|`rol r1, r2, imm`|         `0011010[r1-][r2-].SL[--imm12---]`|Rotates r2 left by an immediate and stores the result in r1|
-|`rol r1, r2, r3`|          `0111010........SL[r1-][r2-][r3-]`|Rotates r2 left by r3 and stores the result in r1|
-|`ror r1, r2, imm`|         `0011011[r1-][r2-].SL[--imm12---]`|Rotates r2 right by an immediate and stores the result in r1|
-|`ror r1, r2, r3`|          `0111011........SL[r1-][r2-][r3-]`|Rotates r2 right by r3 and stores the result in r1|
-|`neg r1, r2`|              `0111100..........[r1-][r2-].....`|Stores the negative value of r2 in r1|
-|`not r1, r2`|              `0111101..........[r1-][r2-].....`|Stores the bitwise not of r2 in r1|
-|`asr r1, r2, imm`|         `0011110[r1-][r2-].SL[--imm12---]`|Arithmetically shifts r2 right by an immediate and stores the result in r1|
-|`asr r1, r2, r3`|          `0111110........SL[r1-][r2-][r3-]`|Arithmetically shifts r2 right by r3 and stores the result in r1|
-|`swe r1, r2`|              `0111111..........[r1-][r2-].....`|Switches all bytes in r2 and stores the result in r1|
-|`tst r1, r2`|              `1000010..........[r1-][r2-].....`|Subtracts r2 from r1 and sets the flag based on the result. Result ignored|
-|`tst r1, imm`|             `1100010[r1-][-------imm20------]`|Subtracts an immediate from r1 and sets the flag based on the result. Result ignored|
-|`cmp r1, r2`|              `1000011..........[r1-][r2-].....`|Ands r1 and r2 and sets the flag based on the result. Result ignored|
-|`cmp r1, imm`|             `1100011[r1-][-------imm20------]`|Ands r1 and an immediate and sets the flag based on the result. Result ignored|
+|`add r1, r2, imm`|         `ccc0100000[r1-][r2-]0001[-imm8-]`|Adds r2 and an immediate and stores the result in r1|
+|`sub r1, r2, imm`|         `ccc0100010[r1-][r2-]0001[-imm8-]`|Subtracts an immediate from r2 and stores the result in r1|
+|`cmp r1, imm`|             `ccc0100011[r1-][r2-]0001[-imm8-]`|Compares r1 and an immediate by calculating the difference of the two values|
+|`mul r1, r2, imm`|         `ccc0100100[r1-][r2-]0001[-imm8-]`|Multiplies r2 and an immediate and stores the result in r1|
+|`div r1, r2, imm`|         `ccc0100110[r1-][r2-]0001[-imm8-]`|Divides r2 by an immediate and stores the result in r1|
+|`mod r1, r2, imm`|         `ccc0101000[r1-][r2-]0001[-imm8-]`|Calculates the remainder of the division of r2 and an immediate and stores it in r1|
+|`and r1, r2, imm`|         `ccc0101010[r1-][r2-]0001[-imm8-]`|Ands r2 and an immediate and stores the result in r1|
+|`tst r1, imm`|             `ccc0101011[r1-][r2-]0001[-imm8-]`|Compares r1 and an immediate by anding the two values|
+|`or r1, r2, imm`|          `ccc0101100[r1-][r2-]0001[-imm8-]`|Ors r2 and an immediate and stores the result in r1|
+|`xor r1, r2, imm`|         `ccc0101110[r1-][r2-]0001[-imm8-]`|Xors r2 and an immediate and stores the result in r1|
+|`shl r1, r2, imm`|         `ccc0110000[r1-][r2-]0001[-imm8-]`|Shifts r2 left by an immediate and stores the result in r1|
+|`shr r1, r2, imm`|         `ccc0110010[r1-][r2-]0001[-imm8-]`|Shifts r2 right by an immediate and stores the result in r1|
+|`rol r1, r2, imm`|         `ccc0110100[r1-][r2-]0001[-imm8-]`|Rotates r2 left by an immediate and stores the result in r1|
+|`ror r1, r2, imm`|         `ccc0110110[r1-][r2-]0001[-imm8-]`|Rotates r2 right by an immediate and stores the result in r1|
+|`asr r1, r2, imm`|         `ccc0111100[r1-][r2-]0001[-imm8-]`|Arithmetically shifts r2 right by an immediate and stores the result in r1|
+
+#### Register and Register
+|Mnemonic|Encoding|Description|
+|-|-|-|
+|`add r1, r2, r3`|          `ccc0100000[r1-][r2-]0000...[r3-]`|Adds r2 and r3 and stores the result in r1|
+|`sub r1, r2, r3`|          `ccc0100010[r1-][r2-]0000...[r3-]`|Subtracts r3 from r2 and stores the result in r1|
+|`cmp r1, r2`|              `ccc0100011[r1-][r2-]0000...[r3-]`|Compares r1 and r2 by calculating the difference of the two values|
+|`mul r1, r2, r3`|          `ccc0100100[r1-][r2-]0000...[r3-]`|Multiplies r2 and r3 and stores the result in r1|
+|`div r1, r2, r3`|          `ccc0100110[r1-][r2-]0000...[r3-]`|Divides r2 by r3 and stores the result in r1|
+|`mod r1, r2, r3`|          `ccc0101000[r1-][r2-]0000...[r3-]`|Calculates the remainder of the division of r2 and r3 and stores it in r1|
+|`and r1, r2, r3`|          `ccc0101010[r1-][r2-]0000...[r3-]`|Ands r2 and r3 and stores the result in r1|
+|`tst r1, r2`|              `ccc0101011[r1-][r2-]0000...[r3-]`|Compares r1 and r2 by anding the two values|
+|`or r1, r2, r3`|           `ccc0101100[r1-][r2-]0000...[r3-]`|Ors r2 and r3 and stores the result in r1|
+|`xor r1, r2, r3`|          `ccc0101110[r1-][r2-]0000...[r3-]`|Xors r2 and r3 and stores the result in r1|
+|`shl r1, r2, r3`|          `ccc0110000[r1-][r2-]0000...[r3-]`|Shifts r2 left by r3 and stores the result in r1|
+|`shr r1, r2, r3`|          `ccc0110010[r1-][r2-]0000...[r3-]`|Shifts r2 right by r3 and stores the result in r1|
+|`rol r1, r2, r3`|          `ccc0110100[r1-][r2-]0000...[r3-]`|Rotates r2 left by r3 and stores the result in r1|
+|`ror r1, r2, r3`|          `ccc0110110[r1-][r2-]0000...[r3-]`|Rotates r2 right by r3 and stores the result in r1|
+|`neg r1, r2`|              `ccc0111000[r1-][r2-]0000........`|Stores the negative value of r2 in r1|
+|`not r1, r2`|              `ccc0111010[r1-][r2-]0000........`|Stores the bitwise not of r2 in r1|
+|`asr r1, r2, r3`|          `ccc0111100[r1-][r2-]0000...[r3-]`|Arithmetically shifts r2 right by r3 and stores the result in r1|
+|`swe r1, r2`|              `ccc0111110[r1-][r2-]0000........`|Switches all bytes in r2 and stores the result in r1|
 
 ### Floating point Arithmetic
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`fadd r1, r2, r3`|         `100010000000.....[r1-][r2-][r3-]`|Adds float in r2 and r3 and stores the result in r1|
-|`faddi r1, r2, r3`|        `100010000010.....[r1-][r2-][r3-]`|Adds float in r2 and integer in r3 and stores the result in r1|
-|`fsub r1, r2, r3`|         `100010000100.....[r1-][r2-][r3-]`|Subtracts float in r2 from r3 and stores the result in r1|
-|`fsubi r1, r2, r3`|        `100010000110.....[r1-][r2-][r3-]`|Subtracts float in r2 from integer in r3 and stores the result in r1|
-|`fmul r1, r2, r3`|         `100010001000.....[r1-][r2-][r3-]`|Multiplies float in r2 and r3 and stores the result in r1|
-|`fmuli r1, r2, r3`|        `100010001010.....[r1-][r2-][r3-]`|Multiplies float in r2 and integer in r3 and stores the result in r1|
-|`fdiv r1, r2, r3`|         `100010001100.....[r1-][r2-][r3-]`|Divides float in r2 by r3 and stores the result in r1|
-|`fdivi r1, r2, r3`|        `100010001110.....[r1-][r2-][r3-]`|Divides float in r2 by integer in r3 and stores the result in r1|
-|`fmod r1, r2, r3`|         `100010010000.....[r1-][r2-][r3-]`|Calculates the floating point remainder of dividing float in r2 by r3 and stores it in r1|
-|`fmodi r1, r2, r3`|        `100010010010.....[r1-][r2-][r3-]`|Calculates the floating point remainder of dividing float in r2 by integer in r3 and stores it in r1|
-|`fsin r1, r2`|             `100010011000.....[r1-][r2-].....`|Calculates the sin of float in r2 and stores it in r1|
-|`fsqrt r1, r2`|            `100010011010.....[r1-][r2-].....`|Calculates the sqare root of float in r2 and stores it in r1|
-|`fcmp r1, r2`|             `100010011100.....[r1-][r2-].....`|Subtracts float in r2 from r1 and sets the flag based on the result. Result ignored|
-|`fcmpi r1, r2`|            `100010011110.....[r1-][r2-].....`|Subtracts float in r2 from integer in r1 and sets the flag based on the result. Result ignored|
-|`i2f r1, r2`|              `100010010100.....[r1-][r2-].....`|Converts the integer in r2 to a float and stores it in r1|
-|`f2i r1, r2`|              `100010010110.....[r1-][r2-].....`|Converts the float in r2 to an integer and stores it in r1|
+|`fadd r1, r2, r3`|         `ccc0100000[r1-][r2-]10010..[r3-]`|Adds float in r2 and r3 and stores the result in r1|
+|`faddi r1, r2, r3`|        `ccc0100000[r1-][r2-]10011..[r3-]`|Adds float in r2 and integer in r3 and stores the result in r1|
+|`fsub r1, r2, r3`|         `ccc0100010[r1-][r2-]10010..[r3-]`|Subtracts float in r2 from r3 and stores the result in r1|
+|`fsubi r1, r2, r3`|        `ccc0100010[r1-][r2-]10011..[r3-]`|Subtracts float in r2 from integer in r3 and stores the result in r1|
+|`fcmp r1, r2`|             `ccc0100011[r1-][r2-]10010.......`|Compares float in r2 and r1 by calculating the difference of the two values|
+|`fcmpi r1, r2`|            `ccc0100011[r1-][r2-]10011.......`|Compares float in r2 and integer in r1 by calculating the difference of the two values|
+|`fmul r1, r2, r3`|         `ccc0100100[r1-][r2-]10010..[r3-]`|Multiplies float in r2 and r3 and stores the result in r1|
+|`fmuli r1, r2, r3`|        `ccc0100100[r1-][r2-]10011..[r3-]`|Multiplies float in r2 and integer in r3 and stores the result in r1|
+|`fdiv r1, r2, r3`|         `ccc0100110[r1-][r2-]10010..[r3-]`|Divides float in r2 by r3 and stores the result in r1|
+|`fdivi r1, r2, r3`|        `ccc0100110[r1-][r2-]10011..[r3-]`|Divides float in r2 by integer in r3 and stores the result in r1|
+|`fmod r1, r2, r3`|         `ccc0101000[r1-][r2-]10010..[r3-]`|Calculates the floating point remainder of dividing float in r2 by r3 and stores it in r1|
+|`fmodi r1, r2, r3`|        `ccc0101000[r1-][r2-]10011..[r3-]`|Calculates the floating point remainder of dividing float in r2 by integer in r3 and stores it in r1|
+|`fsin r1, r2`|             `ccc0101010[r1-][r2-]10010.......`|Calculates the sin of float in r2 and stores it in r1|
+|`fsqrt r1, r2`|            `ccc0101100[r1-][r2-]10011.......`|Calculates the sqare root of float in r2 and stores it in r1|
+|`f2i r1, r2`|              `ccc0101110[r1-][r2-]10010.......`|Converts the float in r2 to an integer and stores it in r1|
+|`i2f r1, r2`|              `ccc0101110[r1-][r2-]10011.......`|Converts the integer in r2 to a float and stores it in r1|
 
 ### Utility
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`svc`|                     `1100100.........................`|Supervisor call|
-|`nop`|                     `00110000000000000...000000000000`|No operation (`shl r0, r0, 0`)|
-|`rsv`|                     `1100101.........................`|Return from supervisor call|
-|`sidt`|                    `1100110[r1-][------imm20-------]`|Load the interrupt descriptor table address and it's count with a value|
+|`svc`|                     `ccc1010.........................`|Supervisor call|
 
 ### Data transfer
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`mov r1, r2`|              `0011000[r1-][r2-]...000000000000`|Moves the value in r2 to r1 (`shl r1, r2, 0`)|
-|`lea r1, offset`|          `1100000[r1-][-------imm20------]`|Loads the effective address of offset into r1|
-|`movz r1, imm`|            `1100001[r1-]000.[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 1st 16-bit window of r1|
-|`movz r1, imm, shl 16`|    `1100001[r1-]001.[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 2nd 16-bit window of r1|
-|`movz r1, imm, shl 32`|    `1100001[r1-]010.[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 3rd 16-bit window of r1|
-|`movz r1, imm, shl 48`|    `1100001[r1-]011.[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 4th 16-bit window of r1|
-|`movk r1, imm`|            `1100001[r1-]100.[-----imm16----]`|Moves the 16-bit immediate value into the 1st 16-bit window of r1. Only clears the affected 16-bit window|
-|`movk r1, imm, shl 16`|    `1100001[r1-]101.[-----imm16----]`|Moves the 16-bit immediate value into the 2nd 16-bit window of r1. Only clears the affected 16-bit window|
-|`movk r1, imm, shl 32`|    `1100001[r1-]110.[-----imm16----]`|Moves the 16-bit immediate value into the 3rd 16-bit window of r1. Only clears the affected 16-bit window|
-|`movk r1, imm, shl 48`|    `1100001[r1-]111.[-----imm16----]`|Moves the 16-bit immediate value into the 4th 16-bit window of r1. Only clears the affected 16-bit window|
-|`ldr r1, [r2, imm]`|       `0100000[r1-][r2-]000[--imm12---]`|Loads a quadword from memory address r2 + immediate into r1|
-|`ldr r1, [r2, imm]!`|      `0100000[r1-][r2-]001[--imm12---]`|Loads a quadword from memory address r2 into r1 and adds imm to r2|
-|`ldrd r1, [r2, imm]`|      `0100000[r1-][r2-]010[--imm12---]`|Loads a doubleword from memory address r2 + immediate into r1|
-|`ldrd r1, [r2, imm]!`|     `0100000[r1-][r2-]011[--imm12---]`|Loads a doubleword from memory address r2 into r1 and adds imm to r2|
-|`ldrw r1, [r2, imm]`|      `0100000[r1-][r2-]100[--imm12---]`|Loads a word from memory address r2 + immediate into r1|
-|`ldrw r1, [r2, imm]!`|     `0100000[r1-][r2-]101[--imm12---]`|Loads a word from memory address r2 into r1 and adds imm to r2|
-|`ldrb r1, [r2, imm]`|      `0100000[r1-][r2-]110[--imm12---]`|Loads a byte from memory address r2 + immediate into r1|
-|`ldrb r1, [r2, imm]!`|     `0100000[r1-][r2-]111[--imm12---]`|Loads a byte from memory address r2 into r1 and adds imm to r2|
-|`str r1, [r2, imm]`|       `0100001[r1-][r2-]000[--imm12---]`|Stores a quadword from r1 to memory address r2 + immediate|
-|`str r1, [r2, imm]!`|      `0100001[r1-][r2-]001[--imm12---]`|Adds the immediate to r2 and stores a quadword from r1 to memory address now in r2|
-|`strd r1, [r2, imm]`|      `0100001[r1-][r2-]010[--imm12---]`|Stores a doubleword from r1 to memory address r2 + immediate|
-|`strd r1, [r2, imm]!`|     `0100001[r1-][r2-]011[--imm12---]`|Adds the immediate to r2 and stores a doubleword from r1 to memory address now in r2|
-|`strw r1, [r2, imm]`|      `0100001[r1-][r2-]100[--imm12---]`|Stores a word from r1 to memory address r2 + immediate|
-|`strw r1, [r2, imm]!`|     `0100001[r1-][r2-]101[--imm12---]`|Adds the immediate to r2 and stores a word from r1 to memory address now in r2|
-|`strb r1, [r2, imm]`|      `0100001[r1-][r2-]110[--imm12---]`|Stores a byte from r1 to memory address r2 + immediate|
-|`strb r1, [r2, imm]!`|     `0100001[r1-][r2-]111[--imm12---]`|Adds the immediate to r2 and stores a byte from r1 to memory address now in r2|
-|`ubxt r1, r2, a, b`|       `0100010[r1-][r2-]..0[a---][b---]`|Extracts a bits starting at bit b from register r2 and stores the value into r1|
-|`sbxt r1, r2, a, b`|       `0100010[r1-][r2-]..1[a---][b---]`|Extracts a bits starting at bit b from register r2 and stores the sign extended value into r1|
-|`ubdp r1, r2, a, b`|       `0100011[r1-][r2-]..0[a---][b---]`|Deposits the lowest a bits from r2 into r1 starting at bit b|
-|`ldr r1, [r2, r3]`|        `1000000.......000[r1-][r2-][r3-]`|Loads a quadword from memory address r2 + r3 into r1|
-|`ldr r1, [r2, r3]!`|       `1000000.......001[r1-][r2-][r3-]`|Loads a quadword from memory address r2 into r1 and adds r3 to r2|
-|`ldrd r1, [r2, r3]`|       `1000000.......010[r1-][r2-][r3-]`|Loads a doubleword from memory address r2 + r3 into r1|
-|`ldrd r1, [r2, r3]!`|      `1000000.......011[r1-][r2-][r3-]`|Loads a doubleword from memory address r2 into r1 and adds r3 to r2|
-|`ldrw r1, [r2, r3]`|       `1000000.......100[r1-][r2-][r3-]`|Loads a word from memory address r2 + r3 into r1|
-|`ldrw r1, [r2, r3]!`|      `1000000.......101[r1-][r2-][r3-]`|Loads a word from memory address r2 into r1 and adds r3 to r2|
-|`ldrb r1, [r2, r3]`|       `1000000.......110[r1-][r2-][r3-]`|Loads a byte from memory address r2 + r3 into r1|
-|`ldrb r1, [r2, r3]!`|      `1000000.......111[r1-][r2-][r3-]`|Loads a byte from memory address r2 into r1 and adds r3 to r2|
-|`str r1, [r2, r3]`|        `1000001.......000[r1-][r2-][r3-]`|Stores a quadword from r1 to memory address r2 + r3|
-|`str r1, [r2, r3]!`|       `1000001.......001[r1-][r2-][r3-]`|Adds r3 to r2 and stores a quadword from r1 to memory address now in r2|
-|`strd r1, [r2, r3]`|       `1000001.......010[r1-][r2-][r3-]`|Stores a doubleword from r1 to memory address r2 + r3|
-|`strd r1, [r2, r3]!`|      `1000001.......011[r1-][r2-][r3-]`|Adds r3 to r2 and stores a doubleword from r1 to memory address now in r2|
-|`strw r1, [r2, r3]`|       `1000001.......100[r1-][r2-][r3-]`|Stores a word from r1 to memory address r2 + r3|
-|`strw r1, [r2, r3]!`|      `1000001.......101[r1-][r2-][r3-]`|Adds r3 to r2 and stores a word from r1 to memory address now in r2|
-|`strb r1, [r2, r3]`|       `1000001.......110[r1-][r2-][r3-]`|Stores a byte from r1 to memory address r2 + r3|
-|`strb r1, [r2, r3]!`|      `1000001.......111[r1-][r2-][r3-]`|Adds r3 to r2 and stores a byte from r1 to memory address now in r2|
+|`mov r1, r2`|              `ccc0110000[r1-][r2-]000100000000`|Moves the value in r2 to r1 (`shl r1, r2, 0`)|
+|`lea r1, offset`|          `ccc1000[r1-][-------imm20------]`|Loads the effective address of offset into r1|
+|`movz r1, imm`|            `ccc1001[r1-].000[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 1st 16-bit window of r1|
+|`movz r1, imm, shl 16`|    `ccc1001[r1-].001[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 2nd 16-bit window of r1|
+|`movz r1, imm, shl 32`|    `ccc1001[r1-].010[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 3rd 16-bit window of r1|
+|`movz r1, imm, shl 48`|    `ccc1001[r1-].011[-----imm16----]`|Clears r1 and moves the 16-bit immediate value into the 4th 16-bit window of r1|
+|`movk r1, imm`|            `ccc1001[r1-].100[-----imm16----]`|Moves the 16-bit immediate value into the 1st 16-bit window of r1. Only clears the affected 16-bit window|
+|`movk r1, imm, shl 16`|    `ccc1001[r1-].101[-----imm16----]`|Moves the 16-bit immediate value into the 2nd 16-bit window of r1. Only clears the affected 16-bit window|
+|`movk r1, imm, shl 32`|    `ccc1001[r1-].110[-----imm16----]`|Moves the 16-bit immediate value into the 3rd 16-bit window of r1. Only clears the affected 16-bit window|
+|`movk r1, imm, shl 48`|    `ccc1001[r1-].111[-----imm16----]`|Moves the 16-bit immediate value into the 4th 16-bit window of r1. Only clears the affected 16-bit window|
+|`ldr r1, [r2, imm]`|       `ccc0110110[r1-][r2-]1000[-imm8-]`|Loads a quadword from memory address r2 + immediate into r1|
+|`ldr r1, [r2, imm]!`|      `ccc0110111[r1-][r2-]1000[-imm8-]`|Loads a quadword from memory address r2 into r1 and adds imm to r2|
+|`ldrd r1, [r2, imm]`|      `ccc0110100[r1-][r2-]1000[-imm8-]`|Loads a doubleword from memory address r2 + immediate into r1|
+|`ldrd r1, [r2, imm]!`|     `ccc0110101[r1-][r2-]1000[-imm8-]`|Loads a doubleword from memory address r2 into r1 and adds imm to r2|
+|`ldrw r1, [r2, imm]`|      `ccc0110010[r1-][r2-]1000[-imm8-]`|Loads a word from memory address r2 + immediate into r1|
+|`ldrw r1, [r2, imm]!`|     `ccc0110011[r1-][r2-]1000[-imm8-]`|Loads a word from memory address r2 into r1 and adds imm to r2|
+|`ldrb r1, [r2, imm]`|      `ccc0110000[r1-][r2-]1000[-imm8-]`|Loads a byte from memory address r2 + immediate into r1|
+|`ldrb r1, [r2, imm]!`|     `ccc0110001[r1-][r2-]1000[-imm8-]`|Loads a byte from memory address r2 into r1 and adds imm to r2|
+|`str r1, [r2, imm]`|       `ccc0111110[r1-][r2-]1000[-imm8-]`|Stores a quadword from r1 to memory address r2 + immediate|
+|`str r1, [r2, imm]!`|      `ccc0111111[r1-][r2-]1000[-imm8-]`|Adds the immediate to r2 and stores a quadword from r1 to memory address now in r2|
+|`strd r1, [r2, imm]`|      `ccc0111100[r1-][r2-]1000[-imm8-]`|Stores a doubleword from r1 to memory address r2 + immediate|
+|`strd r1, [r2, imm]!`|     `ccc0111101[r1-][r2-]1000[-imm8-]`|Adds the immediate to r2 and stores a doubleword from r1 to memory address now in r2|
+|`strw r1, [r2, imm]`|      `ccc0111010[r1-][r2-]1000[-imm8-]`|Stores a word from r1 to memory address r2 + immediate|
+|`strw r1, [r2, imm]!`|     `ccc0111011[r1-][r2-]1000[-imm8-]`|Adds the immediate to r2 and stores a word from r1 to memory address now in r2|
+|`strb r1, [r2, imm]`|      `ccc0111000[r1-][r2-]1000[-imm8-]`|Stores a byte from r1 to memory address r2 + immediate|
+|`strb r1, [r2, imm]!`|     `ccc0111001[r1-][r2-]1000[-imm8-]`|Adds the immediate to r2 and stores a byte from r1 to memory address now in r2|
+|`ubxt r1, r2, a, b`|       `ccc01[chi][r1-][r2-]01000l[strt]`|Extracts `(chi << 1 \| l)` bits starting at bit `strt` from register r2 and stores the value into r1|
+|`sbxt r1, r2, a, b`|       `ccc01[chi][r1-][r2-]01001l[strt]`|Extracts `(chi << 1 \| l)` bits starting at bit `strt` from register r2 and stores the sign extended value into r1|
+|`ubdp r1, r2, a, b`|       `ccc01[chi][r1-][r2-]0110.l[strt]`|Deposits the lowest `(chi << 1 \| l)` bits from r2 into r1 starting at bit `strt`|
+|`ldr r1, [r2, r3]`|        `ccc0100110[r1-][r2-]1000...[r3-]`|Loads a quadword from memory address r2 + r3 into r1|
+|`ldr r1, [r2, r3]!`|       `ccc0100111[r1-][r2-]1000...[r3-]`|Loads a quadword from memory address r2 into r1 and adds r3 to r2|
+|`ldrd r1, [r2, r3]`|       `ccc0100100[r1-][r2-]1000...[r3-]`|Loads a doubleword from memory address r2 + r3 into r1|
+|`ldrd r1, [r2, r3]!`|      `ccc0100101[r1-][r2-]1000...[r3-]`|Loads a doubleword from memory address r2 into r1 and adds r3 to r2|
+|`ldrw r1, [r2, r3]`|       `ccc0100010[r1-][r2-]1000...[r3-]`|Loads a word from memory address r2 + r3 into r1|
+|`ldrw r1, [r2, r3]!`|      `ccc0100011[r1-][r2-]1000...[r3-]`|Loads a word from memory address r2 into r1 and adds r3 to r2|
+|`ldrb r1, [r2, r3]`|       `ccc0100000[r1-][r2-]1000...[r3-]`|Loads a byte from memory address r2 + r3 into r1|
+|`ldrb r1, [r2, r3]!`|      `ccc0100001[r1-][r2-]1000...[r3-]`|Loads a byte from memory address r2 into r1 and adds r3 to r2|
+|`str r1, [r2, r3]`|        `ccc0101110[r1-][r2-]1000...[r3-]`|Stores a quadword from r1 to memory address r2 + r3|
+|`str r1, [r2, r3]!`|       `ccc0101111[r1-][r2-]1000...[r3-]`|Adds r3 to r2 and stores a quadword from r1 to memory address now in r2|
+|`strd r1, [r2, r3]`|       `ccc0101100[r1-][r2-]1000...[r3-]`|Stores a doubleword from r1 to memory address r2 + r3|
+|`strd r1, [r2, r3]!`|      `ccc0101101[r1-][r2-]1000...[r3-]`|Adds r3 to r2 and stores a doubleword from r1 to memory address now in r2|
+|`strw r1, [r2, r3]`|       `ccc0101010[r1-][r2-]1000...[r3-]`|Stores a word from r1 to memory address r2 + r3|
+|`strw r1, [r2, r3]!`|      `ccc0101011[r1-][r2-]1000...[r3-]`|Adds r3 to r2 and stores a word from r1 to memory address now in r2|
+|`strb r1, [r2, r3]`|       `ccc0101000[r1-][r2-]1000...[r3-]`|Stores a byte from r1 to memory address r2 + r3|
+|`strb r1, [r2, r3]!`|      `ccc0101001[r1-][r2-]1000...[r3-]`|Adds r3 to r2 and stores a byte from r1 to memory address now in r2|
 
 ### Vector Operations
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`vbadd v1, v2, v3`|        `10001010000001......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
-|`voadd v1, v2, v3`|        `10001010000000......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
-|`vwadd v1, v2, v3`|        `10001010000010......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
-|`vdadd v1, v2, v3`|        `10001010000011......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
-|`vqadd v1, v2, v3`|        `10001010000100......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
-|`vladd v1, v2, v3`|        `10001010000101......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
-|`vsadd v1, v2, v3`|        `10001010000110......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
-|`vfadd v1, v2, v3`|        `10001010000111......[v3][v2][v1]`|Adds v2 and v3 and stores the result in v1|
-|`vosub v1, v2, v3`|        `10001010001000......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
-|`vbsub v1, v2, v3`|        `10001010001001......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
-|`vwsub v1, v2, v3`|        `10001010001010......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
-|`vdsub v1, v2, v3`|        `10001010001011......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
-|`vqsub v1, v2, v3`|        `10001010001100......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
-|`vlsub v1, v2, v3`|        `10001010001101......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
-|`vssub v1, v2, v3`|        `10001010001110......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
-|`vfsub v1, v2, v3`|        `10001010001111......[v3][v2][v1]`|Subtracts v3 from v2 and stores the result in v1|
-|`vomul v1, v2, v3`|        `10001010010000......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
-|`vbmul v1, v2, v3`|        `10001010010001......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
-|`vwmul v1, v2, v3`|        `10001010010010......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
-|`vdmul v1, v2, v3`|        `10001010010011......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
-|`vqmul v1, v2, v3`|        `10001010010100......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
-|`vlmul v1, v2, v3`|        `10001010010101......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
-|`vsmul v1, v2, v3`|        `10001010010110......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
-|`vfmul v1, v2, v3`|        `10001010010111......[v3][v2][v1]`|Multiplies v2 and v3 and stores the result in v1|
-|`vodiv v1, v2, v3`|        `10001010011000......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
-|`vbdiv v1, v2, v3`|        `10001010011001......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
-|`vwdiv v1, v2, v3`|        `10001010011010......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
-|`vddiv v1, v2, v3`|        `10001010011011......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
-|`vqdiv v1, v2, v3`|        `10001010011100......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
-|`vldiv v1, v2, v3`|        `10001010011101......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
-|`vsdiv v1, v2, v3`|        `10001010011110......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
-|`vfdiv v1, v2, v3`|        `10001010011111......[v3][v2][v1]`|Divides v2 by v3 and stores the result in v1|
-|`voaddsub v1, v2, v3`|     `10001010100000......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
-|`vbaddsub v1, v2, v3`|     `10001010100001......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
-|`vwaddsub v1, v2, v3`|     `10001010100010......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
-|`vdaddsub v1, v2, v3`|     `10001010100011......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
-|`vqaddsub v1, v2, v3`|     `10001010100100......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
-|`vladdsub v1, v2, v3`|     `10001010100101......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
-|`vsaddsub v1, v2, v3`|     `10001010100110......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
-|`vfaddsub v1, v2, v3`|     `10001010100111......[v3][v2][v1]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
-|`vomadd v1, v2, v3`|       `10001010101000......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
-|`vbmadd v1, v2, v3`|       `10001010101001......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
-|`vwmadd v1, v2, v3`|       `10001010101010......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
-|`vdmadd v1, v2, v3`|       `10001010101011......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
-|`vqmadd v1, v2, v3`|       `10001010101100......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
-|`vlmadd v1, v2, v3`|       `10001010101101......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
-|`vsmadd v1, v2, v3`|       `10001010101110......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
-|`vfmadd v1, v2, v3`|       `10001010101111......[v3][v2][v1]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
-|`vomov v1, r2, at`|        `10001010110000....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
-|`vbmov v1, r2, at`|        `10001010110001....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
-|`vwmov v1, r2, at`|        `10001010110010....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
-|`vdmov v1, r2, at`|        `10001010110011....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
-|`vqmov v1, r2, at`|        `10001010110100....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
-|`vlmov v1, r2, at`|        `10001010110101....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
-|`vsmov v1, r2, at`|        `10001010110110....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
-|`vfmov v1, r2, at`|        `10001010110111....[at-][r2-][v1]`|Moves r2 into the specified element of v1|
-|`vomov v1, v2`|            `10001010111000..........[v2][v1]`|Moves v2 to v1|
-|`vbmov v1, v2`|            `10001010111001..........[v2][v1]`|Moves v2 to v1|
-|`vwmov v1, v2`|            `10001010111010..........[v2][v1]`|Moves v2 to v1|
-|`vdmov v1, v2`|            `10001010111011..........[v2][v1]`|Moves v2 to v1|
-|`vqmov v1, v2`|            `10001010111100..........[v2][v1]`|Moves v2 to v1|
-|`vlmov v1, v2`|            `10001010111101..........[v2][v1]`|Moves v2 to v1|
-|`vsmov v1, v2`|            `10001010111110..........[v2][v1]`|Moves v2 to v1|
-|`vfmov v1, v2`|            `10001010111111..........[v2][v1]`|Moves v2 to v1|
-|`voconvT v1, v2`|          `10001011000000TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
-|`vbconvT v1, v2`|          `10001011000001TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
-|`vwconvT v1, v2`|          `10001011000010TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
-|`vdconvT v1, v2`|          `10001011000011TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
-|`vqconvT v1, v2`|          `10001011000100TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
-|`vlconvT v1, v2`|          `10001011000101TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
-|`vsconvT v1, v2`|          `10001011000110TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
-|`vfconvT v1, v2`|          `10001011000111TTT.......[v2][v1]`|Converts all elements in v2 [to another type](#vector-convert-instruction) and stores them in v1|
-|`volen r1, v2`|            `10001011001000.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
-|`vblen r1, v2`|            `10001011001001.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
-|`vwlen r1, v2`|            `10001011001010.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
-|`vdlen r1, v2`|            `10001011001011.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
-|`vqlen r1, v2`|            `10001011001100.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
-|`vllen r1, v2`|            `10001011001101.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
-|`vslen r1, v2`|            `10001011001110.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
-|`vflen r1, v2`|            `10001011001111.........[v2][r1-]`|Stores the index of the first element of value 0 in v2 into r1|
-|`vldr v1, [r2, imm]`|      `10001011010[--imm12---][r2-][v1]`|Loads v1 with the value at address r2 + imm12|
-|`vstr v1, [r2, imm]`|      `10001011011[--imm12---][r2-][v1]`|Stores v1 to the address r2 + imm12|
-|`vldr v1, [r2, r3]`|       `10001011100.......[r3-][r2-][v1]`|Loads v1 with the value at address r2 + r3|
-|`vstr v1, [r2, r3]`|       `10001011101.......[r3-][r2-][v1]`|Stores v1 to the address r2 + r3|
+|`vbadd v1, v2, v3`|        `ccc010000001[v2][v1]1010....[v3]`|Adds v2 and v3 and stores the result in v1|
+|`voadd v1, v2, v3`|        `ccc010000000[v2][v1]1010....[v3]`|Adds v2 and v3 and stores the result in v1|
+|`vwadd v1, v2, v3`|        `ccc010000010[v2][v1]1010....[v3]`|Adds v2 and v3 and stores the result in v1|
+|`vdadd v1, v2, v3`|        `ccc010000011[v2][v1]1010....[v3]`|Adds v2 and v3 and stores the result in v1|
+|`vqadd v1, v2, v3`|        `ccc010000100[v2][v1]1010....[v3]`|Adds v2 and v3 and stores the result in v1|
+|`vladd v1, v2, v3`|        `ccc010000101[v2][v1]1010....[v3]`|Adds v2 and v3 and stores the result in v1|
+|`vsadd v1, v2, v3`|        `ccc010000110[v2][v1]1010....[v3]`|Adds v2 and v3 and stores the result in v1|
+|`vfadd v1, v2, v3`|        `ccc010000111[v2][v1]1010....[v3]`|Adds v2 and v3 and stores the result in v1|
+|`vosub v1, v2, v3`|        `ccc010001000[v2][v1]1010....[v3]`|Subtracts v3 from v2 and stores the result in v1|
+|`vbsub v1, v2, v3`|        `ccc010001001[v2][v1]1010....[v3]`|Subtracts v3 from v2 and stores the result in v1|
+|`vwsub v1, v2, v3`|        `ccc010001010[v2][v1]1010....[v3]`|Subtracts v3 from v2 and stores the result in v1|
+|`vdsub v1, v2, v3`|        `ccc010001011[v2][v1]1010....[v3]`|Subtracts v3 from v2 and stores the result in v1|
+|`vqsub v1, v2, v3`|        `ccc010001100[v2][v1]1010....[v3]`|Subtracts v3 from v2 and stores the result in v1|
+|`vlsub v1, v2, v3`|        `ccc010001101[v2][v1]1010....[v3]`|Subtracts v3 from v2 and stores the result in v1|
+|`vssub v1, v2, v3`|        `ccc010001110[v2][v1]1010....[v3]`|Subtracts v3 from v2 and stores the result in v1|
+|`vfsub v1, v2, v3`|        `ccc010001111[v2][v1]1010....[v3]`|Subtracts v3 from v2 and stores the result in v1|
+|`vomul v1, v2, v3`|        `ccc010010000[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the result in v1|
+|`vbmul v1, v2, v3`|        `ccc010010001[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the result in v1|
+|`vwmul v1, v2, v3`|        `ccc010010010[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the result in v1|
+|`vdmul v1, v2, v3`|        `ccc010010011[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the result in v1|
+|`vqmul v1, v2, v3`|        `ccc010010100[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the result in v1|
+|`vlmul v1, v2, v3`|        `ccc010010101[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the result in v1|
+|`vsmul v1, v2, v3`|        `ccc010010110[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the result in v1|
+|`vfmul v1, v2, v3`|        `ccc010010111[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the result in v1|
+|`vodiv v1, v2, v3`|        `ccc010011000[v2][v1]1010....[v3]`|Divides v2 by v3 and stores the result in v1|
+|`vbdiv v1, v2, v3`|        `ccc010011001[v2][v1]1010....[v3]`|Divides v2 by v3 and stores the result in v1|
+|`vwdiv v1, v2, v3`|        `ccc010011010[v2][v1]1010....[v3]`|Divides v2 by v3 and stores the result in v1|
+|`vddiv v1, v2, v3`|        `ccc010011011[v2][v1]1010....[v3]`|Divides v2 by v3 and stores the result in v1|
+|`vqdiv v1, v2, v3`|        `ccc010011100[v2][v1]1010....[v3]`|Divides v2 by v3 and stores the result in v1|
+|`vldiv v1, v2, v3`|        `ccc010011101[v2][v1]1010....[v3]`|Divides v2 by v3 and stores the result in v1|
+|`vsdiv v1, v2, v3`|        `ccc010011110[v2][v1]1010....[v3]`|Divides v2 by v3 and stores the result in v1|
+|`vfdiv v1, v2, v3`|        `ccc010011111[v2][v1]1010....[v3]`|Divides v2 by v3 and stores the result in v1|
+|`voaddsub v1, v2, v3`|     `ccc010100000[v2][v1]1010....[v3]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vbaddsub v1, v2, v3`|     `ccc010100001[v2][v1]1010....[v3]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vwaddsub v1, v2, v3`|     `ccc010100010[v2][v1]1010....[v3]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vdaddsub v1, v2, v3`|     `ccc010100011[v2][v1]1010....[v3]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vqaddsub v1, v2, v3`|     `ccc010100100[v2][v1]1010....[v3]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vladdsub v1, v2, v3`|     `ccc010100101[v2][v1]1010....[v3]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vsaddsub v1, v2, v3`|     `ccc010100110[v2][v1]1010....[v3]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vfaddsub v1, v2, v3`|     `ccc010100111[v2][v1]1010....[v3]`|Adds even indexed elements in v2 and v3 and subtracts odd indexed elements in v2 and v3 and stores the result in v1|
+|`vomadd v1, v2, v3`|       `ccc010101000[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vbmadd v1, v2, v3`|       `ccc010101001[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vwmadd v1, v2, v3`|       `ccc010101010[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vdmadd v1, v2, v3`|       `ccc010101011[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vqmadd v1, v2, v3`|       `ccc010101100[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vlmadd v1, v2, v3`|       `ccc010101101[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vsmadd v1, v2, v3`|       `ccc010101110[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vfmadd v1, v2, v3`|       `ccc010101111[v2][v1]1010....[v3]`|Multiplies v2 and v3 and stores the sum of the results into the lowest element of v1|
+|`vomov v1, r2, at`|        `ccc010110000..hi[v1]1010slo[r2-]`|Moves r2 into the specified element of v1|
+|`vbmov v1, r2, at`|        `ccc010110001..hi[v1]1010slo[r2-]`|Moves r2 into the specified element of v1|
+|`vwmov v1, r2, at`|        `ccc010110010..hi[v1]1010slo[r2-]`|Moves r2 into the specified element of v1|
+|`vdmov v1, r2, at`|        `ccc010110011..hi[v1]1010slo[r2-]`|Moves r2 into the specified element of v1|
+|`vqmov v1, r2, at`|        `ccc010110100..hi[v1]1010slo[r2-]`|Moves r2 into the specified element of v1|
+|`vlmov v1, r2, at`|        `ccc010110101..hi[v1]1010slo[r2-]`|Moves r2 into the specified element of v1|
+|`vsmov v1, r2, at`|        `ccc010110110..hi[v1]1010slo[r2-]`|Moves r2 into the specified element of v1|
+|`vfmov v1, r2, at`|        `ccc010110111..hi[v1]1010slo[r2-]`|Moves r2 into the specified element of v1|
+|`vomov v1, v2`|            `ccc010111000[v2][v1]1010........`|Moves v2 to v1|
+|`vbmov v1, v2`|            `ccc010111001[v2][v1]1010........`|Moves v2 to v1|
+|`vwmov v1, v2`|            `ccc010111010[v2][v1]1010........`|Moves v2 to v1|
+|`vdmov v1, v2`|            `ccc010111011[v2][v1]1010........`|Moves v2 to v1|
+|`vqmov v1, v2`|            `ccc010111100[v2][v1]1010........`|Moves v2 to v1|
+|`vlmov v1, v2`|            `ccc010111101[v2][v1]1010........`|Moves v2 to v1|
+|`vsmov v1, v2`|            `ccc010111110[v2][v1]1010........`|Moves v2 to v1|
+|`vfmov v1, v2`|            `ccc010111111[v2][v1]1010........`|Moves v2 to v1|
+|`voconvT v1, v2`|          `ccc011000000[v2][v1]1010.....TTT`|Converts all elements in v2 [to another type](#vector-convert-instruction-encoding) and stores them in v1|
+|`vbconvT v1, v2`|          `ccc011000001[v2][v1]1010.....TTT`|Converts all elements in v2 [to another type](#vector-convert-instruction-encoding) and stores them in v1|
+|`vwconvT v1, v2`|          `ccc011000010[v2][v1]1010.....TTT`|Converts all elements in v2 [to another type](#vector-convert-instruction-encoding) and stores them in v1|
+|`vdconvT v1, v2`|          `ccc011000011[v2][v1]1010.....TTT`|Converts all elements in v2 [to another type](#vector-convert-instruction-encoding) and stores them in v1|
+|`vqconvT v1, v2`|          `ccc011000100[v2][v1]1010.....TTT`|Converts all elements in v2 [to another type](#vector-convert-instruction-encoding) and stores them in v1|
+|`vlconvT v1, v2`|          `ccc011000101[v2][v1]1010.....TTT`|Converts all elements in v2 [to another type](#vector-convert-instruction-encoding) and stores them in v1|
+|`vsconvT v1, v2`|          `ccc011000110[v2][v1]1010.....TTT`|Converts all elements in v2 [to another type](#vector-convert-instruction-encoding) and stores them in v1|
+|`vfconvT v1, v2`|          `ccc011000111[v2][v1]1010.....TTT`|Converts all elements in v2 [to another type](#vector-convert-instruction-encoding) and stores them in v1|
+|`volen r1, v2`|            `ccc011001000....[v1]1010...[r1-]`|Stores the index of the first element of value 0 in v1 into r1|
+|`vblen r1, v2`|            `ccc011001001....[v1]1010...[r1-]`|Stores the index of the first element of value 0 in v1 into r1|
+|`vwlen r1, v2`|            `ccc011001010....[v1]1010...[r1-]`|Stores the index of the first element of value 0 in v1 into r1|
+|`vdlen r1, v2`|            `ccc011001011....[v1]1010...[r1-]`|Stores the index of the first element of value 0 in v1 into r1|
+|`vqlen r1, v2`|            `ccc011001100....[v1]1010...[r1-]`|Stores the index of the first element of value 0 in v1 into r1|
+|`vllen r1, v2`|            `ccc011001101....[v1]1010...[r1-]`|Stores the index of the first element of value 0 in v1 into r1|
+|`vslen r1, v2`|            `ccc011001110....[v1]1010...[r1-]`|Stores the index of the first element of value 0 in v1 into r1|
+|`vflen r1, v2`|            `ccc011001111....[v1]1010...[r1-]`|Stores the index of the first element of value 0 in v1 into r1|
+|`vldr v1, [r2, imm]`|      `ccc0110101.[r1-][v1]1010[-imm8-]`|Loads v1 with the value at address r1 + imm8|
+|`vstr v1, [r2, imm]`|      `ccc0110111.[r1-][v1]1010[-imm8-]`|Stores v1 to the address r1 + imm8|
+|`vldr v1, [r2, r3]`|       `ccc0110100.[r1-][v1]1010...[r2-]`|Loads v1 with the value at address r1 + r2|
+|`vstr v1, [r2, r3]`|       `ccc0110110.[r1-][v1]1010...[r2-]`|Stores v1 to the address r1 + r2|
 
 #### Vector convert instruction encoding
 `TTT` in the encoding specifies the target element type as follows:
@@ -334,21 +314,17 @@ The shift is encoded as a shift left in the `SL` field in the encoding.
 
 ## Quirks of the instruction set
 ### It's `shl` all the way down
-To save opcodes, `mov`, `ret`, and `nop` are all encoded as `shl` with an immediate value of `0`:
+To save opcodes, both `mov` and `ret` are encoded as `shl` with an immediate value of `0`:
 - `mov rn, rm` is actually `shl rn, rm, 0`
 - `ret` is actually `shl pc, lr, 0`
-- `nop` is actually `shl r0, r0, 0`
 
-### Why do `cblz` and `cblnz` exist
-Branch instructions are encoded in a way that disconnects link or no link from the opcode of the branch:
-- 3 bits for instruction type (`000` for branch, `101` for branch to register)
-- 3 bits for branch type
-- 1 bit specifying link (`1`) or no link (`0`)
+### 500 million `nop` instructions
+Because every instruction is conditional, using `never` as the condition results in a `nop`
 
 ### No `psh` and `pp` instructions
 Even though the assember understands `psh` and `pp` instructions, there is no actual instruction like that:
-- mnemonic `psh rn` is actually `str rn, [sp, -16]!`
-- mnemonic `pp rn` is actually `ldr rn, [sp, 16]!`
+- `psh rn` is actually `str rn, [sp, -16]!`
+- `pp rn` is actually `ldr rn, [sp, 16]!`
 
 The same goes for `inc` and `dec` instructions:
 - `inc rn` is actually `add rn, rn, 1`

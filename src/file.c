@@ -7,6 +7,12 @@ static inline size_t pad_to_page_size(size_t x) {
     return x + (page_size - (x % page_size));
 }
 
+void* create_mapping(size_t s, uint8_t flags);
+void* virtual_to_physical(void* vaddr, uint8_t with_flags);
+void mmu_protect(void* base_addr, size_t size, uint8_t flags);
+
+bool use_vmem = false;
+
 HiveFile read_hive_file(FILE* fp) {
     HiveFile hf;
     fread(&hf.magic, sizeof(hf.magic), 1, fp);
@@ -23,14 +29,11 @@ HiveFile read_hive_file(FILE* fp) {
         if (hf.sects.items[i].len) {
             if (hf.sects.items[i].type == SECT_TYPE_CODE) {
                 size_t s = pad_to_page_size(hf.sects.items[i].len);
-                hf.sects.items[i].data = mmap(
-                    NULL,
-                    s,
-                    PROT_READ | PROT_WRITE,
-                    MAP_PRIVATE | MAP_ANONYMOUS,
-                    0,
-                    0
-                );
+                hf.sects.items[i].data = mmap(NULL, s, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, 0, 0);
+                if (hf.sects.items[i].data == MAP_FAILED) {
+                    fprintf(stderr, "Failed to create memory mapping: %s\n", strerror(errno));
+                    exit(1);
+                }
                 memset(hf.sects.items[i].data, 0, s);
             } else {
                 hf.sects.items[i].data = malloc(hf.sects.items[i].len);
@@ -260,7 +263,7 @@ void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) 
         uint64_t target_address = find_symbol_address(symbols, reloc.name);
 
         if (target_address == -1) {
-            if (reloc.type == st_abs) {
+            if (reloc.type == sym_abs) {
                 *((QWord_t*) &code_sect.data[current_address]) += (uint64_t) code_sect.data;
                 continue;
             } else {
@@ -270,10 +273,10 @@ void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) 
         }
 
         switch (reloc.type) {
-            case st_abs:
+            case sym_abs:
                 *((QWord_t*) &code_sect.data[current_address]) = target_address;
                 break;
-            case st_data: {
+            case sym_branch: {
                     hive_instruction_t* s = ((hive_instruction_t*) &code_sect.data[current_address]);
                     int32_t diff = target_address - (uint64_t) s;
                     if (diff % 4) {
@@ -285,10 +288,10 @@ void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) 
                         fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &code_sect.data[current_address], target_address);
                         exit(1);
                     }
-                    s->branch.offset = diff;
+                    s->type_branch_generic.offset = diff;
                 }
                 break;
-            case st_ri: {
+            case sym_load: {
                     hive_instruction_t* s = ((hive_instruction_t*) &code_sect.data[current_address]);
                     int32_t diff = target_address - (uint64_t) s;
                     if (diff % 4) {
@@ -300,22 +303,7 @@ void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) 
                         fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (uint64_t) &code_sect.data[current_address], target_address);
                         exit(1);
                     }
-                    s->ri_s.imm = diff;
-                }
-                break;
-            case st_cb: {
-                    hive_instruction_t* s = ((hive_instruction_t*) &code_sect.data[current_address]);
-                    int32_t diff = target_address - (uint64_t) s;
-                    if (diff % 4) {
-                        fprintf(stderr, "Relative target not aligned!");
-                        exit(1);
-                    }
-                    diff >>= 2;
-                    if (diff >= 0x40000 || diff < -0x40000) {
-                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (uint64_t) &code_sect.data[current_address], target_address);
-                        exit(1);
-                    }
-                    s->comp_branch.offset = diff;
+                    s->type_load_signed.imm = diff;
                 }
                 break;
         }

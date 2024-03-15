@@ -31,217 +31,210 @@ typedef float Float32_t;        // single precision floating point
 #define CONCAT(a, b) CONCAT_(a, b)
 
 #define PAD(_n) uint32_t CONCAT(_, __LINE__) : _n
-#define TYPE_PAD PAD(3)
+#define TYPE_PAD uint8_t __header: 5
+
+typedef QWord_t(*svc_call)(QWord_t,QWord_t,QWord_t,QWord_t,QWord_t,QWord_t,QWord_t,QWord_t);
 
 typedef union {
     struct {
-        PAD(29);
-        uint8_t type: 3;
+        PAD(27);
+        uint8_t type: 2;
+        uint8_t condition: 3;
     } PACKED generic;
     struct {
         int32_t offset: 25;
+        uint8_t type: 2;
+        TYPE_PAD;
+    } PACKED type_branch_generic;
+    struct {
+        int32_t offset: 25;
         uint8_t link: 1;
-        uint8_t op: 3;
+        uint8_t is_reg: 1;
         TYPE_PAD;
-    } PACKED branch;
-    struct {
-        int32_t offset: 19;
-        uint8_t zero: 1;
-        uint8_t r1: 5;
-        uint8_t link: 1;
-        uint8_t op: 3;
-        TYPE_PAD;
-    } PACKED comp_branch;
-    struct {
-        uint16_t imm: 12;
-        uint8_t shift: 2;
-        PAD(1);
-        uint8_t r2: 5;
-        uint8_t r1: 5;
-        uint8_t op: 4;
-        TYPE_PAD;
-    } PACKED rri;
-    struct {
-        int16_t imm: 12;
-        uint8_t update_ptr: 1;
-        uint8_t size: 2;
-        uint8_t r2: 5;
-        uint8_t r1: 5;
-        uint8_t op: 4;
-        TYPE_PAD;
-    } PACKED rri_ls;
-    struct {
-        uint8_t lowest: 6;
-        uint8_t nbits: 6;
-        uint8_t sign_extend: 1;
-        PAD(2);
-        uint8_t r2: 5;
-        uint8_t r1: 5;
-        uint8_t op: 4;
-        TYPE_PAD;
-    } PACKED rri_bit;
-    struct {
-        PAD(18);
-        uint8_t mode: 3;
-        uint8_t op: 4;
-        PAD(4);
-        TYPE_PAD;
-    } PACKED vpu;
-    struct {
-        uint8_t v1: 4;
-        uint8_t r2: 5;
-        uint8_t slot: 5;
-        PAD(4);
-        uint8_t mode: 3;
-        uint8_t op: 4;
-        PAD(4);
-        TYPE_PAD;
-    } PACKED vpu_mov;
-    struct {
-        uint8_t v1: 4;
-        uint8_t r2: 5;
-        uint8_t r3: 5;
-        PAD(7);
-        uint8_t op: 4;
-        PAD(4);
-        TYPE_PAD;
-    } PACKED vpu_ls;
-    struct {
-        uint8_t v1: 4;
-        uint8_t r2: 5;
-        int16_t imm: 12;
-        uint8_t op: 4;
-        PAD(4);
-        TYPE_PAD;
-    } PACKED vpu_ls_imm;
-    struct {
-        uint8_t v1: 4;
-        uint8_t v2: 4;
-        PAD(10);
-        uint8_t mode: 3;
-        uint8_t op: 4;
-        PAD(4);
-        TYPE_PAD;
-    } PACKED vpu_mov_vec;
-    struct {
-        uint8_t v1: 4;
-        uint8_t v2: 4;
-        PAD(7);
-        uint8_t target_mode: 3;
-        uint8_t mode: 3;
-        uint8_t op: 4;
-        PAD(4);
-        TYPE_PAD;
-    } PACKED vpu_conv;
-    struct {
-        uint8_t v1: 4;
-        uint8_t v2: 4;
-        uint8_t v3: 4;
-        PAD(6);
-        uint8_t mode: 3;
-        uint8_t op: 4;
-        PAD(4);
-        TYPE_PAD;
-    } PACKED vpu_arith;
-    struct {
-        uint8_t r1: 5;
-        uint8_t v1: 4;
-        PAD(9);
-        uint8_t mode: 3;
-        uint8_t op: 4;
-        PAD(4);
-        TYPE_PAD;
-    } PACKED vpu_len;
-    struct {
-        uint8_t r3: 5;
-        uint8_t r2: 5;
-        uint8_t r1: 5;
-        uint8_t shift: 2;
-        PAD(8);
-        uint8_t op: 4;
-        TYPE_PAD;
-    } PACKED rrr;
-    struct {
-        uint8_t r3: 5;
-        uint8_t r2: 5;
-        uint8_t r1: 5;
-        PAD(5);
-        uint8_t mode: 1;
-        uint8_t op: 4;
-        PAD(4);
-        TYPE_PAD;
-    } PACKED float_rrr;
-    struct {
-        uint8_t r3: 5;
-        uint8_t r2: 5;
-        uint8_t r1: 5;
-        uint16_t size: 2;
-        uint8_t update_ptr: 1;
-        PAD(7);
-        uint8_t op: 4;
-        TYPE_PAD;
-    } PACKED rrr_ls;
-    struct {
-        uint32_t imm: 20;
-        uint8_t r1: 5;
-        uint8_t op: 4;
-        TYPE_PAD;
-    } PACKED ri;
+    } PACKED type_branch;
     struct {
         PAD(20);
         uint8_t r1: 5;
         uint8_t link: 1;
-        uint8_t op: 3;
+        uint8_t is_reg: 1;
         TYPE_PAD;
-    } PACKED ri_branch;
+    } PACKED type_branch_register;
     struct {
+        PAD(8);
+        uint8_t sub_op: 4;
+        PAD(15);
+        TYPE_PAD;
+    } PACKED type_data;
+    struct {
+        uint8_t r3: 5;
+        PAD(3);
+        uint8_t use_imm: 1;
+        uint8_t salu: 1;
+        uint8_t sub_op: 2;
         uint8_t r2: 5;
-        uint8_t zero: 1;
-        PAD(13);
         uint8_t r1: 5;
-        uint8_t link: 1;
+        uint8_t no_writeback: 1;
         uint8_t op: 4;
         TYPE_PAD;
-    } PACKED ri_cbranch;
+    } PACKED type_data_alur;
+    struct {
+        uint8_t imm;
+        uint8_t use_imm: 1;
+        uint8_t salu: 1;
+        uint8_t sub_op: 2;
+        uint8_t r2: 5;
+        uint8_t r1: 5;
+        uint8_t no_writeback: 1;
+        uint8_t op: 4;
+        TYPE_PAD;
+    } PACKED type_data_alui;
+    struct {
+        int8_t imm;
+        uint8_t sub_op: 4;
+        uint8_t r2: 5;
+        uint8_t r1: 5;
+        uint8_t update_ptr: 1;
+        uint8_t size: 2;
+        uint8_t is_store: 1;
+        uint8_t use_immediate: 1;
+        TYPE_PAD;
+    } PACKED type_data_ls_imm;
+    struct {
+        uint8_t r3: 5;
+        PAD(3);
+        uint8_t sub_op: 4;
+        uint8_t r2: 5;
+        uint8_t r1: 5;
+        uint8_t update_ptr: 1;
+        uint8_t size: 2;
+        uint8_t is_store: 1;
+        uint8_t use_immediate: 1;
+        TYPE_PAD;
+    } PACKED type_data_ls_reg;
+    struct {
+        uint8_t r3: 5;
+        PAD(1);
+        uint8_t is_single_op: 1;
+        uint8_t use_int_arg2: 1;
+        uint8_t sub_op: 4;
+        uint8_t r2: 5;
+        uint8_t r1: 5;
+        uint8_t no_writeback: 1;
+        uint8_t op: 4;
+        TYPE_PAD;
+    } PACKED type_data_fpu;
+    struct {
+        uint8_t v3: 4;
+        PAD(4);
+        uint8_t sub_op: 4;
+        uint8_t v1: 4;
+        uint8_t v2: 4;
+        uint8_t mode: 3;
+        uint8_t op: 4;
+        TYPE_PAD;
+    } PACKED type_data_vpu;
+    struct {
+        uint8_t target_mode: 3;
+        PAD(5);
+        uint8_t sub_op: 4;
+        uint8_t v1: 4;
+        uint8_t v2: 4;
+        uint8_t mode: 3;
+        uint8_t op: 4;
+        TYPE_PAD;
+    } PACKED type_data_vpu_conv;
+    struct {
+        uint8_t r2: 5;
+        uint8_t slot_lo: 3;
+        uint8_t sub_op: 4;
+        uint8_t v1: 4;
+        uint8_t slot_hi: 2;
+        PAD(2);
+        uint8_t mode: 3;
+        uint8_t op: 4;
+        TYPE_PAD;
+    } PACKED type_data_vpu_mov;
+    struct {
+        uint8_t r1: 5;
+        PAD(3);
+        uint8_t sub_op: 4;
+        uint8_t v1: 4;
+        PAD(4);
+        uint8_t mode: 3;
+        uint8_t op: 4;
+        TYPE_PAD;
+    } PACKED type_data_vpu_len;
+    struct {
+        uint8_t r2: 5;
+        PAD(3);
+        uint8_t sub_op: 4;
+        uint8_t v1: 4;
+        uint8_t r1: 5;
+        PAD(1);
+        uint8_t use_imm: 1;
+        uint8_t op: 4;
+        TYPE_PAD;
+    } PACKED type_data_vpu_ls;
+    struct {
+        int8_t imm;
+        uint8_t sub_op: 4;
+        uint8_t v1: 4;
+        uint8_t r1: 5;
+        PAD(1);
+        uint8_t use_imm: 1;
+        uint8_t op: 4;
+        TYPE_PAD;
+    } PACKED type_data_vpu_ls_imm;
+    struct {
+        uint8_t start: 6;
+        uint8_t count_lo: 1;
+        uint8_t extend: 1;
+        uint8_t is_reg: 1;
+        uint8_t is_dep: 1;
+        uint8_t is_bit_instr: 2;
+        uint8_t r2: 5;
+        uint8_t r1: 5;
+        uint8_t count_hi: 5;
+        TYPE_PAD;
+    } PACKED type_data_bit;
+    struct {
+        uint8_t start_reg: 5;
+        PAD(2);
+        uint8_t extend: 1;
+        uint8_t is_reg: 1;
+        uint8_t is_dep: 1;
+        uint8_t is_bit_instr: 2;
+        uint8_t r2: 5;
+        uint8_t r1: 5;
+        uint8_t count_reg: 5;
+        TYPE_PAD;
+    } PACKED type_data_bitr;
+    struct {
+        uint32_t imm: 20;
+        uint8_t r1: 5;
+        uint8_t op: 2;
+        TYPE_PAD;
+    } PACKED type_load;
     struct {
         int32_t imm: 20;
         uint8_t r1: 5;
-        uint8_t op: 4;
+        uint8_t op: 2;
         TYPE_PAD;
-    } PACKED ri_s;
+    } PACKED type_load_signed;
     struct {
         uint16_t imm;
-        PAD(1);
         uint8_t shift: 2;
         uint8_t no_zero: 1;
+        PAD(1);
         uint8_t r1: 5;
-        uint8_t op: 4;
+        uint8_t op: 2;
         TYPE_PAD;
-    } PACKED ri_mov;
+    } PACKED type_load_mov;
 } PACKED hive_instruction_t;
 
 #ifdef static_assert
 #define CHECK(what) static_assert(sizeof(((hive_instruction_t*) NULL)->what) == sizeof(DWord_t), "hive_instruction_t::" #what " is wrong size")
-CHECK(generic);
-CHECK(branch);
-CHECK(comp_branch);
-CHECK(rri);
-CHECK(rri_ls);
-CHECK(rri_bit);
-CHECK(vpu);
-CHECK(vpu_mov);
-CHECK(vpu_mov_vec);
-CHECK(vpu_conv);
-CHECK(vpu_arith);
-CHECK(vpu_len);
-CHECK(rrr);
-CHECK(float_rrr);
-CHECK(rrr_ls);
-CHECK(ri);
-CHECK(ri_branch);
-CHECK(ri_cbranch);
-CHECK(ri_s);
-CHECK(ri_mov);
+static_assert(sizeof(hive_instruction_t) == sizeof(DWord_t), "hive_instruction_t is wrong size");
 #endif
 
 typedef union {
@@ -256,6 +249,15 @@ typedef union {
 } hive_vector_register_t;
 
 typedef union hive_register_t {
+    QWord_t                 asU64;
+    DWord_t                 asU32;
+    Word_t                  asU16;
+    Byte_t                  asU8;
+    SQWord_t                asI64;
+    SDWord_t                asI32;
+    SWord_t                 asI16;
+    SByte_t                 asI8;
+
     QWord_t                 asQWord;
     DWord_t                 asDWord;
     Word_t                  asWord;
@@ -278,28 +280,56 @@ typedef union hive_register_t {
     hive_instruction_t*     asInstrPtr;
 } hive_register_t;
 
-enum exec_mode {
-    MODE_HYPERVISOR,
-    MODE_SUPERVISOR,
-    MODE_USER,
-    MODE_COUNT
-};
-
-typedef struct {
-    uint8_t             negative:1;
-    uint8_t             equal:1;
-    enum exec_mode      exec_mode:2;
-    uint64_t            reserved:29;
+typedef union {
+    struct {
+        uint8_t             zero:1;
+        uint8_t             negative:1;
+    } PACKED flags;
+    DWord_t dword;
 } PACKED hive_flag_register_t;
+
+#ifdef static_assert
+static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_register_t is wrong size");
+#endif
 
 #define REG_LR 29
 #define REG_SP 30
 #define REG_PC 31
 
+#define SIZE_8BIT 0
+#define SIZE_16BIT 1
+#define SIZE_32BIT 2
+#define SIZE_64BIT 3
+
 #define INT_UD 0x01 // Undefined opcode
 #define INT_PF 0x02 // Page fault
 #define INT_IL 0x03 // Illegal instruction
 #define INT_IP 0x04 // Insufficient privileges
+
+#define COND_EQ     0b000
+#define COND_NE     0b100
+#define COND_LE     0b001
+#define COND_GT     0b101
+#define COND_LT     0b010
+#define COND_GE     0b110
+#define COND_ALWAYS 0b011
+#define COND_NEVER  0b111
+
+#define SVC_exit        0
+#define SVC_read        1
+#define SVC_write       2
+#define SVC_open        3
+#define SVC_close       4
+#define SVC_malloc      5
+#define SVC_free        6
+#define SVC_realloc     7
+#define SVC_coredump    8
+
+#if __has_attribute(fallthrough)
+#define case_fallthrough __attribute__((fallthrough))
+#else
+#define case_fallthrough (void) 0
+#endif
 
 typedef struct {
     hive_register_t r[32];
@@ -318,7 +348,6 @@ typedef enum _TokenType {
     Directive,
     LeftBracket,
     RightBracket,
-    SimdRegister,
     Comma,
     Plus,
     Minus,
@@ -343,10 +372,9 @@ typedef struct {
         char* name;
         uint64_t offset;
         enum symbol_type {
-            st_abs,
-            st_data,
-            st_ri,
-            st_cb,
+            sym_abs,
+            sym_branch,
+            sym_load,
         } type;
         enum symbol_flag {
             sf_exported = 1,
@@ -378,6 +406,12 @@ typedef struct {
 #define SECT_TYPE_SYMS  0x02
 #define SECT_TYPE_RELOC 0x04
 #define SECT_TYPE_LD    0x08
+
+#define HIVE_PAGE_SIZE 0x4000
+
+#define PAGE_FLAG_READ  0x01
+#define PAGE_FLAG_WRITE 0x02
+#define PAGE_FLAG_EXEC  0x04
 
 typedef struct {
     HiveFile* items;

@@ -44,7 +44,7 @@ _strlen:
     movz r1, 0
     _strlen$loop:
         ldrb r2, [r0, r1]
-        cbz r2, _strlen$end
+        b.z _strlen$end
 
         add r1, r1, 1
         b _strlen$loop
