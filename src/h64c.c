@@ -327,13 +327,13 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
             i += 2; \
             if (tokens.items[i].type == Number) { \
                 uint8_t num = parse8(tokens.items[i].value); \
-                ins.type_data_alui.sub_op = SUBOP_DATA_ALU_I; \
+                ins.type_data.sub_op = SUBOP_DATA_ALU_I; \
                 ins.type_data_alui.r1 = r1; \
                 ins.type_data_alui.r2 = r2; \
                 ins.type_data_alui.imm = num; \
             } else if (tokens.items[i].type == Register) { \
                 uint8_t r3 = parse_reg(tokens.items[i].value); \
-                ins.type_data_alur.sub_op = SUBOP_DATA_ALU_R; \
+                ins.type_data.sub_op = SUBOP_DATA_ALU_R; \
                 ins.type_data_alur.r1 = r1; \
                 ins.type_data_alur.r2 = r2; \
                 ins.type_data_alur.r3 = r3; \
@@ -341,14 +341,14 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
                 EXPECT(Eof, "Expected number or register, got %s"); \
             } \
         } else { \
-            ins.type_data_alur.sub_op = SUBOP_DATA_ALU_R; \
+            ins.type_data.sub_op = SUBOP_DATA_ALU_R; \
             ins.type_data_alur.r1 = r1; \
             ins.type_data_alur.r2 = r1; \
             ins.type_data_alur.r3 = r2; \
         } \
     } else if (tokens.items[i].type == Number) { \
         uint8_t num = parse8(tokens.items[i].value); \
-        ins.type_data_alui.sub_op = SUBOP_DATA_ALU_I; \
+        ins.type_data.sub_op = SUBOP_DATA_ALU_I; \
         ins.type_data_alui.r1 = r1; \
         ins.type_data_alui.r2 = r1; \
         ins.type_data_alui.imm = num; \
@@ -402,7 +402,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 ins.generic.condition = COND_NEVER;
             } else if (eq(mnemonic, "ret")) {
                 ins.generic.type = MODE_DATA;
-                ins.type_data_alui.sub_op = SUBOP_DATA_ALU_I;
+                ins.type_data.sub_op = SUBOP_DATA_ALU_I;
                 ins.type_data_alui.op = OP_DATA_ALU_shl;
                 ins.type_data_alui.r1 = REG_PC;
                 ins.type_data_alui.r2 = REG_LR;
@@ -463,7 +463,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
             } else if (eq(mnemonic, "neg") || eq(mnemonic, "not")) {
                 bool not = eq(mnemonic, "not");
                 ins.generic.type = MODE_DATA;
-                ins.type_data_alur.sub_op = SUBOP_DATA_ALU_R;
+                ins.type_data.sub_op = SUBOP_DATA_ALU_R;
                 ins.type_data_alur.op = not ? OP_DATA_ALU_not : OP_DATA_ALU_neg;
                 inc();
                 EXPECT(Register, "Expected register, got %s");
@@ -483,7 +483,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 OP(asr)
             } else if (eq(mnemonic, "swe")) {
                 ins.generic.type = MODE_DATA;
-                ins.type_data_alur.sub_op = SUBOP_DATA_ALU_R;
+                ins.type_data.sub_op = SUBOP_DATA_ALU_R;
                 ins.type_data_alur.op = OP_DATA_ALU_swe;
                 inc();
                 EXPECT(Register, "Expected register, got %s");
@@ -593,7 +593,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 EXPECT(Register, "Expected register, got %s");
                 uint8_t r2 = parse_reg(tokens.items[i].value);
                 ins.generic.type = MODE_DATA;
-                ins.type_data_alui.sub_op = SUBOP_DATA_ALU_I;
+                ins.type_data.sub_op = SUBOP_DATA_ALU_I;
                 ins.type_data_alui.op = OP_DATA_ALU_shl;
                 ins.type_data_alui.r1 = r1;
                 ins.type_data_alui.r2 = r2;
@@ -612,7 +612,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                     r2 = parse_reg(tokens.items[i].value);
                 }
                 ins.generic.type = MODE_DATA;
-                ins.type_data_alui.sub_op = SUBOP_DATA_ALU_I;
+                ins.type_data.sub_op = SUBOP_DATA_ALU_I;
                 ins.type_data_alui.op = inc ? OP_DATA_ALU_add : OP_DATA_ALU_sub;
                 ins.type_data_alui.r1 = r1;
                 ins.type_data_alui.r2 = r2;
@@ -627,7 +627,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 if (tokens.items[i].type == Register) {
                     uint8_t r2 = parse_reg(tokens.items[i].value);
                     ins.generic.type = MODE_DATA;
-                    ins.type_data_alui.sub_op = SUBOP_DATA_ALU_R;
+                    ins.type_data.sub_op = SUBOP_DATA_ALU_R;
                     ins.type_data_alur.op = OP_DATA_ALU_and;
                     ins.type_data_alur.r2 = r1;
                     ins.type_data_alur.r3 = r2;
@@ -635,7 +635,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 } else if (tokens.items[i].type == Number) {
                     uint8_t num = parse8(tokens.items[i].value);
                     ins.generic.type = MODE_DATA;
-                    ins.type_data_alui.sub_op = SUBOP_DATA_ALU_I;
+                    ins.type_data.sub_op = SUBOP_DATA_ALU_I;
                     ins.type_data_alui.op = OP_DATA_ALU_and;
                     ins.type_data_alui.r2 = r1;
                     ins.type_data_alui.imm = num;
@@ -653,7 +653,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 if (tokens.items[i].type == Register) {
                     uint8_t r2 = parse_reg(tokens.items[i].value);
                     ins.generic.type = MODE_DATA;
-                    ins.type_data_alui.sub_op = SUBOP_DATA_ALU_R;
+                    ins.type_data.sub_op = SUBOP_DATA_ALU_R;
                     ins.type_data_alur.op = OP_DATA_ALU_sub;
                     ins.type_data_alur.r2 = r1;
                     ins.type_data_alur.r3 = r2;
@@ -661,7 +661,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 } else if (tokens.items[i].type == Number) {
                     uint32_t num = parse32(tokens.items[i].value);
                     ins.generic.type = MODE_DATA;
-                    ins.type_data_alui.sub_op = SUBOP_DATA_ALU_I;
+                    ins.type_data.sub_op = SUBOP_DATA_ALU_I;
                     ins.type_data_alui.op = OP_DATA_ALU_sub;
                     ins.type_data_alui.r2 = r1;
                     ins.type_data_alui.imm = num;

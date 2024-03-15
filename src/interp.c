@@ -133,10 +133,10 @@ BEGIN_OP(data_alu)
     hive_register_t target;
     hive_register_t src1 = r[ins.type_data_alui.r2];
     uint64_t src2;
-    if (ins.type_data_alui.sub_op != SUBOP_DATA_ALU_I) {
-        src2 = r[ins.type_data_alur.r3].asQWord;
-    } else {
+    if (ins.type_data_alui.use_imm) {
         src2 = ins.type_data_alui.imm;
+    } else {
+        src2 = r[ins.type_data_alur.r3].asQWord;
     }
     if (ins.type_data_alui.salu) {
         target.asQWord = salu64(ins.type_data_alui.op, src1.asSQWord, src2, fr);

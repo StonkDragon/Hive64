@@ -50,7 +50,7 @@ char* alu_ops[16] = {
 
 char* dis_data_alu(hive_instruction_t ins, uint64_t addr) {
     char* s = NULL;
-    if (ins.type_data_alui.sub_op == SUBOP_DATA_ALU_I && ins.type_data_alui.op == OP_DATA_ALU_shl && ins.type_data_alui.imm == 0) {
+    if (ins.type_data.sub_op == SUBOP_DATA_ALU_I && ins.type_data_alui.op == OP_DATA_ALU_shl && ins.type_data_alui.imm == 0) {
         if (ins.type_data_alui.r1 == REG_PC && ins.type_data_alui.r2 == REG_LR) {
             return strformat("ret%s", condition_to_string(ins));
         }
@@ -61,7 +61,7 @@ char* dis_data_alu(hive_instruction_t ins, uint64_t addr) {
     } else {
         s = strformat("%s%s r%d, r%d, ", alu_ops[ins.type_data_alui.op], condition_to_string(ins), ins.type_data_alui.r1, ins.type_data_alui.r2);
     }
-    if (ins.type_data_alui.sub_op == SUBOP_DATA_ALU_I) {
+    if (ins.type_data.sub_op == SUBOP_DATA_ALU_I) {
         s = strformat("%s%s %d", s, condition_to_string(ins), ins.type_data_alui.imm);
     } else {
         s = strformat("%s%s r%d", s, condition_to_string(ins), ins.type_data_alur.r3);
@@ -156,14 +156,16 @@ char* dis_data(hive_instruction_t ins, uint64_t addr) {
     char* s = NULL;
     switch (ins.type_data.sub_op) {
         case SUBOP_DATA_ALU_I:  case_fallthrough;
-        case SUBOP_DATA_ALU_R:  s = dis_data_alu(ins, addr); break;
-        case SUBOP_DATA_FPU:    s = dis_data_fpu(ins, addr); break;
-        case SUBOP_DATA_VPU:    s = dis_data_vpu(ins, addr); break;
+        case SUBOP_DATA_ALU_R:  case_fallthrough;
+        case SUBOP_DATA_SALU_R: case_fallthrough;
+        case SUBOP_DATA_SALU_I: s = dis_data_alu(ins, addr); break;
         case SUBOP_DATA_BDEP:   case_fallthrough;
         case SUBOP_DATA_BDEPR:  case_fallthrough;
         case SUBOP_DATA_BEXT:   case_fallthrough;
         case SUBOP_DATA_BEXTR:  s = dis_data_bit(ins, addr); break;
         case SUBOP_DATA_LS:     s = dis_data_ls(ins, addr); break;
+        case SUBOP_DATA_FPU:    s = dis_data_fpu(ins, addr); break;
+        case SUBOP_DATA_VPU:    s = dis_data_vpu(ins, addr); break;
     }
     return s;
 }
