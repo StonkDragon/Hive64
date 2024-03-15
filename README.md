@@ -338,7 +338,7 @@ This is also done to keep the amount of opcodes to a minimum.
 The assembler accepts `sbdp` as a mnemonic to provide symmetry with `sbxt` and `ubxt`.
 However, there is no executional difference between a signed and unsigned bit deposit
 
-### `movz` and `movk` only use 4 bits for shift encoding
+### `movz` and `movk` only use 2 bits for shift encoding
 This is very simple: As it is only possible to shift the value to load by a multiple of 16 bits, there are only 4 possibilities for the value.
 
 ## Assembler directives
