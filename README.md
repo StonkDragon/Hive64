@@ -87,12 +87,14 @@ Every condition except `always` and `never` can be specified in the assembler by
 |-|-|-|
 |`add r1, r2, imm`|         `ccc0100000[r1-][r2-]0001[-imm8-]`|Adds r2 and an immediate and stores the result in r1|
 |`sub r1, r2, imm`|         `ccc0100010[r1-][r2-]0001[-imm8-]`|Subtracts an immediate from r2 and stores the result in r1|
-|`cmp r1, imm`|             `ccc0100011[r1-][r2-]0001[-imm8-]`|Compares r1 and an immediate by calculating the difference of the two values|
+|`cmp r1, imm`|             `ccc0100011.....[r2-]0001[-imm8-]`|Compares r1 and an immediate by calculating the difference of the two values|
 |`mul r1, r2, imm`|         `ccc0100100[r1-][r2-]0001[-imm8-]`|Multiplies r2 and an immediate and stores the result in r1|
 |`div r1, r2, imm`|         `ccc0100110[r1-][r2-]0001[-imm8-]`|Divides r2 by an immediate and stores the result in r1|
+|`sdiv r1, r2, imm`         `ccc0100110[r1-][r2-]0011[-imm8-]`|Divides r2 by an immediate and stores the result in r1|
 |`mod r1, r2, imm`|         `ccc0101000[r1-][r2-]0001[-imm8-]`|Calculates the remainder of the division of r2 and an immediate and stores it in r1|
+|`smod r1, r2, imm`         `ccc0101000[r1-][r2-]0011[-imm8-]`|Calculates the remainder of the division of r2 and an immediate and stores it in r1|
 |`and r1, r2, imm`|         `ccc0101010[r1-][r2-]0001[-imm8-]`|Ands r2 and an immediate and stores the result in r1|
-|`tst r1, imm`|             `ccc0101011[r1-][r2-]0001[-imm8-]`|Compares r1 and an immediate by anding the two values|
+|`tst r1, imm`|             `ccc0101011.....[r2-]0001[-imm8-]`|Compares r1 and an immediate by anding the two values|
 |`or r1, r2, imm`|          `ccc0101100[r1-][r2-]0001[-imm8-]`|Ors r2 and an immediate and stores the result in r1|
 |`xor r1, r2, imm`|         `ccc0101110[r1-][r2-]0001[-imm8-]`|Xors r2 and an immediate and stores the result in r1|
 |`shl r1, r2, imm`|         `ccc0110000[r1-][r2-]0001[-imm8-]`|Shifts r2 left by an immediate and stores the result in r1|
@@ -106,12 +108,14 @@ Every condition except `always` and `never` can be specified in the assembler by
 |-|-|-|
 |`add r1, r2, r3`|          `ccc0100000[r1-][r2-]0000...[r3-]`|Adds r2 and r3 and stores the result in r1|
 |`sub r1, r2, r3`|          `ccc0100010[r1-][r2-]0000...[r3-]`|Subtracts r3 from r2 and stores the result in r1|
-|`cmp r1, r2`|              `ccc0100011[r1-][r2-]0000...[r3-]`|Compares r1 and r2 by calculating the difference of the two values|
+|`cmp r1, r2`|              `ccc0100011.....[r2-]0000...[r3-]`|Compares r1 and r2 by calculating the difference of the two values|
 |`mul r1, r2, r3`|          `ccc0100100[r1-][r2-]0000...[r3-]`|Multiplies r2 and r3 and stores the result in r1|
 |`div r1, r2, r3`|          `ccc0100110[r1-][r2-]0000...[r3-]`|Divides r2 by r3 and stores the result in r1|
+|`sdiv r1, r2, r3`|         `ccc0100110[r1-][r2-]0010...[r3-]`|Divides r2 by r3 and stores the result in r1|
 |`mod r1, r2, r3`|          `ccc0101000[r1-][r2-]0000...[r3-]`|Calculates the remainder of the division of r2 and r3 and stores it in r1|
+|`smod r1, r2, r3`|         `ccc0101000[r1-][r2-]0010...[r3-]`|Calculates the remainder of the division of r2 and r3 and stores it in r1|
 |`and r1, r2, r3`|          `ccc0101010[r1-][r2-]0000...[r3-]`|Ands r2 and r3 and stores the result in r1|
-|`tst r1, r2`|              `ccc0101011[r1-][r2-]0000...[r3-]`|Compares r1 and r2 by anding the two values|
+|`tst r1, r2`|              `ccc0101011.....[r2-]0000...[r3-]`|Compares r1 and r2 by anding the two values|
 |`or r1, r2, r3`|           `ccc0101100[r1-][r2-]0000...[r3-]`|Ors r2 and r3 and stores the result in r1|
 |`xor r1, r2, r3`|          `ccc0101110[r1-][r2-]0000...[r3-]`|Xors r2 and r3 and stores the result in r1|
 |`shl r1, r2, r3`|          `ccc0110000[r1-][r2-]0000...[r3-]`|Shifts r2 left by r3 and stores the result in r1|
@@ -126,22 +130,40 @@ Every condition except `always` and `never` can be specified in the assembler by
 ### Floating point Arithmetic
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`fadd r1, r2, r3`|         `ccc0100000[r1-][r2-]10010..[r3-]`|Adds float in r2 and r3 and stores the result in r1|
-|`faddi r1, r2, r3`|        `ccc0100000[r1-][r2-]10011..[r3-]`|Adds float in r2 and integer in r3 and stores the result in r1|
-|`fsub r1, r2, r3`|         `ccc0100010[r1-][r2-]10010..[r3-]`|Subtracts float in r2 from r3 and stores the result in r1|
-|`fsubi r1, r2, r3`|        `ccc0100010[r1-][r2-]10011..[r3-]`|Subtracts float in r2 from integer in r3 and stores the result in r1|
-|`fcmp r1, r2`|             `ccc0100011[r1-][r2-]10010.......`|Compares float in r2 and r1 by calculating the difference of the two values|
-|`fcmpi r1, r2`|            `ccc0100011[r1-][r2-]10011.......`|Compares float in r2 and integer in r1 by calculating the difference of the two values|
-|`fmul r1, r2, r3`|         `ccc0100100[r1-][r2-]10010..[r3-]`|Multiplies float in r2 and r3 and stores the result in r1|
-|`fmuli r1, r2, r3`|        `ccc0100100[r1-][r2-]10011..[r3-]`|Multiplies float in r2 and integer in r3 and stores the result in r1|
-|`fdiv r1, r2, r3`|         `ccc0100110[r1-][r2-]10010..[r3-]`|Divides float in r2 by r3 and stores the result in r1|
-|`fdivi r1, r2, r3`|        `ccc0100110[r1-][r2-]10011..[r3-]`|Divides float in r2 by integer in r3 and stores the result in r1|
-|`fmod r1, r2, r3`|         `ccc0101000[r1-][r2-]10010..[r3-]`|Calculates the floating point remainder of dividing float in r2 by r3 and stores it in r1|
-|`fmodi r1, r2, r3`|        `ccc0101000[r1-][r2-]10011..[r3-]`|Calculates the floating point remainder of dividing float in r2 by integer in r3 and stores it in r1|
-|`fsin r1, r2`|             `ccc0101010[r1-][r2-]10010.......`|Calculates the sin of float in r2 and stores it in r1|
-|`fsqrt r1, r2`|            `ccc0101100[r1-][r2-]10011.......`|Calculates the sqare root of float in r2 and stores it in r1|
-|`f2i r1, r2`|              `ccc0101110[r1-][r2-]10010.......`|Converts the float in r2 to an integer and stores it in r1|
-|`i2f r1, r2`|              `ccc0101110[r1-][r2-]10011.......`|Converts the integer in r2 to a float and stores it in r1|
+|`fadd r1, r2, r3`|         `ccc0100000[r1-][r2-]100100.[r3-]`|Adds 64-bit float in r2 and r3 and stores the result in r1|
+|`faddi r1, r2, r3`|        `ccc0100000[r1-][r2-]100110.[r3-]`|Adds 64-bit float in r2 and integer in r3 and stores the result in r1|
+|`fsub r1, r2, r3`|         `ccc0100010[r1-][r2-]100100.[r3-]`|Subtracts 64-bit float in r2 from r3 and stores the result in r1|
+|`fsubi r1, r2, r3`|        `ccc0100010[r1-][r2-]100110.[r3-]`|Subtracts 64-bit float in r2 from integer in r3 and stores the result in r1|
+|`fcmp r1, r2`|             `ccc0100011[r1-][r2-]100100......`|Compares 64-bit float in r2 and r1 by calculating the difference of the two values|
+|`fcmpi r1, r2`|            `ccc0100011[r1-][r2-]100110......`|Compares 64-bit float in r2 and integer in r1 by calculating the difference of the two values|
+|`fmul r1, r2, r3`|         `ccc0100100[r1-][r2-]100100.[r3-]`|Multiplies 64-bit float in r2 and r3 and stores the result in r1|
+|`fmuli r1, r2, r3`|        `ccc0100100[r1-][r2-]100110.[r3-]`|Multiplies 64-bit float in r2 and integer in r3 and stores the result in r1|
+|`fdiv r1, r2, r3`|         `ccc0100110[r1-][r2-]100100.[r3-]`|Divides 64-bit float in r2 by r3 and stores the result in r1|
+|`fdivi r1, r2, r3`|        `ccc0100110[r1-][r2-]100110.[r3-]`|Divides 64-bit float in r2 by integer in r3 and stores the result in r1|
+|`fmod r1, r2, r3`|         `ccc0101000[r1-][r2-]100100.[r3-]`|Calculates the 64-bit floating point remainder of dividing 64-bit float in r2 by r3 and stores it in r1|
+|`fmodi r1, r2, r3`|        `ccc0101000[r1-][r2-]100110.[r3-]`|Calculates the 64-bit floating point remainder of dividing 64-bit float in r2 by integer in r3 and stores it in r1|
+|`fsin r1, r2`|             `ccc0101010[r1-][r2-]100100......`|Calculates the sin of 64-bit float in r2 and stores it in r1|
+|`fsqrt r1, r2`|            `ccc0101100[r1-][r2-]100110......`|Calculates the sqare root of 64-bit float in r2 and stores it in r1|
+|`f2i r1, r2`|              `ccc0101110[r1-][r2-]100100......`|Converts the 64-bit float in r2 to an integer and stores it in r1|
+|`i2f r1, r2`|              `ccc0101110[r1-][r2-]100110......`|Converts the integer in r2 to a 64-bit float and stores it in r1|
+|`sadd r1, r2, r3`|         `ccc0100000[r1-][r2-]100101.[r3-]`|Adds 32-bit float in r2 and r3 and stores the result in r1|
+|`saddi r1, r2, r3`|        `ccc0100000[r1-][r2-]100111.[r3-]`|Adds 32-bit float in r2 and integer in r3 and stores the result in r1|
+|`ssub r1, r2, r3`|         `ccc0100010[r1-][r2-]100101.[r3-]`|Subtracts 32-bit float in r2 from r3 and stores the result in r1|
+|`ssubi r1, r2, r3`|        `ccc0100010[r1-][r2-]100111.[r3-]`|Subtracts 32-bit float in r2 from integer in r3 and stores the result in r1|
+|`scmp r1, r2`|             `ccc0100011[r1-][r2-]100101......`|Compares 32-bit float in r2 and r1 by calculating the difference of the two values|
+|`scmpi r1, r2`|            `ccc0100011[r1-][r2-]100111......`|Compares 32-bit float in r2 and integer in r1 by calculating the difference of the two values|
+|`smul r1, r2, r3`|         `ccc0100100[r1-][r2-]100101.[r3-]`|Multiplies 32-bit float in r2 and r3 and stores the result in r1|
+|`smuli r1, r2, r3`|        `ccc0100100[r1-][r2-]100111.[r3-]`|Multiplies 32-bit float in r2 and integer in r3 and stores the result in r1|
+|`sdiv r1, r2, r3`|         `ccc0100110[r1-][r2-]100101.[r3-]`|Divides 32-bit float in r2 by r3 and stores the result in r1|
+|`sdivi r1, r2, r3`|        `ccc0100110[r1-][r2-]100111.[r3-]`|Divides 32-bit float in r2 by integer in r3 and stores the result in r1|
+|`smod r1, r2, r3`|         `ccc0101000[r1-][r2-]100101.[r3-]`|Calculates the 32-bit floating point remainder of dividing 32-bit float in r2 by r3 and stores it in r1|
+|`smodi r1, r2, r3`|        `ccc0101000[r1-][r2-]100111.[r3-]`|Calculates the 32-bit floating point remainder of dividing 32-bit float in r2 by integer in r3 and stores it in r1|
+|`ssin r1, r2`|             `ccc0101010[r1-][r2-]100101......`|Calculates the sin of 32-bit float in r2 and stores it in r1|
+|`ssqrt r1, r2`|            `ccc0101100[r1-][r2-]100111......`|Calculates the sqare root of 32-bit float in r2 and stores it in r1|
+|`s2i r1, r2`|              `ccc0101110[r1-][r2-]100101......`|Converts the 32-bit float in r2 to an integer and stores it in r1|
+|`i2s r1, r2`|              `ccc0101110[r1-][r2-]100111......`|Converts the integer in r2 to a 32-bit float and stores it in r1|
+|`s2f r1, r2`|              `ccc0101110[r1-][r2-]100100......`|Converts the 32-bit float in r2 to a 64-bit float and stores it in r1|
+|`f2s r1, r2`|              `ccc0101110[r1-][r2-]100101......`|Converts the 64-bit float in r2 to a 32-bit float and stores it in r1|
 
 ### Utility
 |Mnemonic|Encoding|Description|
