@@ -11,5 +11,6 @@ cp build/h64 h64-as
 cp build/h64 h64
 cp build/h64 h64-ld
 cp build/h64 h64-dis
+cp build/h64 h64-dbg
 
 rm -rf build
