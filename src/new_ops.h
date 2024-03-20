@@ -315,15 +315,15 @@ static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_regist
 #define COND_ALWAYS 0b011
 #define COND_NEVER  0b111
 
-#define SVC_exit        0
-#define SVC_read        1
-#define SVC_write       2
-#define SVC_open        3
-#define SVC_close       4
-#define SVC_malloc      5
-#define SVC_free        6
-#define SVC_realloc     7
-#define SVC_coredump    8
+#define SVC_exit            0
+#define SVC_read            1
+#define SVC_write           2
+#define SVC_open            3
+#define SVC_close           4
+#define SVC_malloc          5
+#define SVC_free            6
+#define SVC_realloc         7
+#define SVC_coredump        8
 
 #if __has_attribute(fallthrough)
 #define case_fallthrough __attribute__((fallthrough))
@@ -433,3 +433,7 @@ Nob_String_Builder pack_symbol_table(Symbol_Offsets syms);
 Nob_String_Builder pack_relocation_table(Symbol_Offsets relocs);
 void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols);
 Symbol_Offsets prepare(HiveFile_Array hf, bool try_relocate);
+int debug(int argc, char** argv);
+void exec(hive_register_t* r, hive_flag_register_t* fr, hive_vector_register_t* v);
+void disassemble(Section code_sect, Symbol_Offsets syms, Symbol_Offsets relocations);
+Nob_String_Builder run_compile(const char* file_name, Symbol_Offsets* syms, Symbol_Offsets* relocations);

@@ -47,6 +47,7 @@
 #define OP_DATA_FLOAT_f2i       0x5
 #define OP_DATA_FLOAT_sin       0x6
 #define OP_DATA_FLOAT_sqrt      0x7
+#define OP_DATA_FLOAT_s2f       0x8
 
 #define OP_DATA_VPU_add         0x0
 #define OP_DATA_VPU_sub         0x1
@@ -81,3 +82,4 @@
 #define OP_LOAD_lea             0b00
 #define OP_LOAD_movzk           0b01
 #define OP_LOAD_svc             0b10
+#define OP_LOAD_OTHER           0b11
