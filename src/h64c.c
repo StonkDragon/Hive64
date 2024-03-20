@@ -759,6 +759,22 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 ins.type_data_fpu.use_int_arg2 = i2f;
                 ins.type_data_fpu.r1 = r1;
                 ins.type_data_fpu.r2 = r2;
+            } else if (eq(mnemonic, "f2s") || eq(mnemonic, "s2f")) {
+                uint8_t f2s = eq(mnemonic, "f2s");
+                inc();
+                EXPECT(Register, "Expected register, got %s");
+                uint8_t r1 = parse_reg(tokens.items[i].value);
+                inc();
+                EXPECT(Comma, "Expected comma, got %s");
+                inc();
+                EXPECT(Register, "Expected register, got %s");
+                uint8_t r2 = parse_reg(tokens.items[i].value);
+                ins.generic.type = MODE_DATA;
+                ins.type_data_fpu.sub_op = SUBOP_DATA_FPU;
+                ins.type_data_fpu.op = OP_DATA_FLOAT_s2f;
+                ins.type_data_fpu.is_single_op = f2s;
+                ins.type_data_fpu.r1 = r1;
+                ins.type_data_fpu.r2 = r2;
             } else if (mnemonic[0] == 'f' || mnemonic[0] == 's') {
                 mnemonic++;
                 ins.generic.type = MODE_DATA;
@@ -802,6 +818,8 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                     FLOAT_OP(div)
                 } else if (eq(mnemonic, "mod") || eq(mnemonic, "modi")) {
                     FLOAT_OP(mod)
+                } else {
+                    EXPECT(Eof, "Unknown float operation: %s");
                 }
             } else if (mnemonic[0] == 'v') {
                 uint8_t modes[] = {

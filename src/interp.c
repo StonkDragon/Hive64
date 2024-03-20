@@ -160,8 +160,9 @@ BEGIN_OP(data_fpu)
                 case OP_DATA_FLOAT_div: target.asFloat32 = src1.asFloat32 / src2.asSDWord; break;
                 case OP_DATA_FLOAT_mod: target.asFloat32 = fmod(src1.asFloat32, src2.asSDWord); break;
                 case OP_DATA_FLOAT_f2i: target.asFloat32 = (Float32_t) src1.asSDWord; break;
-                case OP_DATA_FLOAT_sin: target.asFloat32 = sin(src1.asFloat32); break;
-                case OP_DATA_FLOAT_sqrt: target.asFloat32 = sqrt(src1.asFloat32); break;
+                case OP_DATA_FLOAT_sin: target.asFloat32 = sinf(src1.asSDWord); break;
+                case OP_DATA_FLOAT_sqrt: target.asFloat32 = sqrtf(src1.asSDWord); break;
+                default: raise(SIGILL);
             }
             set_flagsf32(fr, target.asFloat32);
         } else {
@@ -172,8 +173,10 @@ BEGIN_OP(data_fpu)
                 case OP_DATA_FLOAT_div: target.asFloat32 = src1.asFloat32 / src2.asFloat32; break;
                 case OP_DATA_FLOAT_mod: target.asFloat32 = fmod(src1.asFloat32, src2.asFloat32); break;
                 case OP_DATA_FLOAT_f2i: target.asSDWord = set_flags32(fr, (SDWord_t) src1.asFloat32); break;
-                case OP_DATA_FLOAT_sin: target.asFloat32 = sin(src1.asFloat32); break;
-                case OP_DATA_FLOAT_sqrt: target.asFloat32 = sqrt(src1.asFloat32); break;
+                case OP_DATA_FLOAT_sin: target.asFloat32 = sinf(src1.asFloat32); break;
+                case OP_DATA_FLOAT_sqrt: target.asFloat32 = sqrtf(src1.asFloat32); break;
+                case OP_DATA_FLOAT_s2f: target.asFloat32 = (Float32_t) src1.asFloat64; break;
+                default: raise(SIGILL);
             }
             if (ins.type_data_fpu.sub_op != OP_DATA_FLOAT_f2i) {
                 set_flagsf32(fr, target.asFloat32);
@@ -188,8 +191,9 @@ BEGIN_OP(data_fpu)
                 case OP_DATA_FLOAT_div: target.asFloat64 = src1.asFloat64 / src2.asSQWord; break;
                 case OP_DATA_FLOAT_mod: target.asFloat64 = fmod(src1.asFloat64, src2.asSQWord); break;
                 case OP_DATA_FLOAT_f2i: target.asFloat64 = (Float64_t) src1.asSQWord; break;
-                case OP_DATA_FLOAT_sin: target.asFloat64 = sin(src1.asFloat64); break;
-                case OP_DATA_FLOAT_sqrt: target.asFloat64 = sqrt(src1.asFloat64); break;
+                case OP_DATA_FLOAT_sin: target.asFloat64 = sin(src1.asSQWord); break;
+                case OP_DATA_FLOAT_sqrt: target.asFloat64 = sqrt(src1.asSQWord); break;
+                default: raise(SIGILL);
             }
             set_flagsf64(fr, target.asFloat64);
         } else {
@@ -202,6 +206,8 @@ BEGIN_OP(data_fpu)
                 case OP_DATA_FLOAT_f2i: target.asSQWord = set_flags64(fr, (SQWord_t) src1.asFloat64); break;
                 case OP_DATA_FLOAT_sin: target.asFloat64 = sin(src1.asFloat64); break;
                 case OP_DATA_FLOAT_sqrt: target.asFloat64 = sqrt(src1.asFloat64); break;
+                case OP_DATA_FLOAT_s2f: target.asFloat64 = (Float64_t) src1.asFloat32; break;
+                default: raise(SIGILL);
             }
             if (ins.type_data_fpu.sub_op != OP_DATA_FLOAT_f2i) {
                 set_flagsf64(fr, target.asFloat64);
@@ -225,20 +231,18 @@ BEGIN_OP(data_bit)
     uint8_t lowest;
     uint8_t num;
     if (ins.type_data_bit.is_reg) {
-        lowest = decode_count(ins) + 1;
-        num = ins.type_data_bit.start;
-    } else {
         lowest = r[ins.type_data_bitr.start_reg].asByte;
-        lowest = r[ins.type_data_bitr.count_reg].asByte;
+        num = r[ins.type_data_bitr.count_reg].asByte;
+    } else {
+        lowest = ins.type_data_bit.start;
+        num = decode_count(ins) + 1;
     }
     uint64_t mask = ((1ULL << num) - 1);
-    if (ins.type_data_bit.is_dep) {
-        uint64_t val = (r[ins.type_data_bit.r2].asQWord & (mask << lowest)) >> lowest;
+    if (!ins.type_data_bit.is_dep) {
+        uint64_t val = (r[ins.type_data_bit.r2].asQWord >> lowest) & mask;
         if (ins.type_data_bit.extend) {
-            uint8_t sign_bit_mask = (1ULL << (num - 1));
-            if (val & sign_bit_mask) {
-                val |= ~mask;
-            }
+            uint64_t sign_bit = val & (1ULL << (num - 1));
+            val |= -sign_bit;
         }
         r[ins.type_data_bit.r1].asQWord = val;
     } else {
@@ -575,5 +579,40 @@ void exec_instr(hive_instruction_t ins, hive_register_t* r, hive_flag_register_t
         case MODE_DATA:   exec_data(ins, r, fr, v); break;
         case MODE_LOAD:   exec_load(ins, r, fr, v); break;
         default: raise(SIGILL);
+    }
+}
+
+#define MAX_PIPELINE_SIZE 16
+typedef hive_instruction_t pipeline_t[MAX_PIPELINE_SIZE];
+typedef hive_instruction_t* pipeline_ptr_t[MAX_PIPELINE_SIZE];
+
+int check_condition(hive_instruction_t ins, hive_flag_register_t fr) {
+    switch (ins.generic.condition) {
+        case COND_EQ:       return fr.flags.zero;
+        case COND_NE:       return !fr.flags.zero;
+        case COND_LE:       return fr.flags.negative || fr.flags.zero;
+        case COND_GT:       return !fr.flags.zero && !fr.flags.negative;
+        case COND_LT:       return fr.flags.negative;
+        case COND_GE:       return !fr.flags.negative;
+        case COND_ALWAYS:   return 1;
+        default:            return 0;
+    }
+}
+
+void exec(hive_register_t* r, hive_flag_register_t* fr, hive_vector_register_t* v) {
+    pipeline_t pipeline;
+    while (1) {
+        memcpy(pipeline, r[REG_PC].asInstrPtr, sizeof(pipeline_t));
+        QWord_t ptr = r[REG_PC].asQWord;
+
+        for (size_t next_instr = 0; next_instr < MAX_PIPELINE_SIZE; next_instr++) {
+            hive_instruction_t ins = pipeline[next_instr];
+            if (r[REG_PC].asQWord != (ptr + next_instr * sizeof(hive_instruction_t))) {
+                break;
+            }
+            
+            exec_instr(ins, r, fr, v);
+            r[REG_PC].asInstrPtr++;
+        }
     }
 }

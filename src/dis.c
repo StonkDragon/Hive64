@@ -25,9 +25,59 @@ char* dis_branch(hive_instruction_t ins, uint64_t addr) {
     return s;
 }
 
-char* alu_ops_nw[16] = {
+char* salu_ops_nw[16] = {
+    [OP_DATA_ALU_add] = "add",
     [OP_DATA_ALU_sub] = "cmp",
+    [OP_DATA_ALU_mul] = "mul",
+    [OP_DATA_ALU_div] = "sdiv",
+    [OP_DATA_ALU_mod] = "smod",
     [OP_DATA_ALU_and] = "tst",
+    [OP_DATA_ALU_or] = "or",
+    [OP_DATA_ALU_xor] = "xor",
+    [OP_DATA_ALU_shl] = "shl",
+    [OP_DATA_ALU_shr] = "shr",
+    [OP_DATA_ALU_rol] = "rol",
+    [OP_DATA_ALU_ror] = "ror",
+    [OP_DATA_ALU_neg] = "neg",
+    [OP_DATA_ALU_not] = "not",
+    [OP_DATA_ALU_asr] = "asr",
+    [OP_DATA_ALU_swe] = "swe",
+};
+char* salu_ops[16] = {
+    [OP_DATA_ALU_add] = "add",
+    [OP_DATA_ALU_sub] = "sub",
+    [OP_DATA_ALU_mul] = "mul",
+    [OP_DATA_ALU_div] = "sdiv",
+    [OP_DATA_ALU_mod] = "smod",
+    [OP_DATA_ALU_and] = "and",
+    [OP_DATA_ALU_or] = "or",
+    [OP_DATA_ALU_xor] = "xor",
+    [OP_DATA_ALU_shl] = "shl",
+    [OP_DATA_ALU_shr] = "shr",
+    [OP_DATA_ALU_rol] = "rol",
+    [OP_DATA_ALU_ror] = "ror",
+    [OP_DATA_ALU_neg] = "neg",
+    [OP_DATA_ALU_not] = "not",
+    [OP_DATA_ALU_asr] = "asr",
+    [OP_DATA_ALU_swe] = "swe",
+};
+char* alu_ops_nw[16] = {
+    [OP_DATA_ALU_add] = "add",
+    [OP_DATA_ALU_sub] = "cmp",
+    [OP_DATA_ALU_mul] = "mul",
+    [OP_DATA_ALU_div] = "div",
+    [OP_DATA_ALU_mod] = "mod",
+    [OP_DATA_ALU_and] = "tst",
+    [OP_DATA_ALU_or] = "or",
+    [OP_DATA_ALU_xor] = "xor",
+    [OP_DATA_ALU_shl] = "shl",
+    [OP_DATA_ALU_shr] = "shr",
+    [OP_DATA_ALU_rol] = "rol",
+    [OP_DATA_ALU_ror] = "ror",
+    [OP_DATA_ALU_neg] = "neg",
+    [OP_DATA_ALU_not] = "not",
+    [OP_DATA_ALU_asr] = "asr",
+    [OP_DATA_ALU_swe] = "swe",
 };
 char* alu_ops[16] = {
     [OP_DATA_ALU_add] = "add",
@@ -56,15 +106,23 @@ char* dis_data_alu(hive_instruction_t ins, uint64_t addr) {
         }
         return strformat("mov%s r%d, r%d", condition_to_string(ins), ins.type_data_alui.r1, ins.type_data_alui.r2);
     }
-    if (ins.type_data_alui.no_writeback) {
-        s = strformat("%s%s r%d, r%d, ", alu_ops_nw[ins.type_data_alui.op], condition_to_string(ins), ins.type_data_alui.r1, ins.type_data_alui.r2);
+    if (ins.type_data_alui.salu) {
+        if (ins.type_data_alui.no_writeback) {
+            s = strformat("%s%s r%d, r%d,", salu_ops_nw[ins.type_data_alui.op], condition_to_string(ins), ins.type_data_alui.r1, ins.type_data_alui.r2);
+        } else {
+            s = strformat("%s%s r%d, r%d,", salu_ops[ins.type_data_alui.op], condition_to_string(ins), ins.type_data_alui.r1, ins.type_data_alui.r2);
+        }
     } else {
-        s = strformat("%s%s r%d, r%d, ", alu_ops[ins.type_data_alui.op], condition_to_string(ins), ins.type_data_alui.r1, ins.type_data_alui.r2);
+        if (ins.type_data_alui.no_writeback) {
+            s = strformat("%s%s r%d, r%d,", alu_ops_nw[ins.type_data_alui.op], condition_to_string(ins), ins.type_data_alui.r1, ins.type_data_alui.r2);
+        } else {
+            s = strformat("%s%s r%d, r%d,", alu_ops[ins.type_data_alui.op], condition_to_string(ins), ins.type_data_alui.r1, ins.type_data_alui.r2);
+        }
     }
     if (ins.type_data.sub_op == SUBOP_DATA_ALU_I) {
-        s = strformat("%s%s %d", s, condition_to_string(ins), ins.type_data_alui.imm);
+        s = strformat("%s %d", s, ins.type_data_alui.imm);
     } else {
-        s = strformat("%s%s r%d", s, condition_to_string(ins), ins.type_data_alur.r3);
+        s = strformat("%s r%d", s, ins.type_data_alur.r3);
     }
     return s;
 }
@@ -117,7 +175,7 @@ char* dis_data_bit(hive_instruction_t ins, uint64_t addr) {
     if (ins.type_data_bit.is_reg) {
         bit_len = strformat("r%d, r%d", ins.type_data_bitr.start_reg, ins.type_data_bitr.count_reg);
     } else {
-        bit_len = strformat("%d, %d", ins.type_data_bit.start, decode_count(ins));
+        bit_len = strformat("%d, %d", ins.type_data_bit.start, decode_count(ins) + 1);
     }
     char* s = ins.type_data_bit.extend ? "s" : "u";
     if (ins.type_data_bit.is_dep) {
@@ -179,22 +237,30 @@ char* dis_load_movzk(hive_instruction_t ins, uint64_t addr) {
     return s;
 }
 
+char* dis_load_other(hive_instruction_t ins, uint64_t addr) {
+    return NULL;
+}
+
 char* dis_load(hive_instruction_t ins, uint64_t addr) {
     switch (ins.type_load.op) {
-        case OP_LOAD_lea: return strformat("lea%s r%d, 0x%llx", condition_to_string(ins), ins.type_load_signed.r1, addr + ins.type_load_signed.imm * sizeof(hive_instruction_t));
+        case OP_LOAD_lea:   return strformat("lea%s r%d, 0x%llx", condition_to_string(ins), ins.type_load_signed.r1, addr + ins.type_load_signed.imm * sizeof(hive_instruction_t));
         case OP_LOAD_movzk: return dis_load_movzk(ins, addr);
-        case OP_LOAD_svc: return strformat("svc%s", condition_to_string(ins));
+        case OP_LOAD_svc:   return strformat("svc%s", condition_to_string(ins));
+        case OP_LOAD_OTHER: return dis_load_other(ins, addr);
     }
     return NULL;
 }
 
 char* dis(hive_instruction_t ins, uint64_t addr) {
     char* instr = NULL;
-    if (ins.generic.condition == COND_NEVER) return strformat("nop");
-    switch (ins.generic.type) {
-        case MODE_BRANCH:   instr = dis_branch(ins, addr); break;
-        case MODE_DATA:     instr = dis_data(ins, addr); break;
-        case MODE_LOAD:     instr = dis_load(ins, addr); break;
+    if (ins.generic.condition == COND_NEVER) {
+        instr = strformat("nop");
+    } else {
+        switch (ins.generic.type) {
+            case MODE_BRANCH:   instr = dis_branch(ins, addr); break;
+            case MODE_DATA:     instr = dis_data(ins, addr); break;
+            case MODE_LOAD:     instr = dis_load(ins, addr); break;
+        }
     }
     return instr;
 }
