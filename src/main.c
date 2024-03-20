@@ -77,21 +77,6 @@ svc_call svcs[] = {
     SVC(coredump),
 };
 
-void exec_instr(hive_instruction_t ins, hive_register_t* r, hive_flag_register_t* fr, hive_vector_register_t* v);
-
-int check_condition(hive_instruction_t ins, hive_flag_register_t fr) {
-    switch (ins.generic.condition) {
-        case COND_EQ:       return fr.flags.zero;
-        case COND_NE:       return !fr.flags.zero;
-        case COND_LE:       return fr.flags.negative || fr.flags.zero;
-        case COND_GT:       return !fr.flags.zero && !fr.flags.negative;
-        case COND_LT:       return fr.flags.negative;
-        case COND_GE:       return !fr.flags.negative;
-        case COND_ALWAYS:   return 1;
-        default:            return 0;
-    }
-}
-
 #ifdef __printflike
 __printflike(1, 2)
 #endif
@@ -111,67 +96,6 @@ char* strformat(const char* fmt, ...) {
     return data;
     #pragma clang diagnostic pop
 }
-
-#define PIPELINE_SIZE 16
-typedef hive_instruction_t pipeline_t[PIPELINE_SIZE];
-
-QWord_t decode_branch_target(QWord_t current_addr, hive_instruction_t ins, hive_register_t* r) {
-    if (ins.generic.type == MODE_BRANCH) {
-        QWord_t target = current_addr;
-        if (ins.type_branch.is_reg) {
-            target = r[ins.type_branch_register.r1].asQWord;
-        } else {
-            target += ins.type_branch.offset * 4;
-        }
-        return target;
-    }
-    return current_addr + 4;
-}
-
-void fetch(pipeline_t pipeline, hive_instruction_t* from, hive_register_t* r, hive_flag_register_t fr) {
-    for (size_t i = 0; i < PIPELINE_SIZE; i++) {
-        hive_instruction_t ins = *from;
-        if (check_condition(ins, fr)) {
-            if (ins.generic.type == MODE_BRANCH) {
-                from = (hive_instruction_t*) decode_branch_target((QWord_t) from, ins, r);
-            } else if (ins.generic.type == MODE_DATA && ins.type_data_alui.r1 == REG_PC && ins.type_data_alui.r2 == REG_LR && ins.type_data_alui.imm == 0) {
-                from = (hive_instruction_t*) (r[REG_LR].asQWord + sizeof(hive_instruction_t));
-            } else {
-                from++;
-            }
-        } else {
-            from++;
-        }
-        pipeline[i] = ins;
-    }
-}
-
-void sigsegv(int x) {
-    write(STDOUT_FILENO, "Segmentation fault (core dumped)\n", 33);
-    coredump(0);
-    exit(1);
-}
-
-void exec(hive_register_t* r, hive_flag_register_t* fr, hive_vector_register_t* v) {
-    signal(SIGSEGV, sigsegv);
-    pipeline_t pipeline;
-    while (1) {
-        fetch(pipeline, r[REG_PC].asInstrPtr, r, *fr);
-
-        for (size_t i = 0; i < PIPELINE_SIZE; i++) {
-            hive_instruction_t ins = pipeline[i];
-            if (*r[REG_PC].asDWordPtr != *(DWord_t*) &ins) {
-                break;
-            }
-            
-            exec_instr(ins, r, fr, v);
-            r[REG_PC].asInstrPtr++;
-        }
-    }
-}
-
-void disassemble(Section code_sect, Symbol_Offsets syms, Symbol_Offsets relocations);
-Nob_String_Builder run_compile(const char* file_name, Symbol_Offsets* syms, Symbol_Offsets* relocations);
 
 bool strends(const char* str, const char* suf) {
     if (str == NULL || suf == NULL) return false;
@@ -202,6 +126,7 @@ int main(int argc, char **argv) {
 #define HIVE64_AS   "h64-as"
 #define HIVE64_LD   "h64-ld"
 #define HIVE64_DIS  "h64-dis"
+#define HIVE64_DBG  "h64-dbg"
 #define HIVE64_RUN  "h64"
 
     const char* exe_name = argv[0];
@@ -332,8 +257,9 @@ int main(int argc, char **argv) {
 
         char stack[1024 * 1024];
         regs.r[REG_PC].asQWord = find_symbol_address(all_syms, "_start");
-        regs.r[REG_SP].asQWord = ((QWord_t) stack) + sizeof(stack);
-    
+        QWord_t stack_hi = regs.r[REG_SP].asQWord = ((QWord_t) stack) + sizeof(stack);
+        mmu_prefetch((void*) (stack_hi - 64));
+
         if (regs.r[REG_PC].asSQWord != -1) {
             exec(regs.r, &regs.flags, vregisters);
             return regs.r[0].asSDWord;
@@ -341,6 +267,8 @@ int main(int argc, char **argv) {
         
         fprintf(stderr, "Could not find _start symbol\n");
         return 1;
+    } else if (strcmp(exe_name, HIVE64_DBG) == 0) {
+        return debug(argc, argv);
     } else if (strcmp(exe_name, HIVE64_DIS) == 0) {
         HiveFile_Array hf = {0};
         get_all_files(argv[1], &hf, false);
