@@ -11,7 +11,7 @@ _start:
     movz r0, 0              # addr
     movz r1, 0x100, shl 16  # size
     movz r2, 0x3            # PROT_READ | PROT_WRITE
-    movz r3, 0x1002         # MAP_ANON | MAP_PRIVATE | MAP_FIXED
+    movz r3, 0x1002         # MAP_ANON | MAP_PRIVATE
     movz r4, 0              # fd
     movz r5, 0              # off
     svc
