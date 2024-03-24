@@ -64,7 +64,7 @@ void coredump(struct cpu_state* state) {
 }
 
 svc_call svcs[] = {
-    SVC(pthread_exit),
+    SVC(exit),
     SVC(read),
     SVC(write),
     SVC(open),
@@ -120,13 +120,31 @@ char* reformat(const char* str, const char* remove, const char* add) {
     return s;
 }
 
-int main(int argc, char **argv) {
-#define HIVE64_AS   "h64-as"
-#define HIVE64_LD   "h64-ld"
-#define HIVE64_DIS  "h64-dis"
-#define HIVE64_DBG  "h64-dbg"
-#define HIVE64_RUN  "h64"
+bool in_cmds(char** cmds, const char* s) {
+    size_t ptr = 0;
+    while (cmds[ptr]) {
+        if (strcmp(cmds[ptr++], s) == 0) return true;
+    }
+    return false;
+}
 
+#define IS(_type) \
+bool is_ ## _type ## _cmd(const char* s) { \
+    char* cmds[] = { \
+        "h64-" #_type, \
+        "hive64-unknown-" #_type, \
+        NULL, \
+    }; \
+    return in_cmds(cmds, s); \
+}
+
+IS(as)
+IS(ld)
+IS(dis)
+IS(dbg)
+IS(run)
+
+int main(int argc, char **argv) {
     const char* exe_name = argv[0];
 
     char* s = strrchr(exe_name, '/');
@@ -134,7 +152,7 @@ int main(int argc, char **argv) {
         exe_name = (const char*) (((size_t) s) + 1);
     }
 
-    if (strcmp(exe_name, HIVE64_AS) == 0) {
+    if (is_as_cmd(exe_name)) {
         if (argc < 2) {
             fprintf(stderr, "Usage: %s <srcfile>\n", exe_name);
             return 1;
@@ -194,9 +212,10 @@ int main(int argc, char **argv) {
             fclose(f);
         }
         return 0;
-    } else if (strcmp(exe_name, HIVE64_LD) == 0) {
+    } else if (is_ld_cmd(exe_name)) {
         char* outfile = "out.rcx";
         Nob_File_Paths link_with = {0};
+        Nob_File_Paths dlibs = {0};
         for (int i = 1; i < argc; i++) {
             if (argv[i][0] == '-' && argv[i][1] == 'o') {
                 i++;
@@ -205,15 +224,46 @@ int main(int argc, char **argv) {
                     return 1;
                 }
                 outfile = argv[i];
+            } else if (argv[i][0] == '-' && argv[i][1] == 'l') {
+                char* dlib = NULL;
+                if (argv[i][2] == 0) {
+                    i++;
+                    if (i >= argc) {
+                        fprintf(stderr, "-o expects one argument!\n");
+                        return 1;
+                    }
+                    dlib = argv[i];
+                } else {
+                    dlib = argv[i] + 2;
+                }
+                if (dlib[0] == ':') {
+                    nob_da_append(&dlibs, dlib + 1);
+                } else {
+                    nob_da_append(&dlibs, strformat("lib%s.dll", dlib));
+                }
             } else if (strends(argv[i], ".rcx")) {
                 nob_da_append(&link_with, argv[i]);
             }
         }
 
-        HiveFile_Array hf = {0};
-        for (size_t i = 0; i < link_with.count; i++) {
-            get_all_files(link_with.items[i], &hf, false);
-        }
+        Nob_String_Builder ld_sect_data = pack_ld_section(dlibs);
+        Section ld_sect = {
+            .data = ld_sect_data.items,
+            .len = ld_sect_data.count,
+            .type = SECT_TYPE_LD,
+        };
+        HiveFile dl = {
+            .magic = HIVE_FILE_MAGIC,
+            .sects = {0},
+            .name = "__DYLD__",
+        };
+        nob_da_append(&dl.sects, ld_sect);
+        
+        FILE* fp = fopen("__DYLD__", "wb");
+        write_hive_file(dl, fp);
+        fclose(fp);
+        nob_da_append(&link_with, "__DYLD__");
+
         HiveFile dummy = {
             .magic = HIVE_FAT_FILE_MAGIC,
             .sects = {0}
@@ -237,14 +287,18 @@ int main(int argc, char **argv) {
             strncpy(s.data + sizeof(size_t), link_with.items[i], file_name_size);
             fread(s.data + file_name_size + sizeof(size_t), sizeof(*s.data), s.len, fp);
             nob_da_append(&dummy.sects, s);
+
+            remove(link_with.items[i]);
         }
+
+        remove("__DYLD__");
 
         FILE* f = fopen(outfile, "wb");
         write_hive_file(dummy, f);
         fclose(f);
-    } else if (strcmp(exe_name, HIVE64_RUN) == 0) {
+    } else if (is_run_cmd(exe_name) || strcmp(exe_name, "h64") == 0) {
         HiveFile_Array hf = {0};
-        get_all_files(argv[1], &hf, true);
+        get_all_files(argv[1], &hf, true, true);
         
         Symbol_Array all_syms = {0};
         prepare(hf, true, &all_syms);
@@ -252,17 +306,17 @@ int main(int argc, char **argv) {
         exec((void*) find_symbol_address(all_syms, "_start"));
         fprintf(stderr, "Could not find _start symbol\n");
         return 1;
-    } else if (strcmp(exe_name, HIVE64_DBG) == 0) {
+    } else if (is_dbg_cmd(exe_name)) {
         return debug(argc, argv);
-    } else if (strcmp(exe_name, HIVE64_DIS) == 0) {
+    } else if (is_dis_cmd(exe_name)) {
         HiveFile_Array hf = {0};
-        get_all_files(argv[1], &hf, false);
+        get_all_files(argv[1], &hf, false, false);
         
         Symbol_Array all_syms = {0};
-        prepare(hf, true, &all_syms);
+        prepare(hf, false, &all_syms);
 
         for (size_t i = 0; i < hf.count; i++) {
-            if (hf.items[i].magic != HIVE_FAT_FILE_MAGIC) {
+            if (hf.items[i].magic != HIVE_FAT_FILE_MAGIC && strcmp(hf.items[i].name, "__DYLD__")) {
                 printf("%s:\n", hf.items[i].name);
                 disassemble(get_section(hf.items[i], SECT_TYPE_TEXT), all_syms, create_relocation_section(get_section(hf.items[i], SECT_TYPE_RELOC)));
             }

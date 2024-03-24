@@ -4,11 +4,13 @@
 #include <setjmp.h>
 #include <stdatomic.h>
 #include <sys/mman.h>
-#include <execinfo.h>
 
 #include "new_ops.h"
 
 extern svc_call svcs[];
+
+struct cpu_state state[CORE_COUNT * THREAD_COUNT] = {0};
+struct cpu_transfer transfers[CORE_COUNT * THREAD_COUNT];
 
 int check_condition(hive_instruction_t ins, hive_flag_register_t fr);
 
@@ -336,10 +338,13 @@ BEGIN_OP(other_cpuid)
         r[0].asQWord = set_flags64(fr, fr->flags.cpuid);
     } else if (r[0].asQWord == 2) {
         r[0].asQWord = set_flags64(fr, CORE_COUNT);
+    } else if (r[0].asQWord == 3) {
+        r[0].asQWord = set_flags64(fr, THREAD_COUNT);
     } else {
         raise(SIGILL);
     }
 END_OP
+
 BEGIN_OP(other_privileged)
     switch (ins.type_other_priv.priv_op) {
         case SUBOP_OTHER_cpuid:     exec_other_cpuid(ins, r, fr, v); break;
@@ -599,6 +604,9 @@ hive_executor_t vpu_execs[] = {
     [OP_DATA_VPU_str] = exec_vpu_str,
 };
 
+void coredump(struct cpu_state* state);
+char* dis(hive_instruction_t ins, uint64_t addr);
+
 void exec_instr(hive_instruction_t ins, hive_register_t* r, hive_flag_register_t* fr, hive_vector_register_t* v) {
     if (!check_condition(ins, *fr)) return;
     switch (ins.generic.type) {
@@ -624,48 +632,41 @@ int check_condition(hive_instruction_t ins, hive_flag_register_t fr) {
 }
 
 __thread jmp_buf lidt;
-__thread int lidt_init = 0;
-__thread int lidt_handling = 0;
-
-atomic_uint_fast16_t started_cores;
-
-void coredump(struct cpu_state* state);
-char* dis(hive_instruction_t ins, uint64_t addr);
-
-struct cpu_state state[CORE_COUNT] = {0};
 
 int runstate(struct cpu_state* state) {
     int sig = setjmp(lidt);
-    if (sig == 0) {
-        lidt_init = 1;
-    } else if (lidt_handling == 0) {
-        lidt_handling = 1;
-        fprintf(stderr, "Received %s on vcore #%d\n", strsignal(sig), state->fr.flags.cpuid);
-        return sig;
-    } else {
-        fprintf(stderr, "Fault on vcore #%d: %s\n", state->fr.flags.cpuid, strsignal(sig));
+    
+    if (sig) {
+        fprintf(stderr, "Fault on vcore #%d: %s\n", state[0].fr.flags.cpuid, strsignal(sig));
         return sig;
     }
-    atomic_fetch_add(&started_cores, 1);
-    while (atomic_fetch_add(&started_cores, 0) != CORE_COUNT) {}
     while (1) {
-        hive_instruction_t ins = *(state->r[REG_PC].asInstrPtr);
-        exec_instr(ins, state->r, &(state->fr), state->v);
-        state->r[REG_PC].asInstrPtr++;
+        hive_instruction_t ins[THREAD_COUNT];
+        for (size_t t = 0; t < THREAD_COUNT; t++) {
+            ins[t] = *(state[t].r[REG_PC].asInstrPtr);
+        }
+        for (size_t t = 0; t < THREAD_COUNT; t++) {
+            exec_instr(ins[t], state[t].r, &(state[t].fr), state[t].v);
+        }
+        for (size_t t = 0; t < THREAD_COUNT; t++) {
+            state[t].r[REG_PC].asInstrPtr++;
+        }
+        for (size_t t = 0; t < THREAD_COUNT; t++) {
+            struct cpu_transfer tr = transfers[state[t].fr.flags.cpuid];
+            if (tr.request) {
+                state[t].r[tr.dest_reg].asQWord = tr.value;
+                transfers[state[t].fr.flags.cpuid].request = 0;
+            }
+        }
     }
 }
 
 void interrupt_handler(int sig) {
-    if (lidt_init) {
-        longjmp(lidt, sig);
-    } else {
-        fprintf(stderr, "%s\n", strsignal(sig));
-        exit(sig);
-    }
+    longjmp(lidt, sig);
 }
 
 void exec(void* start) {
-    for (uint16_t cpuid = 0; cpuid < CORE_COUNT; cpuid++) {
+    for (uint16_t cpuid = 0; cpuid < CORE_COUNT * THREAD_COUNT; cpuid++) {
         state[cpuid].r[REG_PC].asPointer = start;
         state[cpuid].fr.flags.cpuid = cpuid;
     }
@@ -677,15 +678,15 @@ void exec(void* start) {
     signal(SIGSEGV, interrupt_handler);
     signal(SIGBUS, interrupt_handler);
 
-    for (uint16_t cpuid = 0; cpuid < CORE_COUNT; cpuid++) {
-        int ret = pthread_create(&(cores[cpuid]), NULL, (void*) &runstate, &(state[cpuid]));
+    for (uint16_t cpuid = 0; cpuid < CORE_COUNT * THREAD_COUNT; cpuid += THREAD_COUNT) {
+        int ret = pthread_create(&(cores[cpuid / THREAD_COUNT]), NULL, (void*) &runstate, &(state[cpuid]));
         if (ret) {
             fprintf(stderr, "Could not create vcore #%hu: %s\n", cpuid, strerror(errno));
         }
     }
-    for (uint16_t cpuid = 0; cpuid < CORE_COUNT; cpuid++) {
+    for (uint16_t cpuid = 0; cpuid < CORE_COUNT * THREAD_COUNT; cpuid += THREAD_COUNT) {
         int ret_val = 0;
-        int ret = pthread_join(cores[cpuid], (void*) &ret_val);
+        int ret = pthread_join(cores[cpuid / THREAD_COUNT], (void*) &ret_val);
         if (ret) {
             fprintf(stderr, "failed to reattach vcode #%hu: %s\n", cpuid, strerror(errno));
         }

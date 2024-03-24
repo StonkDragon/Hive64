@@ -241,6 +241,22 @@ typedef union {
         uint8_t op: 5;
         TYPE_PAD;
     } PACKED type_other_priv;
+    struct {
+        uint8_t target_thread_reg: 5;
+        uint8_t target_reg: 5;
+        uint8_t value_reg: 5;
+        PAD(2);
+        uint8_t priv_op: 5;
+        uint8_t op: 5;
+        TYPE_PAD;
+    } PACKED type_other_priv_transfer;
+    struct {
+        uint8_t r1: 5;
+        PAD(12);
+        uint8_t priv_op: 5;
+        uint8_t op: 5;
+        TYPE_PAD;
+    } PACKED type_other_priv_xsl;
 } PACKED hive_instruction_t;
 
 #ifdef static_assert
@@ -327,7 +343,7 @@ static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_regist
 #define COND_ALWAYS 0b011
 #define COND_NEVER  0b111
 
-#define SVC_pthread_exit    0
+#define SVC_exit            0
 #define SVC_read            1
 #define SVC_write           2
 #define SVC_open            3
@@ -337,7 +353,14 @@ static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_regist
 #define SVC_mprotect        7
 #define SVC_fstat           8
 
+#ifndef CORE_COUNT
 #define CORE_COUNT 6
+#endif
+
+#ifndef THREAD_COUNT
+#define THREAD_COUNT 3
+#endif
+
 #define STACK_SIZE (1024 * 1024)
 
 #if __has_attribute(fallthrough)
@@ -350,6 +373,12 @@ struct cpu_state {
     hive_register_t r[32];
     hive_vector_register_t v[16];
     hive_flag_register_t fr;
+};
+
+struct cpu_transfer {
+    volatile bool request;
+    uint8_t dest_reg;
+    QWord_t value;
 };
 
 typedef enum _TokenType {
@@ -474,7 +503,7 @@ typedef struct {
 } HiveFile_Array;
 
 HiveFile read_hive_file(FILE* fp);
-void get_all_files(const char* name, HiveFile_Array* current, bool must_be_fat);
+void get_all_files(const char* name, HiveFile_Array* current, bool must_be_fat, bool do_dyload);
 void write_hive_file(HiveFile hf, FILE* fp);
 Symbol_Array create_symbol_section(Section s);
 Relocation_Array create_relocation_section(Section s);
@@ -484,6 +513,7 @@ char* get_code_section_address(HiveFile f);
 uint64_t find_symbol_address(Symbol_Array syms, char* name);
 Symbol find_symbol(Symbol_Array syms, char* name);
 Nob_String_Builder pack_symbol_table(Symbol_Array syms);
+Nob_String_Builder pack_ld_section(Nob_File_Paths dylibs);
 Nob_String_Builder pack_relocation_table(Relocation_Array relocs);
 void relocate(Section_Array sects, Relocation_Array relocs, Symbol_Array symbols);
 void prepare(HiveFile_Array hf, bool try_relocate, Symbol_Array* all_syms);

@@ -5,5 +5,8 @@ dump.txt
 *.dump
 a.out
 h64*
+hive64-unknown*
+main
+*.dll
 build
 *.s

@@ -4,7 +4,8 @@
 _start:
     movz r0, 0
     cpuid
-    b.nz other_core
+core_loop:
+    b.nz core_loop
 
     # create a stack
     movz r8, 5              # svc id for mmap
@@ -19,22 +20,89 @@ _start:
     add sp, r0, r1
     xor r0, r0
     xor r1, r1
-
-    xor r11, r11
-    xor r0, r0
+    xor r2, r2
+    xor r3, r3
 
     bl _main
+    mov r2, r0
 
     # destroy the stack
     movz r8, 6              # munmap
     mov r0, sp              # stack
-    movz r1, 0x100, shl 16  # size
+    movz r1, 0x1, shl 16  # size
     svc
 
-other_core:
-    movz r0, 0
-    movz r8, 0
+    mov r0, r2
+    b _exit
+
+.global _exit
+_exit:
+    xor r8, r8
     svc
+
+.global _read
+_read:
+    psh r8
+    movz r8, 1
+    svc
+    pp r8
+    ret
+
+.global _write
+_write:
+    psh r8
+    movz r8, 2
+    svc
+    pp r8
+    ret
+
+.global _open
+_open:
+    psh r8
+    movz r8, 3
+    svc
+    pp r8
+    ret
+
+.global _close
+_close:
+    psh r8
+    movz r8, 4
+    svc
+    pp r8
+    ret
+
+.global _mmap
+_mmap:
+    psh r8
+    movz r8, 5
+    svc
+    pp r8
+    ret
+
+.global _munmap
+_munmap:
+    psh r8
+    movz r8, 6
+    svc
+    pp r8
+    ret
+
+.global _mprotect
+_mprotect:
+    psh r8
+    movz r8, 7
+    svc
+    pp r8
+    ret
+
+.global _fstat
+_fstat:
+    psh r8
+    movz r8, 8
+    svc
+    pp r8
+    ret
 
 .global _puts
 _puts:
@@ -48,13 +116,12 @@ _puts:
     bl _strlen
     mov r2, r0
     movz r0, 1
-    movz r8, 2
-    svc
+    bl _write
 
     movz r0, 1
     lea r1, _puts$newline_str
     movz r2, 1
-    svc
+    bl _write
 
     pp r8
     pp r2
@@ -83,6 +150,82 @@ _strlen:
     pp r1
     pp r2
     pp lr
+    ret
+
+.global _setjmp
+_setjmp:
+    str sp,  [r0, 0]
+    str lr,  [r0, 8]
+    str r28, [r0, 16]
+    str r27, [r0, 24]
+    str r26, [r0, 32]
+    str r25, [r0, 40]
+    str r24, [r0, 48]
+    str r23, [r0, 56]
+    str r22, [r0, 64]
+    str r21, [r0, 72]
+    str r20, [r0, 80]
+    str r19, [r0, 88]
+    str r18, [r0, 96]
+    str r17, [r0, 104]
+    str r16, [r0, 112]
+    str r15, [r0, 120]
+    add r0, 128
+    str r14, [r0, 0]
+    str r13, [r0, 8]
+    str r12, [r0, 16]
+    str r11, [r0, 24]
+    str r10, [r0, 32]
+    str r9,  [r0, 40]
+    str r8,  [r0, 48]
+    str r7,  [r0, 56]
+    str r6,  [r0, 64]
+    str r5,  [r0, 72]
+    str r4,  [r0, 80]
+    str r3,  [r0, 88]
+    str r2,  [r0, 96]
+    str r1,  [r0, 104]
+    xor r0, r0
+    ret
+
+.global _longjmp
+_longjmp:
+    mov r2, r0
+    mov r0, r1
+    movz.z r0, 1
+    mov r1, r2
+
+    ldr sp, [r1, 0]
+    ldr lr, [r1, 8]
+    ldr r28, [r1, 16]
+    ldr r27, [r1, 24]
+    ldr r26, [r1, 32]
+    ldr r25, [r1, 40]
+    ldr r24, [r1, 48]
+    ldr r23, [r1, 56]
+    ldr r22, [r1, 64]
+    ldr r21, [r1, 72]
+    ldr r20, [r1, 80]
+    ldr r19, [r1, 88]
+    ldr r18, [r1, 96]
+    ldr r17, [r1, 104]
+    ldr r16, [r1, 112]
+    ldr r15, [r1, 120]
+    add r1, 128
+    ldr r14, [r1, 0]
+    ldr r13, [r1, 8]
+    ldr r12, [r1, 16]
+    ldr r11, [r1, 24]
+    ldr r10, [r1, 32]
+    ldr r9, [r1, 40]
+    ldr r8, [r1, 48]
+    ldr r7, [r1, 56]
+    ldr r6, [r1, 64]
+    ldr r5, [r1, 72]
+    ldr r4, [r1, 80]
+    ldr r3, [r1, 88]
+    ldr r2, [r1, 96]
+    ldr r1, [r1, 104]
     ret
 
 .data

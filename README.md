@@ -338,6 +338,7 @@ Every condition except `always` and `never` can be specified in the assembler by
 ### `cpuid` Instruction
 Executing a `cpuid` instruction with `r0` set to `0`, `r0` will be set to the current core id.
 Executing a `cpuid` instruction with `r0` set to `1`, `r0` will be set to the amount of cores in the cpu.
+Executing a `cpuid` instruction with `r0` set to `2`, `r0` will be set to the amount of threads per core in the cpu.
 Any other value for `r0` is undefined.
 
 ## Quirks of the instruction set

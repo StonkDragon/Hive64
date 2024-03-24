@@ -8,7 +8,7 @@ static inline size_t pad_to_instr_size(size_t x) {
 }
 
 HiveFile read_hive_file(FILE* fp) {
-    HiveFile hf;
+    HiveFile hf = {0};
     fread(&hf.magic, sizeof(hf.magic), 1, fp);
     if (hf.magic == HIVE_FAT_FILE_MAGIC) {
         fseek(fp, -sizeof(hf.magic), SEEK_CUR);
@@ -37,6 +37,7 @@ Nob_File_Paths create_ld_section(Section s);
 Section get_section(HiveFile f, uint8_t sect_type);
 
 bool has_file(HiveFile_Array* arr, const char* name) {
+    if (strcmp(name, "__DYLD__") == 0) return false;
     for (size_t i = 0; i < arr->count; i++) {
         if (strcmp(arr->items[i].name, name) == 0) {
             return true;
@@ -45,7 +46,7 @@ bool has_file(HiveFile_Array* arr, const char* name) {
     return false;
 }
 
-void read_fat_file(FILE* fp, HiveFile_Array* current) {
+void read_fat_file(FILE* fp, HiveFile_Array* current, bool do_dyload) {
     uint32_t magic;
     fread(&magic, sizeof(magic), 1, fp);
     if (magic != HIVE_FAT_FILE_MAGIC) {
@@ -73,14 +74,16 @@ void read_fat_file(FILE* fp, HiveFile_Array* current) {
     }
     for (size_t i = 0; i < to_check.count; i++) {
         HiveFile f = to_check.items[i];
-        Nob_File_Paths ld_sect = create_ld_section(get_section(f, SECT_TYPE_LD));
+        Section s = get_section(f, SECT_TYPE_LD);
+        if (s.data == NULL || !do_dyload) continue;
+        Nob_File_Paths ld_sect = create_ld_section(s);
         for (size_t i = 0; i < ld_sect.count; i++) {
-            get_all_files(ld_sect.items[i], current, false);
+            get_all_files(ld_sect.items[i], current, false, do_dyload);
         }
     }
 }
 
-void get_all_files(const char* name, HiveFile_Array* current, bool must_be_fat) {
+void get_all_files(const char* name, HiveFile_Array* current, bool must_be_fat, bool do_dyload) {
     FILE* fp = fopen(name, "rb");
     if (fp == NULL) {
         fprintf(stderr, "Unable to open file %s\n", name);
@@ -93,13 +96,16 @@ void get_all_files(const char* name, HiveFile_Array* current, bool must_be_fat) 
         return;
     }
     if (src.magic == HIVE_FAT_FILE_MAGIC) {
-        read_fat_file(fp, current);
+        read_fat_file(fp, current, do_dyload);
     }
-    if (!has_file(current, name)) {
+    if (!has_file(current, name) && do_dyload) {
         nob_da_append(current, src);
-        Nob_File_Paths ld_sect = create_ld_section(get_section(src, SECT_TYPE_LD));
-        for (size_t i = 0; i < ld_sect.count; i++) {
-            get_all_files(ld_sect.items[i], current, false);
+        Section s = get_section(src, SECT_TYPE_LD);
+        if (s.data) {
+            Nob_File_Paths ld_sect = create_ld_section(s);
+            for (size_t i = 0; i < ld_sect.count; i++) {
+                get_all_files(ld_sect.items[i], current, false, true);
+            }
         }
     }
     fclose(fp);
@@ -182,7 +188,7 @@ Nob_File_Paths create_ld_section(Section s) {
     if (data == NULL) return paths;
 
     #define mem_read(ptr, type) (ptr += sizeof(type), *(type*) ((QWord_t) ptr - sizeof(type)))
-    while (data < (s.data + s.len)) {
+    while (data < (s.data + s.len) && *data != 0) {
         size_t len = strlen(data);
         nob_da_append(&paths, data);
         data += len + 1;
@@ -192,6 +198,9 @@ Nob_File_Paths create_ld_section(Section s) {
 }
 
 Section get_section(HiveFile f, uint8_t sect_type) {
+    if (f.sects.items == NULL) {
+        return (Section) {0};
+    }
     for (size_t i = 0; i < f.sects.count; i++) {
         if (f.sects.items[i].type != sect_type) continue;
 
@@ -242,6 +251,14 @@ Nob_String_Builder pack_symbol_table(Symbol_Array syms) {
     return s;
 }
 
+Nob_String_Builder pack_ld_section(Nob_File_Paths dylibs) {
+    Nob_String_Builder s = {0};
+    for (size_t i = 0; i < dylibs.count; i++) {
+        nob_da_append_many(&s, dylibs.items[i], strlen(dylibs.items[i]) + 1);
+    }
+    return s;
+}
+
 Nob_String_Builder pack_relocation_table(Relocation_Array relocs) {
     Nob_String_Builder s = {0};
     nob_da_append_many(&s, &relocs.count, sizeof(relocs.count));
@@ -280,6 +297,16 @@ void relocate(Section_Array sects, Relocation_Array relocs, Symbol_Array symbols
             continue;
         }
 
+        if (target_address == -1) {
+            fprintf(stderr, "Undefined symbol");
+            if (reloc.is_local) {
+                fprintf(stderr, "\n");
+            } else {
+                fprintf(stderr, ": %s\n", reloc.data.name);
+            }
+            has_errors = true;
+            continue;
+        }
         
         #define POW2(_n) (1 << _n)
         #define check_align() \
@@ -316,6 +343,9 @@ void relocate(Section_Array sects, Relocation_Array relocs, Symbol_Array symbols
                 }
                 break;
         }
+    }
+    if (has_errors) {
+        exit(1);
     }
 }
 

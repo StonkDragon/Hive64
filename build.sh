@@ -7,10 +7,17 @@ mkdir -p build
 # clang -O0 -g -std=gnu17 -o build/h64 -Isrc/ src/**/*.c
 clang -O3 -std=gnu17 -o build/h64 -Isrc/ src/**/*.c
 
-cp build/h64 h64-as
-cp build/h64 h64
-cp build/h64 h64-ld
-cp build/h64 h64-dis
-cp build/h64 h64-dbg
+copier=cp
+
+if [ `uname` -eq "Darwin" ]; then
+    copier=ditto
+fi
+
+$copier build/h64 hive64-unknown-as
+$copier build/h64 hive64-unknown-run
+$copier build/h64 hive64-unknown-ld
+$copier build/h64 hive64-unknown-dis
+$copier build/h64 hive64-unknown-dbg
+$copier build/h64 h64
 
 rm -rf build
