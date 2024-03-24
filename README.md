@@ -169,6 +169,7 @@ Every condition except `always` and `never` can be specified in the assembler by
 |Mnemonic|Encoding|Description|
 |-|-|-|
 |`svc`|                     `ccc1010.........................`|Supervisor call|
+|`cpuid`|                   `ccc110000000000.................`|Returns information about the cpu (See [`cpuid`](#cpuid-instruction))|
 
 ### Data transfer
 |Mnemonic|Encoding|Description|
@@ -334,6 +335,11 @@ Every condition except `always` and `never` can be specified in the assembler by
 |`s`|single precision float|
 |`f`|double precision float|
 
+### `cpuid` Instruction
+Executing a `cpuid` instruction with `r0` set to `0`, `r0` will be set to the current core id.
+Executing a `cpuid` instruction with `r0` set to `1`, `r0` will be set to the amount of cores in the cpu.
+Any other value for `r0` is undefined.
+
 ## Quirks of the instruction set
 ### It's `shl` all the way down
 To save opcodes, both `mov` and `ret` are encoded as `shl` with an immediate value of `0`:
@@ -378,3 +384,6 @@ Assembler directives are identifiers prefixed with a `.`
 |`.offset`|Puts the address of a symbol into the binary|
 |`.zerofill n`|Inserts n zero bytes into the binary|
 |`.global label`|Marks the specified label as global, meaning it can be seen from other binary files|
+|`.text`|The next section will contain code|
+|`.data`|The next section will contain immutable data|
+|`.bss`|The next section will contain mutable data|

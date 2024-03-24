@@ -230,6 +230,17 @@ typedef union {
         uint8_t op: 2;
         TYPE_PAD;
     } PACKED type_load_mov;
+    struct {
+        PAD(22);
+        uint8_t op: 5;
+        TYPE_PAD;
+    } PACKED type_other;
+    struct {
+        PAD(17);
+        uint8_t priv_op: 5;
+        uint8_t op: 5;
+        TYPE_PAD;
+    } PACKED type_other_priv;
 } PACKED hive_instruction_t;
 
 #ifdef static_assert
@@ -284,6 +295,7 @@ typedef union {
     struct {
         uint8_t             zero:1;
         uint8_t             negative:1;
+        uint16_t            cpuid:16;
     } PACKED flags;
     DWord_t dword;
 } PACKED hive_flag_register_t;
@@ -315,15 +327,18 @@ static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_regist
 #define COND_ALWAYS 0b011
 #define COND_NEVER  0b111
 
-#define SVC_exit            0
+#define SVC_pthread_exit    0
 #define SVC_read            1
 #define SVC_write           2
 #define SVC_open            3
 #define SVC_close           4
-#define SVC_malloc          5
-#define SVC_free            6
-#define SVC_realloc         7
-#define SVC_coredump        8
+#define SVC_mmap            5
+#define SVC_munmap          6
+#define SVC_mprotect        7
+#define SVC_fstat           8
+
+#define CORE_COUNT 6
+#define STACK_SIZE (1024 * 1024)
 
 #if __has_attribute(fallthrough)
 #define case_fallthrough __attribute__((fallthrough))
@@ -331,10 +346,11 @@ static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_regist
 #define case_fallthrough (void) 0
 #endif
 
-typedef struct {
+struct cpu_state {
     hive_register_t r[32];
-    hive_flag_register_t flags;
-} hive_register_file_t;
+    hive_vector_register_t v[16];
+    hive_flag_register_t fr;
+};
 
 typedef enum _TokenType {
     Eof,
@@ -368,24 +384,46 @@ typedef struct {
 } Token_Array;
 
 typedef struct {
-    struct symbol_offset {
-        char* name;
-        uint64_t offset;
-        enum symbol_type {
-            sym_abs,
-            sym_branch,
-            sym_load,
-        } type;
-        enum symbol_flag {
-            sf_exported = 1,
-        } flags;
-    } *items;
-    size_t count;
-    size_t capacity;
-} Symbol_Offsets;
+    char* name;
+    uint64_t section;
+    uint64_t offset;
+    enum symbol_flag {
+        sf_exported = 1,
+    } flags;
+} Symbol;
 
 typedef struct {
-    uint32_t type;
+    uint64_t source_section;
+    uint64_t source_offset;
+    uint8_t is_local;
+    enum reloc_type {
+        sym_abs,
+        sym_branch,
+        sym_load,
+    } type;
+    union {
+        char* name;
+        struct {
+            uint64_t target_section;
+            uint64_t target_offset;
+        } local;
+    } data;
+} Relocation;
+
+typedef struct {
+    Symbol* items;
+    size_t count;
+    size_t capacity;
+} Symbol_Array;
+
+typedef struct {
+    Relocation* items;
+    size_t count;
+    size_t capacity;
+} Relocation_Array;
+
+typedef struct {
+    uint8_t type;
     size_t len;
     char* data;
 } Section;
@@ -402,10 +440,26 @@ typedef struct {
     Section_Array sects;
 } HiveFile;
 
-#define SECT_TYPE_CODE  0x01
-#define SECT_TYPE_SYMS  0x02
-#define SECT_TYPE_RELOC 0x04
-#define SECT_TYPE_LD    0x08
+typedef struct {
+    Nob_String_Builder data;
+    uint64_t type;
+} CompilerSection;
+
+typedef struct {
+    CompilerSection* items;
+    size_t count;
+    size_t capacity;
+} SB_Array;
+
+#define SECT_TYPE_SYMS      0b00000001
+#define SECT_TYPE_RELOC     0b00000010
+#define SECT_TYPE_LD        0b00000100
+
+#define SECT_TYPE_TEXT      0b10000000
+#define SECT_TYPE_DATA      0b10000001
+#define SECT_TYPE_BSS       0b10000010
+
+#define SECT_TYPE_NOEMIT    0b01111111
 
 #define HIVE_PAGE_SIZE 0x4000
 
@@ -422,18 +476,18 @@ typedef struct {
 HiveFile read_hive_file(FILE* fp);
 void get_all_files(const char* name, HiveFile_Array* current, bool must_be_fat);
 void write_hive_file(HiveFile hf, FILE* fp);
-Symbol_Offsets create_symbol_section(Section s);
-Symbol_Offsets create_relocation_section(Section s);
+Symbol_Array create_symbol_section(Section s);
+Relocation_Array create_relocation_section(Section s);
 Nob_File_Paths create_ld_section(Section s);
-Section get_section(HiveFile f, uint32_t sect_type);
+Section get_section(HiveFile f, uint8_t sect_type);
 char* get_code_section_address(HiveFile f);
-uint64_t find_symbol_address(Symbol_Offsets syms, char* name);
-struct symbol_offset find_symbol(Symbol_Offsets syms, char* name);
-Nob_String_Builder pack_symbol_table(Symbol_Offsets syms);
-Nob_String_Builder pack_relocation_table(Symbol_Offsets relocs);
-void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols);
-Symbol_Offsets prepare(HiveFile_Array hf, bool try_relocate);
+uint64_t find_symbol_address(Symbol_Array syms, char* name);
+Symbol find_symbol(Symbol_Array syms, char* name);
+Nob_String_Builder pack_symbol_table(Symbol_Array syms);
+Nob_String_Builder pack_relocation_table(Relocation_Array relocs);
+void relocate(Section_Array sects, Relocation_Array relocs, Symbol_Array symbols);
+void prepare(HiveFile_Array hf, bool try_relocate, Symbol_Array* all_syms);
 int debug(int argc, char** argv);
-void exec(hive_register_t* r, hive_flag_register_t* fr, hive_vector_register_t* v);
-void disassemble(Section code_sect, Symbol_Offsets syms, Symbol_Offsets relocations);
-Nob_String_Builder run_compile(const char* file_name, Symbol_Offsets* syms, Symbol_Offsets* relocations);
+void exec(void* start);
+void disassemble(Section code_sect, Symbol_Array syms, Relocation_Array relocations);
+SB_Array run_compile(const char* file_name, Symbol_Array* syms, Relocation_Array* relocations);

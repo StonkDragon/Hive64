@@ -1,7 +1,7 @@
 #define MODE_BRANCH             0b00
 #define MODE_DATA               0b01
 #define MODE_LOAD               0b10
-#define MODE_                   0b11
+#define MODE_OTHER              0b11
 
 #define OP_BRANCH_b             0b00
 #define OP_BRANCH_bl            0b01
@@ -82,4 +82,7 @@
 #define OP_LOAD_lea             0b00
 #define OP_LOAD_movzk           0b01
 #define OP_LOAD_svc             0b10
-#define OP_LOAD_OTHER           0b11
+
+#define OP_OTHER_priv_op        0b00000
+
+#define SUBOP_OTHER_cpuid       0b00000

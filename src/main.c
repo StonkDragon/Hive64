@@ -9,72 +9,70 @@
 #include <math.h>
 #include <ctype.h>
 #include <signal.h>
+#include <pthread.h>
+#include <sys/mman.h>
 
 #include "new_ops.h"
 
 #define SVC(what) [SVC_ ## what] = (svc_call) &what
 
-hive_register_file_t* registers;
-hive_vector_register_t* vector_registers;
-hive_register_t cr[8] = {0};
-
-QWord_t coredump(QWord_t x) {
+void coredump(struct cpu_state* state) {
+    printf("Flags: %08x\n", state->fr.dword);
     printf("Registers:\n");
     for (size_t i = 0; i < 32; i++) {
-        printf("  r%zu: 0x%llx %f %f\n", i, registers->r[i].asQWord, registers->r[i].asFloat64, registers->r[i].asFloat32);
+        printf("  r%zu: 0x%llx %f %f\n", i, state->r[i].asQWord, state->r[i].asFloat64, state->r[i].asFloat32);
     }
     printf("Vector Registers:\n");
     for (size_t i = 0; i < 16; i++) {
         printf("  v%zu:\n", i);
         printf("    .b = { ");
         for (size_t j = 0; j < 32; j++) {
-            printf("0x%02x ", vector_registers[i].asBytes[j]);
+            printf("0x%02x ", state->v[i].asBytes[j]);
         }
         printf("}\n");
         printf("    .w = { ");
         for (size_t j = 0; j < 16; j++) {
-            printf("0x%04x ", vector_registers[i].asWords[j]);
+            printf("0x%04x ", state->v[i].asWords[j]);
         }
         
         printf("}\n");
         printf("    .d = { ");
         for (size_t j = 0; j < 8; j++) {
-            printf("0x%08x ", vector_registers[i].asDWords[j]);
+            printf("0x%08x ", state->v[i].asDWords[j]);
         }
         
         printf("}\n");
         printf("    .q = { ");
         for (size_t j = 0; j < 4; j++) {
-            printf("0x%016llx ", vector_registers[i].asQWords[j]);
+            printf("0x%016llx ", state->v[i].asQWords[j]);
         }
         
         printf("}\n");
         printf("    .s = { ");
         for (size_t j = 0; j < 8; j++) {
-            printf("%f ", vector_registers[i].asFloat32s[j]);
+            printf("%f ", state->v[i].asFloat32s[j]);
         }
         
         printf("}\n");
         printf("    .f = { ");
         for (size_t j = 0; j < 4; j++) {
-            printf("%f ", vector_registers[i].asFloat64s[j]);
+            printf("%f ", state->v[i].asFloat64s[j]);
         }
         
         printf("}\n");
     }
-    return x;
 }
 
 svc_call svcs[] = {
-    SVC(exit),
+    SVC(pthread_exit),
     SVC(read),
     SVC(write),
     SVC(open),
     SVC(close),
-    SVC(malloc),
-    SVC(free),
-    SVC(realloc),
-    SVC(coredump),
+    SVC(mmap),
+    SVC(munmap),
+    SVC(mprotect),
+    SVC(fstat),
 };
 
 #ifdef __printflike
@@ -150,20 +148,15 @@ int main(int argc, char **argv) {
         }
 
         for (size_t i = 0; i < files.count; i++) {
-            Symbol_Offsets syms = {0};
-            Symbol_Offsets relocations = {0};
-            Nob_String_Builder code = run_compile(files.items[i], &syms, &relocations);
+            Symbol_Array syms = {0};
+            Relocation_Array relocations = {0};
+            SB_Array code = run_compile(files.items[i], &syms, &relocations);
 
             if (code.items == NULL) {
                 fprintf(stderr, "Failed to compile file %s\n", files.items[i]);
                 continue;
             }
 
-            Section code_sect = {
-                .data = code.items,
-                .len = code.count,
-                .type = SECT_TYPE_CODE
-            };
             Nob_String_Builder sym_sect_data = pack_symbol_table(syms);
             Nob_String_Builder reloc_sect_data = pack_relocation_table(relocations);
 
@@ -180,7 +173,14 @@ int main(int argc, char **argv) {
             };
 
             Section_Array sa = {0};
-            nob_da_append(&sa, code_sect);
+            for (size_t i = 0; i < code.count; i++) {
+                Section s = {
+                    .data = code.items[i].data.items,
+                    .len = code.items[i].data.count,
+                    .type = code.items[i].type,
+                };
+                nob_da_append(&sa, s);
+            } 
             nob_da_append(&sa, sym_sect);
             nob_da_append(&sa, reloc_sect);
 
@@ -246,25 +246,10 @@ int main(int argc, char **argv) {
         HiveFile_Array hf = {0};
         get_all_files(argv[1], &hf, true);
         
-        Symbol_Offsets all_syms = prepare(hf, true);
+        Symbol_Array all_syms = {0};
+        prepare(hf, true, &all_syms);
 
-        hive_register_file_t regs = {0};
-        hive_vector_register_t vregisters[16];
-
-        registers = &regs;
-        vector_registers = vregisters;
-
-
-        char stack[1024 * 1024];
-        regs.r[REG_PC].asQWord = find_symbol_address(all_syms, "_start");
-        QWord_t stack_hi = regs.r[REG_SP].asQWord = ((QWord_t) stack) + sizeof(stack);
-        mmu_prefetch((void*) (stack_hi - 64));
-
-        if (regs.r[REG_PC].asSQWord != -1) {
-            exec(regs.r, &regs.flags, vregisters);
-            return regs.r[0].asSDWord;
-        }
-        
+        exec((void*) find_symbol_address(all_syms, "_start"));
         fprintf(stderr, "Could not find _start symbol\n");
         return 1;
     } else if (strcmp(exe_name, HIVE64_DBG) == 0) {
@@ -273,12 +258,13 @@ int main(int argc, char **argv) {
         HiveFile_Array hf = {0};
         get_all_files(argv[1], &hf, false);
         
-        Symbol_Offsets all_syms = prepare(hf, false);
+        Symbol_Array all_syms = {0};
+        prepare(hf, true, &all_syms);
 
         for (size_t i = 0; i < hf.count; i++) {
             if (hf.items[i].magic != HIVE_FAT_FILE_MAGIC) {
                 printf("%s:\n", hf.items[i].name);
-                disassemble(get_section(hf.items[i], SECT_TYPE_CODE), all_syms, create_relocation_section(get_section(hf.items[i], SECT_TYPE_RELOC)));
+                disassemble(get_section(hf.items[i], SECT_TYPE_TEXT), all_syms, create_relocation_section(get_section(hf.items[i], SECT_TYPE_RELOC)));
             }
         }
         return 0;

@@ -1,5 +1,10 @@
 #include <math.h>
 #include <signal.h>
+#include <pthread.h>
+#include <setjmp.h>
+#include <stdatomic.h>
+#include <sys/mman.h>
+#include <execinfo.h>
 
 #include "new_ops.h"
 
@@ -326,6 +331,22 @@ BEGIN_OP(load_svc)
     );
 END_OP
 
+BEGIN_OP(other_cpuid)
+    if (r[0].asQWord == 0) {
+        r[0].asQWord = set_flags64(fr, fr->flags.cpuid);
+    } else if (r[0].asQWord == 2) {
+        r[0].asQWord = set_flags64(fr, CORE_COUNT);
+    } else {
+        raise(SIGILL);
+    }
+END_OP
+BEGIN_OP(other_privileged)
+    switch (ins.type_other_priv.priv_op) {
+        case SUBOP_OTHER_cpuid:     exec_other_cpuid(ins, r, fr, v); break;
+        default:                    raise(SIGILL);
+    }
+END_OP
+
 BEGIN_OP(branch)
     if (ins.type_branch.link) {
         LINK();
@@ -357,6 +378,12 @@ BEGIN_OP(load)
         case OP_LOAD_lea:       exec_load_lea(ins, r, fr, v); break;
         case OP_LOAD_movzk:     exec_load_movzk(ins, r, fr, v); break;
         case OP_LOAD_svc:       exec_load_svc(ins, r, fr, v); break;
+        default:                raise(SIGILL);
+    }
+END_OP
+BEGIN_OP(other)
+    switch (ins.type_other.op) {
+        case OP_OTHER_priv_op:  exec_other_privileged(ins, r, fr, v); break;
         default:                raise(SIGILL);
     }
 END_OP
@@ -578,13 +605,10 @@ void exec_instr(hive_instruction_t ins, hive_register_t* r, hive_flag_register_t
         case MODE_BRANCH: exec_branch(ins, r, fr, v); break;
         case MODE_DATA:   exec_data(ins, r, fr, v); break;
         case MODE_LOAD:   exec_load(ins, r, fr, v); break;
+        case MODE_OTHER:  exec_other(ins, r, fr, v); break;
         default: raise(SIGILL);
     }
 }
-
-#define MAX_PIPELINE_SIZE 16
-typedef hive_instruction_t pipeline_t[MAX_PIPELINE_SIZE];
-typedef hive_instruction_t* pipeline_ptr_t[MAX_PIPELINE_SIZE];
 
 int check_condition(hive_instruction_t ins, hive_flag_register_t fr) {
     switch (ins.generic.condition) {
@@ -599,20 +623,75 @@ int check_condition(hive_instruction_t ins, hive_flag_register_t fr) {
     }
 }
 
-void exec(hive_register_t* r, hive_flag_register_t* fr, hive_vector_register_t* v) {
-    pipeline_t pipeline;
-    while (1) {
-        memcpy(pipeline, r[REG_PC].asInstrPtr, sizeof(pipeline_t));
-        QWord_t ptr = r[REG_PC].asQWord;
+__thread jmp_buf lidt;
+__thread int lidt_init = 0;
+__thread int lidt_handling = 0;
 
-        for (size_t next_instr = 0; next_instr < MAX_PIPELINE_SIZE; next_instr++) {
-            hive_instruction_t ins = pipeline[next_instr];
-            if (r[REG_PC].asQWord != (ptr + next_instr * sizeof(hive_instruction_t))) {
-                break;
-            }
-            
-            exec_instr(ins, r, fr, v);
-            r[REG_PC].asInstrPtr++;
+atomic_uint_fast16_t started_cores;
+
+void coredump(struct cpu_state* state);
+char* dis(hive_instruction_t ins, uint64_t addr);
+
+struct cpu_state state[CORE_COUNT] = {0};
+
+int runstate(struct cpu_state* state) {
+    int sig = setjmp(lidt);
+    if (sig == 0) {
+        lidt_init = 1;
+    } else if (lidt_handling == 0) {
+        lidt_handling = 1;
+        fprintf(stderr, "Received %s on vcore #%d\n", strsignal(sig), state->fr.flags.cpuid);
+        return sig;
+    } else {
+        fprintf(stderr, "Fault on vcore #%d: %s\n", state->fr.flags.cpuid, strsignal(sig));
+        return sig;
+    }
+    atomic_fetch_add(&started_cores, 1);
+    while (atomic_fetch_add(&started_cores, 0) != CORE_COUNT) {}
+    while (1) {
+        hive_instruction_t ins = *(state->r[REG_PC].asInstrPtr);
+        exec_instr(ins, state->r, &(state->fr), state->v);
+        state->r[REG_PC].asInstrPtr++;
+    }
+}
+
+void interrupt_handler(int sig) {
+    if (lidt_init) {
+        longjmp(lidt, sig);
+    } else {
+        fprintf(stderr, "%s\n", strsignal(sig));
+        exit(sig);
+    }
+}
+
+void exec(void* start) {
+    for (uint16_t cpuid = 0; cpuid < CORE_COUNT; cpuid++) {
+        state[cpuid].r[REG_PC].asPointer = start;
+        state[cpuid].fr.flags.cpuid = cpuid;
+    }
+
+    pthread_t cores[CORE_COUNT] = {0};
+
+    signal(SIGABRT, interrupt_handler);
+    signal(SIGILL, interrupt_handler);
+    signal(SIGSEGV, interrupt_handler);
+    signal(SIGBUS, interrupt_handler);
+
+    for (uint16_t cpuid = 0; cpuid < CORE_COUNT; cpuid++) {
+        int ret = pthread_create(&(cores[cpuid]), NULL, (void*) &runstate, &(state[cpuid]));
+        if (ret) {
+            fprintf(stderr, "Could not create vcore #%hu: %s\n", cpuid, strerror(errno));
         }
     }
+    for (uint16_t cpuid = 0; cpuid < CORE_COUNT; cpuid++) {
+        int ret_val = 0;
+        int ret = pthread_join(cores[cpuid], (void*) &ret_val);
+        if (ret) {
+            fprintf(stderr, "failed to reattach vcode #%hu: %s\n", cpuid, strerror(errno));
+        }
+        if (ret_val) {
+            fprintf(stderr, "vcore #%hu locked up/crashed abnormally: %d\n", cpuid, ret_val);
+        }
+    }
+    exit(state[0].r[0].asQWord);
 }

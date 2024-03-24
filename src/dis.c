@@ -237,16 +237,25 @@ char* dis_load_movzk(hive_instruction_t ins, uint64_t addr) {
     return s;
 }
 
-char* dis_load_other(hive_instruction_t ins, uint64_t addr) {
-    return NULL;
-}
-
 char* dis_load(hive_instruction_t ins, uint64_t addr) {
     switch (ins.type_load.op) {
         case OP_LOAD_lea:   return strformat("lea%s r%d, 0x%llx", condition_to_string(ins), ins.type_load_signed.r1, addr + ins.type_load_signed.imm * sizeof(hive_instruction_t));
         case OP_LOAD_movzk: return dis_load_movzk(ins, addr);
         case OP_LOAD_svc:   return strformat("svc%s", condition_to_string(ins));
-        case OP_LOAD_OTHER: return dis_load_other(ins, addr);
+    }
+    return NULL;
+}
+
+char* dis_other_priv(hive_instruction_t ins, uint64_t addr) {
+    switch (ins.type_other_priv.priv_op) {
+        case SUBOP_OTHER_cpuid: return strformat("cpuid");
+    }
+    return NULL;
+}
+
+char* dis_other(hive_instruction_t ins, uint64_t addr) {
+    switch (ins.type_other.op) {
+        case OP_OTHER_priv_op: return dis_other_priv(ins, addr);
     }
     return NULL;
 }
@@ -260,12 +269,13 @@ char* dis(hive_instruction_t ins, uint64_t addr) {
             case MODE_BRANCH:   instr = dis_branch(ins, addr); break;
             case MODE_DATA:     instr = dis_data(ins, addr); break;
             case MODE_LOAD:     instr = dis_load(ins, addr); break;
+            case MODE_OTHER:    instr = dis_other(ins, addr); break;
         }
     }
     return instr;
 }
 
-char* get_symbol_at(Symbol_Offsets syms, uint64_t addr) {
+char* get_symbol_at(Symbol_Array syms, uint64_t addr) {
     for (size_t i = 0; i < syms.count; i++) {
         if (syms.items[i].offset == addr) {
             return syms.items[i].name;
@@ -274,16 +284,16 @@ char* get_symbol_at(Symbol_Offsets syms, uint64_t addr) {
     return NULL;
 }
 
-char* get_relocation_at(Symbol_Offsets relocations, uint64_t addr) {
+char* get_relocation_at(Relocation_Array relocations, uint64_t addr) {
     for (size_t i = 0; i < relocations.count; i++) {
-        if (relocations.items[i].offset == addr) {
-            return strformat("stub for %s", relocations.items[i].name);
+        if (relocations.items[i].source_offset == addr && !relocations.items[i].is_local) {
+            return strformat("stub for %s", relocations.items[i].data.name);
         }
     }
     return NULL;
 }
 
-void disassemble(Section code_sect, Symbol_Offsets syms, Symbol_Offsets relocations) {
+void disassemble(Section code_sect, Symbol_Array syms, Relocation_Array relocations) {
     for (hive_instruction_t* p = (hive_instruction_t*) code_sect.data; p < (hive_instruction_t*) (code_sect.data + code_sect.len); p++) {
         hive_instruction_t ins = *p;
         char* s = dis(ins, (uint64_t) p);

@@ -63,7 +63,7 @@
 		"generic_mnemonics": {
 			"patterns": [{
 				"name": "keyword.control",
-				"match": "\\b(nop|ret|ldr(q|d|w|b)?|str(q|d|w|b)?|mov(z|k)?|lea|svc|(s|u)b(xt|dp)|psh|pp)\\b"
+				"match": "\\b(nop|ret|ldr(q|d|w|b)?|str(q|d|w|b)?|mov(z|k)?|lea|svc|cpuid|(s|u)b(xt|dp)|psh|pp)\\b"
 			}]
 		},
 		"float_mnemonics": {
@@ -105,7 +105,7 @@
 		"directives": {
 			"patterns": [{
 				"name": "storage.register",
-				"match": "(\\.(ascii|asciz|extern|byte|word|dword|qword|offset|globa?l))\\b"
+				"match": "(\\.(ascii|asciz|extern|byte|word|dword|qword|text|data|bss|offset|globa?l))\\b"
 			}]
 		},
 		"numbers": {

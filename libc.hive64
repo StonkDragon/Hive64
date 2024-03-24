@@ -1,7 +1,38 @@
+.text
+
 .global _start
 _start:
+    movz r0, 0
+    cpuid
+    b.nz other_core
+
+    # create a stack
+    movz r8, 5              # svc id for mmap
+    movz r0, 0              # addr
+    movz r1, 0x100, shl 16  # size
+    movz r2, 0x3            # PROT_READ | PROT_WRITE
+    movz r3, 0x1002         # MAP_ANON | MAP_PRIVATE | MAP_FIXED
+    movz r4, 0              # fd
+    movz r5, 0              # off
+    svc
+    movz r1, 0x100, shl 16  # size
+    add sp, r0, r1
+    xor r0, r0
+    xor r1, r1
+
+    xor r11, r11
+    xor r0, r0
+
     bl _main
 
+    # destroy the stack
+    movz r8, 6              # munmap
+    mov r0, sp              # stack
+    movz r1, 0x100, shl 16  # size
+    svc
+
+other_core:
+    movz r0, 0
     movz r8, 0
     svc
 
@@ -32,9 +63,6 @@ _puts:
     pp lr
     ret
 
-_puts$newline_str:
-    .asciz "\n"
-
 .global _strlen
 _strlen:
     psh lr
@@ -56,3 +84,7 @@ _strlen:
     pp r2
     pp lr
     ret
+
+.data
+_puts$newline_str:
+    .asciz "\n"

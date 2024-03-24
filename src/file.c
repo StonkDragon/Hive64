@@ -2,16 +2,10 @@
 #include <sys/mman.h>
 #include "new_ops.h"
 
-static inline size_t pad_to_page_size(size_t x) {
-    size_t page_size = sysconf(_SC_PAGESIZE);
-    return x + (page_size - (x % page_size));
+static inline size_t pad_to_instr_size(size_t x) {
+    size_t word_sz = sysconf(_SC_PAGESIZE);
+    return x + (word_sz - (x % word_sz));
 }
-
-void* create_mapping(size_t s, uint8_t flags);
-void* virtual_to_physical(void* vaddr, uint8_t with_flags);
-void mmu_protect(void* base_addr, size_t size, uint8_t flags);
-
-bool use_vmem = false;
 
 HiveFile read_hive_file(FILE* fp) {
     HiveFile hf;
@@ -27,16 +21,11 @@ HiveFile read_hive_file(FILE* fp) {
         fread(&hf.sects.items[i].len, sizeof(hf.sects.items[i].len), 1, fp);
         fread(&hf.sects.items[i].type, sizeof(hf.sects.items[i].type), 1, fp);
         if (hf.sects.items[i].len) {
-            if (hf.sects.items[i].type == SECT_TYPE_CODE) {
-                size_t s = pad_to_page_size(hf.sects.items[i].len);
-                hf.sects.items[i].data = mmap(NULL, s, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, 0, 0);
-                if (hf.sects.items[i].data == MAP_FAILED) {
-                    fprintf(stderr, "Failed to create memory mapping: %s\n", strerror(errno));
-                    exit(1);
-                }
-                memset(hf.sects.items[i].data, 0, s);
-            } else {
-                hf.sects.items[i].data = malloc(hf.sects.items[i].len);
+            size_t s = pad_to_instr_size(hf.sects.items[i].len);
+            hf.sects.items[i].data = mmap(NULL, s, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, 0, 0);
+            if (hf.sects.items[i].data == MAP_FAILED) {
+                fprintf(stderr, "Failed to map memory: %s\n", strerror(errno));
+                exit(1);
             }
             fread(hf.sects.items[i].data, sizeof(char), hf.sects.items[i].len, fp);
         }
@@ -45,7 +34,7 @@ HiveFile read_hive_file(FILE* fp) {
 }
 
 Nob_File_Paths create_ld_section(Section s);
-Section get_section(HiveFile f, uint32_t sect_type);
+Section get_section(HiveFile f, uint8_t sect_type);
 
 bool has_file(HiveFile_Array* arr, const char* name) {
     for (size_t i = 0; i < arr->count; i++) {
@@ -134,8 +123,8 @@ void write_hive_file(HiveFile hf, FILE* fp) {
     }
 }
 
-Symbol_Offsets create_symbol_section(Section s) {
-    Symbol_Offsets off = {0};
+Symbol_Array create_symbol_section(Section s) {
+    Symbol_Array off = {0};
     char* data = s.data;
 
     if (data == NULL) return off;
@@ -150,13 +139,15 @@ Symbol_Offsets create_symbol_section(Section s) {
         strcpy(off.items[i].name, data);
         data += len + 1;
         off.items[i].offset = mem_read(data, uint64_t);
+        off.items[i].section = mem_read(data, uint64_t);
+        off.items[i].flags = mem_read(data, enum symbol_flag);
     }
     #undef mem_read
     return off;
 }
 
-Symbol_Offsets create_relocation_section(Section s) {
-    Symbol_Offsets off = {0};
+Relocation_Array create_relocation_section(Section s) {
+    Relocation_Array off = {0};
     char* data = s.data;
 
     if (data == NULL) return off;
@@ -166,12 +157,19 @@ Symbol_Offsets create_relocation_section(Section s) {
     off.capacity = off.count;
     off.items = malloc(sizeof(*off.items) * off.capacity);
     for (size_t i = 0; i < off.count; i++) {
-        size_t len = strlen(data);
-        off.items[i].name = malloc(len + 1);
-        strcpy(off.items[i].name, data);
-        data += len + 1;
-        off.items[i].offset = mem_read(data, uint64_t);
-        off.items[i].type = mem_read(data, enum symbol_type);
+        off.items[i].source_offset = mem_read(data, uint64_t);
+        off.items[i].source_section = mem_read(data, uint64_t);
+        off.items[i].type = mem_read(data, enum reloc_type);
+        off.items[i].is_local = mem_read(data, uint8_t);
+        if (off.items[i].is_local) {
+            off.items[i].data.local.target_offset = mem_read(data, uint64_t);
+            off.items[i].data.local.target_section = mem_read(data, uint64_t);
+        } else {
+            size_t len = strlen(data);
+            off.items[i].data.name = malloc(len + 1);
+            strcpy(off.items[i].data.name, data);
+            data += len + 1;
+        }
     }
     #undef mem_read
     return off;
@@ -193,7 +191,7 @@ Nob_File_Paths create_ld_section(Section s) {
     return paths;
 }
 
-Section get_section(HiveFile f, uint32_t sect_type) {
+Section get_section(HiveFile f, uint8_t sect_type) {
     for (size_t i = 0; i < f.sects.count; i++) {
         if (f.sects.items[i].type != sect_type) continue;
 
@@ -203,10 +201,10 @@ Section get_section(HiveFile f, uint32_t sect_type) {
 }
 
 char* get_code_section_address(HiveFile f) {
-    return get_section(f, SECT_TYPE_CODE).data;
+    return get_section(f, SECT_TYPE_TEXT).data;
 }
 
-uint64_t find_symbol_address(Symbol_Offsets syms, char* name) {
+uint64_t find_symbol_address(Symbol_Array syms, char* name) {
     for (size_t i = 0; i < syms.count; i++) {
         if (strcmp(syms.items[i].name, name) == 0) {
             return syms.items[i].offset;
@@ -215,94 +213,105 @@ uint64_t find_symbol_address(Symbol_Offsets syms, char* name) {
     return -1;
 }
 
-struct symbol_offset find_symbol(Symbol_Offsets syms, char* name) {
+Symbol find_symbol(Symbol_Array syms, char* name) {
     for (size_t i = 0; i < syms.count; i++) {
-        if (strcmp(syms.items[i].name, name) == 0) {
+        if (/*(syms.items[i].flags & sf_exported) &&*/ strcmp(syms.items[i].name, name) == 0) {
             return syms.items[i];
         }
     }
-    return (struct symbol_offset) { .offset = -1 };
+    return (Symbol) { .offset = -1 };
 }
 
-Nob_String_Builder pack_symbol_table(Symbol_Offsets syms) {
+Nob_String_Builder pack_symbol_table(Symbol_Array syms) {
     Nob_String_Builder s = {0};
-    size_t export_count = 0;
+    size_t count = 0;
     for (size_t i = 0; i < syms.count; i++) {
-        struct symbol_offset so = syms.items[i];
-        if (so.flags & sf_exported) {
-            export_count++;
+        if (syms.items[i].flags & sf_exported) {
+            count++;
         }
     }
-    nob_da_append_many(&s, &export_count, sizeof(syms.count));
+    nob_da_append_many(&s, &count, sizeof(count));
     for (size_t i = 0; i < syms.count; i++) {
-        struct symbol_offset so = syms.items[i];
-        if (so.flags & sf_exported) {
-            nob_da_append_many(&s, so.name, strlen(so.name) + 1);
-            nob_da_append_many(&s, &so.offset, sizeof(so.offset));
-        }
+        Symbol so = syms.items[i];
+        if ((so.flags & sf_exported) == 0) continue;
+        nob_da_append_many(&s, so.name, strlen(so.name) + 1);
+        nob_da_append_many(&s, &so.offset, sizeof(so.offset));
+        nob_da_append_many(&s, &so.section, sizeof(so.section));
+        nob_da_append_many(&s, &so.flags, sizeof(so.flags));
     }
     return s;
 }
 
-Nob_String_Builder pack_relocation_table(Symbol_Offsets relocs) {
+Nob_String_Builder pack_relocation_table(Relocation_Array relocs) {
     Nob_String_Builder s = {0};
     nob_da_append_many(&s, &relocs.count, sizeof(relocs.count));
     for (size_t i = 0; i < relocs.count; i++) {
-        struct symbol_offset so = relocs.items[i];
-        nob_da_append_many(&s, so.name, strlen(so.name) + 1);
-        nob_da_append_many(&s, &so.offset, sizeof(so.offset));
+        Relocation so = relocs.items[i];
+        nob_da_append_many(&s, &so.source_offset, sizeof(so.source_offset));
+        nob_da_append_many(&s, &so.source_section, sizeof(so.source_section));
         nob_da_append_many(&s, &so.type, sizeof(so.type));
+        nob_da_append_many(&s, &so.is_local, sizeof(so.is_local));
+        if (so.is_local) {
+            nob_da_append_many(&s, &so.data.local.target_offset, sizeof(so.data.local.target_offset));
+            nob_da_append_many(&s, &so.data.local.target_section, sizeof(so.data.local.target_section));
+        } else {
+            nob_da_append_many(&s, so.data.name, strlen(so.data.name) + 1);
+        }
     }
     return s;
 }
 
-void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) {
+void relocate(Section_Array sects, Relocation_Array relocs, Symbol_Array symbols) {
+    bool has_errors = false;
     for (size_t i = 0; i < relocs.count; i++) {
-        struct symbol_offset reloc = relocs.items[i];
-        uint64_t current_address = reloc.offset;
-        uint64_t target_address = find_symbol_address(symbols, reloc.name);
-
-        if (target_address == -1) {
-            if (reloc.type == sym_abs) {
-                *((QWord_t*) &code_sect.data[current_address]) += (uint64_t) code_sect.data;
-                continue;
-            } else {
-                fprintf(stderr, "Undefined symbol: %s\n", reloc.name);
-                exit(1);
-            }
+        Relocation reloc = relocs.items[i];
+        uint64_t current_address = reloc.source_offset;
+        uint64_t target_address;
+        if (reloc.is_local) {
+            target_address = (uint64_t) sects.items[reloc.data.local.target_section].data + reloc.data.local.target_offset;
+        } else {
+            Symbol target = find_symbol(symbols, reloc.data.name);
+            target_address = target.offset;
         }
+
+        Section sect = sects.items[reloc.source_section];
+        if (sect.data == NULL) {
+            fprintf(stderr, "Section %llu does not exist\n", reloc.source_section);
+            continue;
+        }
+
+        
+        #define POW2(_n) (1 << _n)
+        #define check_align() \
+            if (diff % 4) { \
+                fprintf(stderr, "Relative target not aligned: %x\n", diff); \
+                exit(1); \
+            }
+        #define relative_check(_dist) \
+            if (diff >= _dist || diff < -_dist) { \
+                fprintf(stderr, "Relative address too far: %d > %d (%llx -> %llx)\n", diff, _dist, (QWord_t) &sect.data[current_address], target_address); \
+                exit(1); \
+            }
 
         switch (reloc.type) {
             case sym_abs:
-                *((QWord_t*) &code_sect.data[current_address]) = target_address;
+                *((QWord_t*) &sect.data[current_address]) = target_address;
                 break;
             case sym_branch: {
-                    hive_instruction_t* s = ((hive_instruction_t*) &code_sect.data[current_address]);
+                    hive_instruction_t* s = ((hive_instruction_t*) &sect.data[current_address]);
                     int32_t diff = target_address - (uint64_t) s;
-                    if (diff % 4) {
-                        fprintf(stderr, "Relative target not aligned!");
-                        exit(1);
-                    }
-                    diff >>= 2;
-                    if (diff >= 0x1000000 || diff < -0x1000000) {
-                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &code_sect.data[current_address], target_address);
-                        exit(1);
-                    }
+                    check_align();
+                    diff /= sizeof(hive_instruction_t);
+                    relative_check(POW2(24));
                     s->type_branch_generic.offset = diff;
                 }
                 break;
             case sym_load: {
-                    hive_instruction_t* s = ((hive_instruction_t*) &code_sect.data[current_address]);
+                    hive_instruction_t* s = ((hive_instruction_t*) &sect.data[current_address]);
                     int32_t diff = target_address - (uint64_t) s;
-                    if (diff % 4) {
-                        fprintf(stderr, "Relative target not aligned!");
-                        exit(1);
-                    }
-                    diff >>= 2;
-                    if (diff >= 0x80000 || diff < -0x80000) {
-                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (uint64_t) &code_sect.data[current_address], target_address);
-                        exit(1);
-                    }
+                    check_align();
+                    diff /= sizeof(hive_instruction_t);
+                    relative_check(POW2(19));
                     s->type_load_signed.imm = diff;
                 }
                 break;
@@ -310,27 +319,22 @@ void relocate(Section code_sect, Symbol_Offsets relocs, Symbol_Offsets symbols) 
     }
 }
 
-Symbol_Offsets prepare(HiveFile_Array hf, bool try_relocate) {
-    Symbol_Offsets all_syms = {0};
-
+void prepare(HiveFile_Array hf, bool try_relocate, Symbol_Array* all_syms) {
     for (size_t i = 0; i < hf.count; i++) {
         Section syms = get_section(hf.items[i], SECT_TYPE_SYMS);
         if (!syms.data) continue;
 
-        Symbol_Offsets symbols = create_symbol_section(syms);
-        Section code_sect = get_section(hf.items[i], SECT_TYPE_CODE);
-
-        if (code_sect.data == NULL) {
-            fprintf(stderr, "File %s has symbols, but no code\n", hf.items[i].name);
-            continue;
-        }
+        Symbol_Array symbols = create_symbol_section(syms);
         
-        if (code_sect.data) {
-            for (size_t j = 0; j < symbols.count; j++) {
-                symbols.items[j].offset += (uint64_t) code_sect.data;
+        for (size_t j = 0; j < symbols.count; j++) {
+            Section sect = hf.items[i].sects.items[symbols.items[j].section];
+            if (sect.data == NULL) {
+                fprintf(stderr, "Section %llu does not exist\n", symbols.items[j].section);
+                continue;
             }
+            symbols.items[j].offset += (uint64_t) sect.data;
         }
-        nob_da_append_many(&all_syms, symbols.items, symbols.count);
+        nob_da_append_many(all_syms, symbols.items, symbols.count);
     }
 
     if (try_relocate) {
@@ -338,17 +342,28 @@ Symbol_Offsets prepare(HiveFile_Array hf, bool try_relocate) {
             Section reloc_sect = get_section(hf.items[i], SECT_TYPE_RELOC);
             if (!reloc_sect.data) continue;
 
-            Symbol_Offsets relocs = create_relocation_section(reloc_sect);
-            Section code_sect = get_section(hf.items[i], SECT_TYPE_CODE);
-            
-            if (code_sect.data == NULL) {
-                fprintf(stderr, "File %s has relocations, but no code\n", hf.items[i].name);
-                continue;
-            }
+            Relocation_Array relocs = create_relocation_section(reloc_sect);
+            relocate(hf.items[i].sects, relocs, *all_syms);
+        }
 
-            relocate(code_sect, relocs, all_syms);
+        for (size_t i = 0; i < hf.count; i++) {
+            for (size_t s = 0; s < hf.items[i].sects.count; s++) {
+                size_t sz = pad_to_instr_size(hf.items[i].sects.items[s].len);
+                if (hf.items[i].sects.items[s].type < SECT_TYPE_TEXT) {
+                    munmap(hf.items[i].sects.items[s].data, sz);
+                    hf.items[i].sects.items[s].data = NULL;
+                } else {
+                    if (hf.items[i].sects.items[s].type == SECT_TYPE_TEXT) {
+                        mprotect(hf.items[i].sects.items[s].data, sz, PROT_READ | PROT_EXEC);
+                    } else if (hf.items[i].sects.items[s].type == SECT_TYPE_DATA) {
+                        mprotect(hf.items[i].sects.items[s].data, sz, PROT_READ);
+                    } else if (hf.items[i].sects.items[s].type == SECT_TYPE_BSS) {
+                        mprotect(hf.items[i].sects.items[s].data, sz, PROT_READ | PROT_WRITE);
+                    } else {
+                        fprintf(stderr, "Unknown section: %x\n", hf.items[i].sects.items[s].type);
+                    }
+                }
+            }
         }
     }
-
-    return all_syms;
 }

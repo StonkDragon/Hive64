@@ -1,3 +1,4 @@
+.text
 .global _main
 _main:
     str lr, [sp, -16]!
@@ -10,5 +11,6 @@ _main:
     ldr lr, [sp, 16]!
     ret
 
+.data
 msg:
     .asciz "Hello, World!"

@@ -6,18 +6,18 @@
 #include "new_ops.h"
 
 Token_Array parse(char* src);
-Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offsets* relocations);
+SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* relocations);
 
 static char* file;
 
-Nob_String_Builder run_compile(const char* file_name, Symbol_Offsets* syms, Symbol_Offsets* relocations) {
+SB_Array run_compile(const char* file_name, Symbol_Array* syms, Relocation_Array* relocations) {
     file = malloc(strlen(file_name) + 1);
     strcpy(file, file_name);
 
     FILE* file = fopen(file_name, "r");
     if (!file) {
         printf("Could not open file: %s\n", file_name);
-        return (Nob_String_Builder) {0};
+        return (SB_Array) {0};
     }
     fseek(file, 0, SEEK_END);
     size_t size = ftell(file);
@@ -43,7 +43,7 @@ Nob_String_Builder run_compile(const char* file_name, Symbol_Offsets* syms, Symb
         }
         if (src[i] == '\n' && inside_string) {
             printf("%s:%d: Unterminated string\n", file_name, i);
-            return (Nob_String_Builder) {0};
+            return (SB_Array) {0};
         }
         if ((src[i] == ';' || src[i] == '#' || src[i] == '@') && !inside_string) {
             while (src[i] != '\n' && i < size) {
@@ -196,7 +196,7 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
 #define EXPECT(_type, _diag) \
     if (tokens.items[i].type != _type) { \
         printf("%s:%d: " _diag "\n", tokens.items[i].file, tokens.items[i].line, tokens.items[i].value); \
-        return (Nob_String_Builder) {0}; \
+        return (SB_Array) {0}; \
     }
 
 #define parse_reg(s) parse_reg_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
@@ -377,11 +377,14 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
     ins.type_data_fpu.r2 = r2; \
     ins.type_data_fpu.r3 = r3;
 
-uint64_t find_symbol_address(Symbol_Offsets syms, char* name);
-struct symbol_offset find_symbol(Symbol_Offsets syms, char* name);
+uint64_t find_symbol_address(Symbol_Array syms, char* name);
+Symbol find_symbol(Symbol_Array syms, char* name);
 
-Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offsets* relocations) {
-    Nob_String_Builder data = {0};
+
+SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* relocations) {
+    Nob_String_Builder current_section = {0};
+    uint64_t current_sect_type = SECT_TYPE_NOEMIT;
+    SB_Array sects = {0};
 
     Nob_File_Paths exported_symbols = {0};
 
@@ -430,6 +433,10 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
             } else if (eq(mnemonic, "svc")) {
                 ins.generic.type = MODE_LOAD;
                 ins.type_load.op = OP_LOAD_svc;
+            } else if (eq(mnemonic, "cpuid")) {
+                ins.generic.type = MODE_OTHER;
+                ins.type_other.op = OP_OTHER_priv_op;
+                ins.type_other_priv.op = SUBOP_OTHER_cpuid;
             } else if (eq(mnemonic, "add")) {
                 OP(add)
             } else if (eq(mnemonic, "sub")) {
@@ -947,64 +954,97 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
             if (ins.generic.type == MODE_BRANCH && !ins.type_branch.is_reg) {
                 inc();
                 EXPECT(Identifier, "Expected identifier, got %s");
-                struct symbol_offset off = {
-                    .name = tokens.items[i].value,
-                    .offset = data.count,
+                Relocation off = {
+                    .data.name = tokens.items[i].value,
+                    .source_offset = current_section.count,
+                    .source_section = sects.count,
                     .type = sym_branch
                 }; 
                 nob_da_append(relocations, off);
             } else if (ins.generic.type == MODE_LOAD && ins.type_load_signed.op == OP_LOAD_lea) {
                 inc();
                 EXPECT(Identifier, "Expected identifier, got %s");
-                struct symbol_offset off = {
-                    .name = tokens.items[i].value,
-                    .offset = data.count,
+                Relocation off = {
+                    .data.name = tokens.items[i].value,
+                    .source_offset = current_section.count,
+                    .source_section = sects.count,
                     .type = sym_load
                 }; 
                 nob_da_append(relocations, off);
             }
-            nob_da_append_many(&data, &ins, sizeof(ins));
+            nob_da_append_many(&current_section, &ins, sizeof(ins));
         } else if (tokens.items[i].type == Directive) {
             if (eq(tokens.items[i].value, "asciz") || eq(tokens.items[i].value, "ascii")) {
                 inc();
                 EXPECT(String, "Expected string, got %s");
                 char* str = tokens.items[i].value;
                 str = unquote(str);
-                nob_sb_append_cstr(&data, str);
+                nob_sb_append_cstr(&current_section, str);
                 if (eq(tokens.items[i - 1].value, "asciz")) {
-                    nob_sb_append_null(&data);
+                    nob_sb_append_null(&current_section);
                 }
-                while (data.count % 4) {
-                    nob_sb_append_null(&data);
+                while (current_section.count % 4) {
+                    nob_sb_append_null(&current_section);
                 }
+            } else if (eq(tokens.items[i].value, "text")) {
+                if (current_sect_type != SECT_TYPE_NOEMIT) {
+                    CompilerSection s = {
+                        .data = current_section,
+                        .type = current_sect_type,
+                    };
+                    nob_da_append(&sects, s);
+                }
+                current_section = (Nob_String_Builder) {0};
+                current_sect_type = SECT_TYPE_TEXT;
+            } else if (eq(tokens.items[i].value, "data")) {
+                if (current_sect_type != SECT_TYPE_NOEMIT) {
+                    CompilerSection s = {
+                        .data = current_section,
+                        .type = current_sect_type,
+                    };
+                    nob_da_append(&sects, s);
+                }
+                current_section = (Nob_String_Builder) {0};
+                current_sect_type = SECT_TYPE_DATA;
+            } else if (eq(tokens.items[i].value, "bss")) {
+                if (current_sect_type != SECT_TYPE_NOEMIT) {
+                    CompilerSection s = {
+                        .data = current_section,
+                        .type = current_sect_type,
+                    };
+                    nob_da_append(&sects, s);
+                }
+                current_section = (Nob_String_Builder) {0};
+                current_sect_type = SECT_TYPE_BSS;
             } else if (eq(tokens.items[i].value, "byte")) {
                 inc();
                 EXPECT(Number, "Expected number, got %s");
                 uint8_t num = parse8(tokens.items[i].value);
-                nob_da_append_many(&data, &num, 1);
+                nob_da_append_many(&current_section, &num, 1);
             } else if (eq(tokens.items[i].value, "word")) {
                 inc();
                 EXPECT(Number, "Expected number, got %s");
                 uint16_t num = parse16(tokens.items[i].value);
-                nob_da_append_many(&data, &num, 2);
+                nob_da_append_many(&current_section, &num, 2);
             } else if (eq(tokens.items[i].value, "dword")) {
                 inc();
                 EXPECT(Number, "Expected number, got %s");
                 uint32_t num = parse32(tokens.items[i].value);
-                nob_da_append_many(&data, &num, 4);
+                nob_da_append_many(&current_section, &num, 4);
             } else if (eq(tokens.items[i].value, "qword")) {
                 inc();
                 if (tokens.items[i].type == Number) {
                     uint64_t num = parse64(tokens.items[i].value);
-                    nob_da_append_many(&data, &num, 8);
+                    nob_da_append_many(&current_section, &num, 8);
                 } else if (tokens.items[i].type == Identifier) {
-                    struct symbol_offset off = {
-                        .name = tokens.items[i].value,
-                        .offset = data.count,
+                    Relocation off = {
+                        .data.name = tokens.items[i].value,
+                        .source_offset = current_section.count,
+                        .source_section = sects.count,
                         .type = sym_abs
                     }; 
                     nob_da_append(relocations, off);
-                    nob_da_append_many(&data, &(off.offset), 8);
+                    nob_da_append_many(&current_section, &(off.source_offset), 8);
                 } else {
                     EXPECT(Eof, "Expected number or identifier, got %s");
                 }
@@ -1012,22 +1052,23 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 inc();
                 EXPECT(NumberFloat, "Expected float, got %s");;
                 float num = atof(tokens.items[i].value);
-                nob_da_append_many(&data, &num, 4);
+                nob_da_append_many(&current_section, &num, 4);
             } else if (eq(tokens.items[i].value, "double")) {
                 inc();
                 EXPECT(NumberFloat, "Expected float, got %s");;
                 double num = atof(tokens.items[i].value);
-                nob_da_append_many(&data, &num, 8);
+                nob_da_append_many(&current_section, &num, 8);
             } else if (eq(tokens.items[i].value, "offset")) {
                 inc();
                 EXPECT(Identifier, "Expected identifier, got %s");
-                struct symbol_offset off = {
-                    .name = tokens.items[i].value,
-                    .offset = data.count,
+                Relocation off = {
+                    .data.name = tokens.items[i].value,
+                    .source_offset = current_section.count,
+                    .source_section = sects.count,
                     .type = sym_abs
                 }; 
                 nob_da_append(relocations, off);
-                nob_da_append_many(&data, &(off.offset), 8);
+                nob_da_append_many(&current_section, &(off.source_offset), 8);
             } else if (eq(tokens.items[i].value, "zerofill")) {
                 inc();
                 EXPECT(Number, "Expected number, got %s");
@@ -1037,16 +1078,16 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
                 }
                 while (size > 0) {
                     if (size >= 8) {
-                        nob_da_append_many(&data, &(uint64_t){0}, 8);
+                        nob_da_append_many(&current_section, &(uint64_t){0}, 8);
                         size -= 8;
                     } else if (size >= 4) {
-                        nob_da_append_many(&data, &(uint32_t){0}, 4);
+                        nob_da_append_many(&current_section, &(uint32_t){0}, 4);
                         size -= 4;
                     } else if (size >= 2) {
-                        nob_da_append_many(&data, &(uint16_t){0}, 2);
+                        nob_da_append_many(&current_section, &(uint16_t){0}, 2);
                         size -= 2;
                     } else if (size >= 1) {
-                        nob_da_append_many(&data, &(uint8_t){0}, 1);
+                        nob_da_append_many(&current_section, &(uint8_t){0}, 1);
                         size -= 1;
                     } else {
                         break;
@@ -1062,15 +1103,24 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
         } else if (tokens.items[i].type == Label) {
             char* str = tokens.items[i].value;
             str = unquote(str);
-            struct symbol_offset off = {
+            Symbol off = {
                 .name = str,
-                .offset = data.count,
+                .offset = current_section.count,
+                .section = sects.count,
             };
             nob_da_append(syms, off);
         }
     }
 
-    Symbol_Offsets extern_relocs = {0};
+    if (current_sect_type != SECT_TYPE_NOEMIT) {
+        CompilerSection s = {
+            .data = current_section,
+            .type = current_sect_type
+        };
+        nob_da_append(&sects, s);
+    }
+
+    Relocation_Array extern_relocs = {0};
 
     for (size_t i = 0; i < syms->count; i++) {
         for (size_t j = 0; j < exported_symbols.count; j++) {
@@ -1082,46 +1132,53 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
     }
 
     for (size_t i = 0; i < relocations->count; i++) {
-        struct symbol_offset reloc = relocations->items[i];
-        uint64_t current_address = reloc.offset;
-        struct symbol_offset symbol = find_symbol(*syms, reloc.name);
-        uint64_t target_address = symbol.offset;
+        Relocation reloc = relocations->items[i];
+        uint64_t current_address = reloc.source_offset;
+        Symbol target = find_symbol(*syms, reloc.data.name);
+        uint64_t target_address = target.offset;
 
-        if (target_address == -1) {
+        if (target_address == -1 || reloc.source_section != target.section) {
+            if (reloc.source_section != target.section) {
+                reloc.is_local = 1;
+                reloc.data.local.target_section = target.section;
+                reloc.data.local.target_offset = target.offset;
+            }
             nob_da_append(&extern_relocs, reloc);
             continue;
         }
 
+        Nob_String_Builder sect = sects.items[reloc.source_section].data;
+
         switch (reloc.type) {
             case sym_abs:
-                *((QWord_t*) &data.items[current_address]) = target_address;
+                *((QWord_t*) &sect.items[current_address]) = target_address;
                 nob_da_append(&extern_relocs, reloc);
                 break;
             case sym_branch: {
-                    hive_instruction_t* s = ((hive_instruction_t*) &data.items[current_address]);
+                    hive_instruction_t* s = ((hive_instruction_t*) &sect.items[current_address]);
                     int32_t diff = target_address - (current_address);
                     if (diff % 4) {
-                        fprintf(stderr, "Relative target not aligned!");
+                        fprintf(stderr, "Relative target not aligned: %x\n", diff);
                         exit(1);
                     }
                     diff >>= 2;
                     if (diff >= 0x1000000 || diff < -0x1000000) {
-                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &data.items[current_address], target_address);
+                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &sect.items[current_address], target_address);
                         exit(1);
                     }
                     s->type_branch_generic.offset = diff;
                 }
                 break;
             case sym_load: {
-                    hive_instruction_t* s = ((hive_instruction_t*) &data.items[current_address]);
+                    hive_instruction_t* s = ((hive_instruction_t*) &sect.items[current_address]);
                     int32_t diff = target_address - (current_address);
                     if (diff % 4) {
-                        fprintf(stderr, "Relative target not aligned!");
+                        fprintf(stderr, "Relative target not aligned: %x\n", diff);
                         exit(1);
                     }
                     diff >>= 2;
                     if (diff >= 0x80000 || diff < -0x80000) {
-                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &data.items[current_address], target_address);
+                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &sect.items[current_address], target_address);
                         exit(1);
                     }
                     s->type_load_signed.imm = diff;
@@ -1131,7 +1188,7 @@ Nob_String_Builder compile(Token_Array tokens, Symbol_Offsets* syms, Symbol_Offs
     }
     *relocations = extern_relocs;
 
-    return data;
+    return sects;
 }
 
 char* unquote(const char* str) {
