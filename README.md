@@ -179,6 +179,7 @@ Every condition except `always` and `never` can be specified in the assembler by
 
 ### Size Prefixes
 |Mnemonic|Encoding|Description|
+|-|-|-|
 |`byte` prefix|             `ccc1100001....................00`|Overrides the operand size of arithmetic instructions and [`ldr`/`str`-with-offset](#data-transfer) to 8 bits|
 |`word` prefix|             `ccc1100001....................01`|Overrides the operand size of arithmetic instructions and [`ldr`/`str`-with-offset](#data-transfer) to 16 bits|
 |`dword` prefix|            `ccc1100001....................10`|Overrides the operand size of arithmetic instructions and [`ldr`/`str`-with-offset](#data-transfer) to 32 bits|
