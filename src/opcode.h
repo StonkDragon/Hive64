@@ -13,12 +13,11 @@
 #define SUBOP_DATA_SALU_R       0b0010
 #define SUBOP_DATA_SALU_I       0b0011
 #define SUBOP_DATA_BEXT         0b0100
-#define SUBOP_DATA_BEXTR        0b0101
-#define SUBOP_DATA_BDEP         0b0110
-#define SUBOP_DATA_BDEPR        0b0111
-#define SUBOP_DATA_LS           0b1000
-#define SUBOP_DATA_FPU          0b1001
-#define SUBOP_DATA_VPU          0b1010
+#define SUBOP_DATA_BDEP         0b0101
+#define SUBOP_DATA_LS           0b0110
+#define SUBOP_DATA_LS_FAR       0b0111
+#define SUBOP_DATA_FPU          0b1000
+#define SUBOP_DATA_VPU          0b1001
 
 #define OP_DATA_ALU_add         0x0
 #define OP_DATA_ALU_sub         0x1
@@ -82,7 +81,10 @@
 #define OP_LOAD_lea             0b00
 #define OP_LOAD_movzk           0b01
 #define OP_LOAD_svc             0b10
+#define OP_LOAD_ls_off          0b11
 
 #define OP_OTHER_priv_op        0b00000
+#define OP_OTHER_size_override  0b00001
+#define OP_OTHER_signextend     0b00010
 
 #define SUBOP_OTHER_cpuid       0b00000

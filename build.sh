@@ -9,7 +9,7 @@ clang -O3 -std=gnu17 -o build/h64 -Isrc/ src/**/*.c
 
 copier=cp
 
-if [ `uname` -eq "Darwin" ]; then
+if [ `uname` = "Darwin" ]; then
     copier=ditto
 fi
 

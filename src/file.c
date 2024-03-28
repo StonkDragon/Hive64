@@ -342,6 +342,15 @@ void relocate(Section_Array sects, Relocation_Array relocs, Symbol_Array symbols
                     s->type_load_signed.imm = diff;
                 }
                 break;
+            case sym_ls_off: {
+                    hive_instruction_t* s = ((hive_instruction_t*) &sect.data[current_address]);
+                    int32_t diff = target_address - (uint64_t) s;
+                    check_align();
+                    diff /= sizeof(hive_instruction_t);
+                    relative_check(POW2(18));
+                    s->type_load_ls_off.imm = diff;
+                }
+                break;
         }
     }
     if (has_errors) {

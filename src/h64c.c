@@ -192,6 +192,14 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
     printf("%s:%d: Unknown condition: %s\n", file, line, value);
     exit(1);
 }
+uint8_t parse_size_(char* s, char* file, int line, char* value) {
+    if (eq(s, "byte")) return SIZE_8BIT;
+    if (eq(s, "word")) return SIZE_16BIT;
+    if (eq(s, "dword")) return SIZE_32BIT;
+    if (eq(s, "qword")) return SIZE_64BIT;
+    printf("%s:%d: Unknown condition: %s\n", file, line, value);
+    exit(1);
+}
 
 #define EXPECT(_type, _diag) \
     if (tokens.items[i].type != _type) { \
@@ -202,8 +210,11 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
 #define parse_reg(s) parse_reg_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
 #define parse_condition(s) parse_condition_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
 #define parse_vreg(s) parse_vreg_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
+#define parse_size(s) parse_size_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
 
 #define inc() do { i++; if (i >= tokens.count) { EXPECT(Eof, "Expected more tokens: %s"); } } while (0)
+
+#define POW2(_n) (1 << _n)
 
 #define LDR(_sz) \
     inc(); \
@@ -214,49 +225,108 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
     inc(); \
     EXPECT(LeftBracket, "Expected '[', got %s"); \
     inc(); \
-    EXPECT(Register, "Expected register, got %s"); \
-    uint8_t r2 = parse_reg(tokens.items[i].value); \
-    inc(); \
-    ins.generic.type = MODE_DATA; \
-    ins.type_data_ls_imm.sub_op = SUBOP_DATA_LS; \
-    if (tokens.items[i].type == RightBracket) { \
-        ins.type_data_ls_imm.is_store = 0; \
-        ins.type_data_ls_imm.r1 = r1; \
-        ins.type_data_ls_imm.r2 = r2; \
-        ins.type_data_ls_imm.size = _sz; \
-        ins.type_data_ls_imm.imm = 0; \
-        ins.type_data_ls_imm.use_immediate = 1; \
-        if (tokens.items[i + 1].type == Bang) { \
-            inc(); \
-            ins.type_data_ls_imm.update_ptr = 1; \
+    if (tokens.items[i].type == Identifier) { \
+        if (_sz != SIZE_64BIT) { \
+            hive_instruction_t ins; \
+            ins.generic.condition = COND_ALWAYS; \
+            ins.generic.type = MODE_OTHER; \
+            ins.type_other_size_override.op = OP_OTHER_size_override; \
+            ins.type_other_size_override.size = _sz; \
+            nob_da_append_many(&current_section, &ins, sizeof(ins)); \
         } \
-    } else if (tokens.items[i].type == Comma) { \
+        ins.generic.type = MODE_LOAD; \
+        ins.type_load_ls_off.op = OP_LOAD_ls_off; \
+        ins.type_load_ls_off.r1 = r1; \
+        Relocation off = { \
+            .data.name = tokens.items[i].value, \
+            .source_offset = current_section.count, \
+            .source_section = sects.count, \
+            .type = sym_ls_off \
+        };  \
+        nob_da_append(relocations, off); \
         inc(); \
-        if (tokens.items[i].type == Register) { \
-            ins.type_data_ls_reg.is_store = 0; \
-            ins.type_data_ls_reg.r1 = r1; \
-            ins.type_data_ls_reg.r2 = r2; \
-            ins.type_data_ls_reg.size = _sz; \
-            ins.type_data_ls_reg.r3 = parse_reg(tokens.items[i].value); \
-        } else if (tokens.items[i].type == Number) { \
+        EXPECT(RightBracket, "Expected ']', got %s"); \
+    } else { \
+        EXPECT(Register, "Expected register or identifier, got %s"); \
+        uint8_t r2 = parse_reg(tokens.items[i].value); \
+        inc(); \
+        ins.generic.type = MODE_DATA; \
+        ins.type_data_ls_imm.data_op = SUBOP_DATA_LS; \
+        if (tokens.items[i].type == RightBracket) { \
             ins.type_data_ls_imm.is_store = 0; \
             ins.type_data_ls_imm.r1 = r1; \
             ins.type_data_ls_imm.r2 = r2; \
             ins.type_data_ls_imm.size = _sz; \
-            int8_t num = parse8(tokens.items[i].value); \
+            ins.type_data_ls_imm.imm = 0; \
             ins.type_data_ls_imm.use_immediate = 1; \
-            ins.type_data_ls_imm.imm = num; \
-        } else { \
-            EXPECT(Eof, "Expected register or number, got %s"); \
-        } \
-        inc(); \
-        EXPECT(RightBracket, "Expected ']', got %s"); \
-        if (tokens.items[i + 1].type == Bang) { \
+            if (tokens.items[i + 1].type == Bang) { \
+                inc(); \
+                ins.type_data_ls_imm.update_ptr = 1; \
+            } \
+        } else if (tokens.items[i].type == Comma) { \
             inc(); \
-            ins.type_data_ls_imm.update_ptr = 1; \
+            if (tokens.items[i].type == Register) { \
+                ins.type_data_ls_reg.is_store = 0; \
+                ins.type_data_ls_reg.r1 = r1; \
+                ins.type_data_ls_reg.r2 = r2; \
+                ins.type_data_ls_reg.size = _sz; \
+                ins.type_data_ls_reg.r3 = parse_reg(tokens.items[i].value); \
+            } else if (tokens.items[i].type == Number) { \
+                ins.type_data_ls_imm.is_store = 0; \
+                ins.type_data_ls_imm.r1 = r1; \
+                ins.type_data_ls_imm.r2 = r2; \
+                ins.type_data_ls_imm.size = _sz; \
+                int16_t num = parse16(tokens.items[i].value); \
+                if (num < 128 && num >= -128) { \
+                    ins.type_data_ls_imm.use_immediate = 1; \
+                    ins.type_data_ls_imm.imm = num; \
+                } else if (num >= 0) { \
+                    uint16_t x = *(uint16_t*) &num; \
+                    ins.type_data_ls_far.data_op = SUBOP_DATA_LS_FAR; \
+                    uint8_t shift = 0; \
+                    if (x % 2 == 0 && x < POW2(7)) { \
+                        ins.type_data_ls_far.imm = (x >> 1); \
+                    } else if (x % 4 == 0 && x < POW2(8)) { \
+                        ins.type_data_ls_far.imm = (x >> 2); \
+                        shift = 1; \
+                    } else if (x % 8 == 0 && x < POW2(9)) { \
+                        ins.type_data_ls_far.imm = (x >> 3); \
+                        shift = 2; \
+                    } else if (x % 16 == 0 && x < POW2(10)) { \
+                        ins.type_data_ls_far.imm = (x >> 4); \
+                        shift = 3; \
+                    } else if (x % 32 == 0 && x < POW2(11)) { \
+                        ins.type_data_ls_far.imm = (x >> 5); \
+                        shift = 4; \
+                    } else if (x % 64 == 0 && x < POW2(12)) { \
+                        ins.type_data_ls_far.imm = (x >> 6); \
+                        shift = 5; \
+                    } else if (x % 128 == 0 && x < POW2(13)) { \
+                        ins.type_data_ls_far.imm = (x >> 7); \
+                        shift = 6; \
+                    } else if (x % 256 == 0 && x < POW2(14)) { \
+                        ins.type_data_ls_far.imm = (x >> 8); \
+                        shift = 7; \
+                    } else { \
+                        EXPECT(Eof, "Number out of range: %s"); \
+                    } \
+                    ins.type_data_ls_far.shift = shift & 0b11; \
+                    ins.type_data_ls_far.shift_hi = (shift & 0b100) >> 2; \
+                } else { \
+                    EXPECT(Eof, "Number out of range: %s"); \
+                } \
+            } else { \
+                EXPECT(Eof, "Expected register or number, got %s"); \
+            } \
+            inc(); \
+            EXPECT(RightBracket, "Expected ']', got %s"); \
+            if (tokens.items[i + 1].type == Bang) { \
+                inc(); \
+                ins.type_data_ls_imm.update_ptr = 1; \
+            } \
+        } else { \
+            EXPECT(Eof, "Expected comma or ']', got %s"); \
         } \
-    } else { \
-        EXPECT(Eof, "Expected comma or ']', got %s"); \
     }
 
 #define STR(_sz)  \
@@ -268,50 +338,111 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
     inc(); \
     EXPECT(LeftBracket, "Expected '[', got %s"); \
     inc(); \
-    EXPECT(Register, "Expected register, got %s"); \
-    uint8_t r2 = parse_reg(tokens.items[i].value); \
-    inc(); \
-    ins.generic.type = MODE_DATA; \
-    ins.type_data_ls_imm.sub_op = SUBOP_DATA_LS; \
-    if (tokens.items[i].type == RightBracket) { \
-        ins.type_data_ls_imm.is_store = 1; \
-        ins.type_data_ls_imm.r1 = r1; \
-        ins.type_data_ls_imm.r2 = r2; \
-        ins.type_data_ls_imm.size = _sz; \
-        ins.type_data_ls_imm.imm = 0; \
-        ins.type_data_ls_imm.use_immediate = 1; \
-        if (tokens.items[i + 1].type == Bang) { \
-            inc(); \
-            ins.type_data_ls_imm.update_ptr = 1; \
+    if (tokens.items[i].type == Identifier) { \
+        if (_sz != SIZE_64BIT) { \
+            hive_instruction_t ins; \
+            ins.generic.condition = COND_ALWAYS; \
+            ins.generic.type = MODE_OTHER; \
+            ins.type_other_size_override.op = OP_OTHER_size_override; \
+            ins.type_other_size_override.size = _sz; \
+            nob_da_append_many(&current_section, &ins, sizeof(ins)); \
         } \
-    } else if (tokens.items[i].type == Comma) { \
+        ins.generic.type = MODE_LOAD; \
+        ins.type_load_ls_off.op = OP_LOAD_ls_off; \
+        ins.type_load_ls_off.is_store = 1; \
+        ins.type_load_ls_off.r1 = r1; \
+        Relocation off = { \
+            .data.name = tokens.items[i].value, \
+            .source_offset = current_section.count, \
+            .source_section = sects.count, \
+            .type = sym_ls_off \
+        };  \
+        nob_da_append(relocations, off); \
         inc(); \
-        if (tokens.items[i].type == Register) { \
-            ins.type_data_ls_reg.is_store = 1; \
-            ins.type_data_ls_reg.r1 = r1; \
-            ins.type_data_ls_reg.r2 = r2; \
-            ins.type_data_ls_reg.size = _sz; \
-            ins.type_data_ls_reg.r3 = parse_reg(tokens.items[i].value); \
-        } else if (tokens.items[i].type == Number) { \
+        EXPECT(RightBracket, "Expected ']', got %s"); \
+    } else { \
+        EXPECT(Register, "Expected register, got %s"); \
+        uint8_t r2 = parse_reg(tokens.items[i].value); \
+        inc(); \
+        ins.generic.type = MODE_DATA; \
+        ins.type_data_ls_imm.data_op = SUBOP_DATA_LS; \
+        if (tokens.items[i].type == RightBracket) { \
             ins.type_data_ls_imm.is_store = 1; \
             ins.type_data_ls_imm.r1 = r1; \
             ins.type_data_ls_imm.r2 = r2; \
             ins.type_data_ls_imm.size = _sz; \
-            int8_t num = parse8(tokens.items[i].value); \
+            ins.type_data_ls_imm.imm = 0; \
             ins.type_data_ls_imm.use_immediate = 1; \
-            ins.type_data_ls_imm.imm = num; \
-        } else { \
-            EXPECT(Eof, "Expected register or number, got %s"); \
-        } \
-        inc(); \
-        EXPECT(RightBracket, "Expected ']', got %s"); \
-        if (tokens.items[i + 1].type == Bang) { \
+            if (tokens.items[i + 1].type == Bang) { \
+                inc(); \
+                ins.type_data_ls_imm.update_ptr = 1; \
+            } \
+        } else if (tokens.items[i].type == Comma) { \
             inc(); \
-            ins.type_data_ls_imm.update_ptr = 1; \
+            if (tokens.items[i].type == Register) { \
+                ins.type_data_ls_reg.is_store = 1; \
+                ins.type_data_ls_reg.r1 = r1; \
+                ins.type_data_ls_reg.r2 = r2; \
+                ins.type_data_ls_reg.size = _sz; \
+                ins.type_data_ls_reg.r3 = parse_reg(tokens.items[i].value); \
+            } else if (tokens.items[i].type == Number) { \
+                ins.type_data_ls_imm.is_store = 1; \
+                ins.type_data_ls_imm.r1 = r1; \
+                ins.type_data_ls_imm.r2 = r2; \
+                ins.type_data_ls_imm.size = _sz; \
+                int16_t num = parse16(tokens.items[i].value); \
+                if (num < 128 && num >= -128) { \
+                    ins.type_data_ls_imm.use_immediate = 1; \
+                    ins.type_data_ls_imm.imm = num; \
+                } else if (num >= 0) { \
+                    uint16_t x = *(uint16_t*) &num; \
+                    ins.type_data_ls_far.data_op = SUBOP_DATA_LS_FAR; \
+                    uint8_t shift = 0; \
+                    if (x % 2 == 0 && x < POW2(7)) { \
+                        ins.type_data_ls_far.imm = (x >> 1); \
+                    } else if (x % 4 == 0 && x < POW2(8)) { \
+                        ins.type_data_ls_far.imm = (x >> 2); \
+                        shift = 1; \
+                    } else if (x % 8 == 0 && x < POW2(9)) { \
+                        ins.type_data_ls_far.imm = (x >> 3); \
+                        shift = 2; \
+                    } else if (x % 16 == 0 && x < POW2(10)) { \
+                        ins.type_data_ls_far.imm = (x >> 4); \
+                        shift = 3; \
+                    } else if (x % 32 == 0 && x < POW2(11)) { \
+                        ins.type_data_ls_far.imm = (x >> 5); \
+                        shift = 4; \
+                    } else if (x % 64 == 0 && x < POW2(12)) { \
+                        ins.type_data_ls_far.imm = (x >> 6); \
+                        shift = 5; \
+                    } else if (x % 128 == 0 && x < POW2(13)) { \
+                        ins.type_data_ls_far.imm = (x >> 7); \
+                        shift = 6; \
+                    } else if (x % 256 == 0 && x < POW2(14)) { \
+                        ins.type_data_ls_far.imm = (x >> 8); \
+                        shift = 7; \
+                    } else { \
+                        EXPECT(Eof, "Number out of range: %s"); \
+                    } \
+                    ins.type_data_ls_far.shift = shift & 0b11; \
+                    ins.type_data_ls_far.shift_hi = (shift & 0b100) >> 2; \
+                } else { \
+                    EXPECT(Eof, "Number out of range: %s"); \
+                } \
+            } else { \
+                EXPECT(Eof, "Expected register or number, got %s"); \
+            } \
+            inc(); \
+            EXPECT(RightBracket, "Expected ']', got %s"); \
+            if (tokens.items[i + 1].type == Bang) { \
+                inc(); \
+                ins.type_data_ls_imm.update_ptr = 1; \
+            } \
+        } else { \
+            EXPECT(Eof, "Expected comma or ']', got %s"); \
         } \
-    } else { \
-        EXPECT(Eof, "Expected comma or ']', got %s"); \
     }
+
 #define OP(_what) \
     inc(); \
     EXPECT(Register, "Expected register, got %s"); \
@@ -327,13 +458,13 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
             i += 2; \
             if (tokens.items[i].type == Number) { \
                 uint8_t num = parse8(tokens.items[i].value); \
-                ins.type_data.sub_op = SUBOP_DATA_ALU_I; \
+                ins.type_data.data_op = SUBOP_DATA_ALU_I; \
                 ins.type_data_alui.r1 = r1; \
                 ins.type_data_alui.r2 = r2; \
                 ins.type_data_alui.imm = num; \
             } else if (tokens.items[i].type == Register) { \
                 uint8_t r3 = parse_reg(tokens.items[i].value); \
-                ins.type_data.sub_op = SUBOP_DATA_ALU_R; \
+                ins.type_data.data_op = SUBOP_DATA_ALU_R; \
                 ins.type_data_alur.r1 = r1; \
                 ins.type_data_alur.r2 = r2; \
                 ins.type_data_alur.r3 = r3; \
@@ -341,14 +472,14 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
                 EXPECT(Eof, "Expected number or register, got %s"); \
             } \
         } else { \
-            ins.type_data.sub_op = SUBOP_DATA_ALU_R; \
+            ins.type_data.data_op = SUBOP_DATA_ALU_R; \
             ins.type_data_alur.r1 = r1; \
             ins.type_data_alur.r2 = r1; \
             ins.type_data_alur.r3 = r2; \
         } \
     } else if (tokens.items[i].type == Number) { \
         uint8_t num = parse8(tokens.items[i].value); \
-        ins.type_data.sub_op = SUBOP_DATA_ALU_I; \
+        ins.type_data.data_op = SUBOP_DATA_ALU_I; \
         ins.type_data_alui.r1 = r1; \
         ins.type_data_alui.r2 = r1; \
         ins.type_data_alui.imm = num; \
@@ -394,6 +525,17 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
         if (tokens.items[i].type == Identifier) {
             char* mnemonic = lower(tokens.items[i].value);
 
+            if (eq(mnemonic, "byte") || eq(mnemonic, "word") || eq(mnemonic, "dword") || eq(mnemonic, "qword")) {
+                hive_instruction_t ins;
+                ins.generic.condition = COND_ALWAYS;
+                ins.generic.type = MODE_OTHER;
+                ins.type_other_size_override.op = OP_OTHER_size_override;
+                ins.type_other_size_override.size = parse_size(mnemonic);
+                nob_da_append_many(&current_section, &ins, sizeof(ins));
+                inc();
+                mnemonic = lower(tokens.items[i].value);
+            }
+
             hive_instruction_t ins = {0};
             if (tokens.items[i + 1].line == tokens.items[i].line && tokens.items[i + 1].type == Directive) {
                 inc();
@@ -405,7 +547,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 ins.generic.condition = COND_NEVER;
             } else if (eq(mnemonic, "ret")) {
                 ins.generic.type = MODE_DATA;
-                ins.type_data.sub_op = SUBOP_DATA_ALU_I;
+                ins.type_data.data_op = SUBOP_DATA_ALU_I;
                 ins.type_data_alui.op = OP_DATA_ALU_shl;
                 ins.type_data_alui.r1 = REG_PC;
                 ins.type_data_alui.r2 = REG_LR;
@@ -470,7 +612,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             } else if (eq(mnemonic, "neg") || eq(mnemonic, "not")) {
                 bool not = eq(mnemonic, "not");
                 ins.generic.type = MODE_DATA;
-                ins.type_data.sub_op = SUBOP_DATA_ALU_R;
+                ins.type_data.data_op = SUBOP_DATA_ALU_R;
                 ins.type_data_alur.op = not ? OP_DATA_ALU_not : OP_DATA_ALU_neg;
                 inc();
                 EXPECT(Register, "Expected register, got %s");
@@ -490,7 +632,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 OP(asr)
             } else if (eq(mnemonic, "swe")) {
                 ins.generic.type = MODE_DATA;
-                ins.type_data.sub_op = SUBOP_DATA_ALU_R;
+                ins.type_data.data_op = SUBOP_DATA_ALU_R;
                 ins.type_data_alur.op = OP_DATA_ALU_swe;
                 inc();
                 EXPECT(Register, "Expected register, got %s");
@@ -524,7 +666,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 STR(SIZE_8BIT)
             } else if (eq(mnemonic, "psh")) {
                 ins.generic.type = MODE_DATA;
-                ins.type_data_ls_imm.sub_op = SUBOP_DATA_LS;
+                ins.type_data_ls_imm.data_op = SUBOP_DATA_LS;
                 ins.type_data_ls_imm.is_store = 1;
                 inc();
                 EXPECT(Register, "Expected register, got %s");
@@ -537,7 +679,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 ins.type_data_ls_imm.use_immediate = 1;
             } else if (eq(mnemonic, "pp")) {
                 ins.generic.type = MODE_DATA;
-                ins.type_data_ls_imm.sub_op = SUBOP_DATA_LS;
+                ins.type_data_ls_imm.data_op = SUBOP_DATA_LS;
                 ins.type_data_ls_imm.is_store = 0;
                 inc();
                 EXPECT(Register, "Expected register, got %s");
@@ -597,14 +739,38 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
-                ins.generic.type = MODE_DATA;
-                ins.type_data.sub_op = SUBOP_DATA_ALU_I;
-                ins.type_data_alui.op = OP_DATA_ALU_shl;
-                ins.type_data_alui.r1 = r1;
-                ins.type_data_alui.r2 = r2;
-                ins.type_data_alui.imm = 0;
+                if (tokens.items[i].type == Register) {
+                    uint8_t r2 = parse_reg(tokens.items[i].value);
+                    ins.generic.type = MODE_DATA;
+                    ins.type_data.data_op = SUBOP_DATA_ALU_I;
+                    ins.type_data_alui.op = OP_DATA_ALU_shl;
+                    ins.type_data_alui.r1 = r1;
+                    ins.type_data_alui.r2 = r2;
+                    ins.type_data_alui.imm = 0;
+                } else if (tokens.items[i].type == Number) {
+                    uint64_t imm = parse64(tokens.items[i].value);
+                    ins.generic.type = MODE_LOAD;
+                    ins.type_load_mov.op = OP_LOAD_movzk;
+                    ins.type_load_mov.no_zero = 0;
+                    ins.type_load_mov.r1 = r1;
+                    if ((imm & (0xFFFFULL << 0)) == imm) {
+                        ins.type_load_mov.shift = 0;
+                        ins.type_load_mov.imm = (imm >> 0) & 0xFFFF;
+                    } else if ((imm & (0xFFFFULL << 16)) == imm) {
+                        ins.type_load_mov.shift = 1;
+                        ins.type_load_mov.imm = (imm >> 16) & 0xFFFF;
+                    } else if ((imm & (0xFFFFULL << 32)) == imm) {
+                        ins.type_load_mov.shift = 2;
+                        ins.type_load_mov.imm = (imm >> 32) & 0xFFFF;
+                    } else if ((imm & (0xFFFFULL << 48)) == imm) {
+                        ins.type_load_mov.shift = 3;
+                        ins.type_load_mov.imm = (imm >> 48) & 0xFFFF;
+                    } else {
+                        EXPECT(Eof, "Number out of range for mov: %s");
+                    }
+                } else {
+                    EXPECT(Eof, "Expected register or number, got %s");
+                }
             } else if (eq(mnemonic, "inc") || eq(mnemonic, "dec")) {
                 uint8_t inc = eq(mnemonic, "inc");
                 inc();
@@ -619,11 +785,45 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     r2 = parse_reg(tokens.items[i].value);
                 }
                 ins.generic.type = MODE_DATA;
-                ins.type_data.sub_op = SUBOP_DATA_ALU_I;
+                ins.type_data.data_op = SUBOP_DATA_ALU_I;
                 ins.type_data_alui.op = inc ? OP_DATA_ALU_add : OP_DATA_ALU_sub;
                 ins.type_data_alui.r1 = r1;
                 ins.type_data_alui.r2 = r2;
                 ins.type_data_alui.imm = 1;
+            } else if (strncmp(mnemonic, "ext", 3) == 0) {
+                uint8_t sizes[] = {
+                    ['b'] = SIZE_8BIT,
+                    ['w'] = SIZE_16BIT,
+                    ['d'] = SIZE_32BIT,
+                    ['q'] = SIZE_64BIT,
+                };
+                if (strlen(mnemonic) != 5) {
+                    EXPECT(Eof, "Illegal sign extend: %s");
+                }
+                uint8_t from = sizes[mnemonic[3]];
+                uint8_t to = sizes[mnemonic[4]];
+
+                if (to <= from) {
+                    EXPECT(Eof, "Illegal sign extend: %s");
+                }
+
+                ins.type_other_signextend.from = from;
+                ins.type_other_signextend.to = to;
+                inc();
+                EXPECT(Register, "Expected register, got %s");
+                uint8_t r1 = parse_reg(tokens.items[i].value);
+                uint8_t r2 = r1;
+                if (tokens.items[i + 1].type == Comma) {
+                    inc();
+                    EXPECT(Comma, "Expected comma, got %s");
+                    inc();
+                    EXPECT(Register, "Expected register, got %s");
+                    r2 = parse_reg(tokens.items[i].value);
+                }
+                ins.generic.type = MODE_OTHER;
+                ins.type_other_signextend.op = OP_OTHER_signextend;
+                ins.type_other_signextend.r1 = r1;
+                ins.type_other_signextend.r2 = r2;
             } else if (eq(mnemonic, "tst")) {
                 inc();
                 EXPECT(Register, "Expected register, got %s");
@@ -634,7 +834,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 if (tokens.items[i].type == Register) {
                     uint8_t r2 = parse_reg(tokens.items[i].value);
                     ins.generic.type = MODE_DATA;
-                    ins.type_data.sub_op = SUBOP_DATA_ALU_R;
+                    ins.type_data.data_op = SUBOP_DATA_ALU_R;
                     ins.type_data_alur.op = OP_DATA_ALU_and;
                     ins.type_data_alur.r2 = r1;
                     ins.type_data_alur.r3 = r2;
@@ -642,7 +842,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 } else if (tokens.items[i].type == Number) {
                     uint8_t num = parse8(tokens.items[i].value);
                     ins.generic.type = MODE_DATA;
-                    ins.type_data.sub_op = SUBOP_DATA_ALU_I;
+                    ins.type_data.data_op = SUBOP_DATA_ALU_I;
                     ins.type_data_alui.op = OP_DATA_ALU_and;
                     ins.type_data_alui.r2 = r1;
                     ins.type_data_alui.imm = num;
@@ -660,7 +860,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 if (tokens.items[i].type == Register) {
                     uint8_t r2 = parse_reg(tokens.items[i].value);
                     ins.generic.type = MODE_DATA;
-                    ins.type_data.sub_op = SUBOP_DATA_ALU_R;
+                    ins.type_data.data_op = SUBOP_DATA_ALU_R;
                     ins.type_data_alur.op = OP_DATA_ALU_sub;
                     ins.type_data_alur.r2 = r1;
                     ins.type_data_alur.r3 = r2;
@@ -668,7 +868,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 } else if (tokens.items[i].type == Number) {
                     uint32_t num = parse32(tokens.items[i].value);
                     ins.generic.type = MODE_DATA;
-                    ins.type_data.sub_op = SUBOP_DATA_ALU_I;
+                    ins.type_data.data_op = SUBOP_DATA_ALU_I;
                     ins.type_data_alui.op = OP_DATA_ALU_sub;
                     ins.type_data_alui.r2 = r1;
                     ins.type_data_alui.imm = num;
@@ -679,8 +879,8 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             } else if (eq(mnemonic, "sbxt") || eq(mnemonic, "ubxt")) {
                 ins.generic.type = MODE_DATA;
                 ins.type_data_bit.extend = (mnemonic[0] == 's');
+                ins.type_data_bit.data_op = SUBOP_DATA_BEXT >> 1;
                 ins.type_data_bit.is_dep = 0;
-                ins.type_data_bit.is_bit_instr = 1;
 
                 inc();
                 EXPECT(Register, "Expected register, got %s");
@@ -716,8 +916,8 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             } else if (eq(mnemonic, "sbdp") || eq(mnemonic, "ubdp")) {
                 ins.generic.type = MODE_DATA;
                 ins.type_data_bit.extend = (mnemonic[0] == 's');
+                ins.type_data_bit.data_op = SUBOP_DATA_BDEP >> 1;
                 ins.type_data_bit.is_dep = 1;
-                ins.type_data_bit.is_bit_instr = 1;
 
                 inc();
                 EXPECT(Register, "Expected register, got %s");
@@ -761,7 +961,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 EXPECT(Register, "Expected register, got %s");
                 uint8_t r2 = parse_reg(tokens.items[i].value);
                 ins.generic.type = MODE_DATA;
-                ins.type_data_fpu.sub_op = SUBOP_DATA_FPU;
+                ins.type_data_fpu.data_op = SUBOP_DATA_FPU;
                 ins.type_data_fpu.op = OP_DATA_FLOAT_f2i;
                 ins.type_data_fpu.use_int_arg2 = i2f;
                 ins.type_data_fpu.r1 = r1;
@@ -777,7 +977,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 EXPECT(Register, "Expected register, got %s");
                 uint8_t r2 = parse_reg(tokens.items[i].value);
                 ins.generic.type = MODE_DATA;
-                ins.type_data_fpu.sub_op = SUBOP_DATA_FPU;
+                ins.type_data_fpu.data_op = SUBOP_DATA_FPU;
                 ins.type_data_fpu.op = OP_DATA_FLOAT_s2f;
                 ins.type_data_fpu.is_single_op = f2s;
                 ins.type_data_fpu.r1 = r1;
@@ -786,7 +986,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 mnemonic++;
                 ins.generic.type = MODE_DATA;
                 ins.type_data_fpu.is_single_op = (mnemonic[0] == 's');
-                ins.type_data_fpu.sub_op = SUBOP_DATA_FPU;
+                ins.type_data_fpu.data_op = SUBOP_DATA_FPU;
                 if (eq(mnemonic, "sin") || eq(mnemonic, "sqrt")) {
                     uint8_t sin = eq(mnemonic, "sin");
                     inc();
@@ -851,101 +1051,211 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     [7] = 4,
                 };
                 ins.generic.type = MODE_DATA;
-                ins.type_data_vpu.sub_op = SUBOP_DATA_VPU;
-                uint8_t mode = modes[mnemonic[1]];
-                ins.type_data_vpu.mode = mode;
-                mnemonic += 2;
-                #define vop(_name) \
-                (eq(mnemonic, #_name)) { \
-                    ins.type_data_vpu.op = OP_DATA_VPU_ ## _name; \
-                    i++; \
-                    EXPECT(VecRegister, "Expected vector register, got %s"); \
-                    uint8_t v1 = parse_vreg(tokens.items[i].value); \
-                    i++; \
-                    EXPECT(Comma, "Expected comma, got %s"); \
-                    i++; \
-                    EXPECT(VecRegister, "Expected vector register, got %s"); \
-                    uint8_t v2 = parse_vreg(tokens.items[i].value); \
-                    i++; \
-                    EXPECT(Comma, "Expected comma, got %s"); \
-                    i++; \
-                    EXPECT(VecRegister, "Expected vector register, got %s"); \
-                    uint8_t v3 = parse_vreg(tokens.items[i].value); \
-                    ins.type_data_vpu.v1 = v1; \
-                    ins.type_data_vpu.v2 = v2; \
-                    ins.type_data_vpu.v3 = v3; \
-                }
-                if vop(add)
-                else if vop(sub)
-                else if vop(mul)
-                else if vop(div)
-                else if vop(addsub)
-                else if vop(madd)
-                else if (eq(mnemonic, "mov")) {
-                    i++;
-                    EXPECT(VecRegister, "Expected vector register, got %s");
-                    uint8_t v1 = parse_vreg(tokens.items[i].value);
-                    i++;
-                    EXPECT(Comma, "Expected comma, got %s");
-                    i++;
-                    if (tokens.items[i].type == VecRegister) {
-                        ins.type_data_vpu.op = OP_DATA_VPU_mov_vec;
-                        uint8_t v2 = parse_vreg(tokens.items[i].value);
-                        ins.type_data_vpu.v1 = v1;
-                        ins.type_data_vpu.v2 = v2;
-                    } else if (tokens.items[i].type == Register) {
-                        ins.type_data_vpu_mov.op = OP_DATA_VPU_mov;
-                        uint8_t r2 = parse_reg(tokens.items[i].value);
-                        i++;
-                        uint8_t slot = 0;
-                        if (tokens.items[i].type == Comma) {
-                            i++;
-                            EXPECT(Number, "Expected number, got %s");
-                            slot = parse8(tokens.items[i].value);
-                            if (slot >= max_slots[mode]) {
-                                EXPECT(Eof, "Slot out of range for mode: %s");
+                ins.type_data_vpu.data_op = SUBOP_DATA_VPU;
+                mnemonic++;
+                if (eq(mnemonic, "ldr") || eq(mnemonic, "str")) {
+                    if (eq(mnemonic, "ldr")) {
+                        inc();
+                        EXPECT(VecRegister, "Expected register, got %s");
+                        uint8_t v1 = parse_vreg(tokens.items[i].value);
+                        inc();
+                        EXPECT(Comma, "Expected comma, got %s");
+                        inc();
+                        EXPECT(LeftBracket, "Expected '[', got %s");
+                        inc();
+                        EXPECT(Register, "Expected register, got %s");
+                        uint8_t r1 = parse_reg(tokens.items[i].value);
+                        inc();
+                        ins.generic.type = MODE_DATA;
+                        ins.type_data_vpu.data_op = SUBOP_DATA_VPU;
+                        ins.type_data_vpu_ls.op = OP_DATA_VPU_ldr;
+                        if (tokens.items[i].type == RightBracket) {
+                            ins.type_data_vpu_ls_imm.v1 = v1;
+                            ins.type_data_vpu_ls_imm.r1 = r1;
+                            ins.type_data_vpu_ls_imm.imm = 0;
+                            ins.type_data_vpu_ls_imm.use_imm = 1;
+                            if (tokens.items[i + 1].type == Bang) {
+                                inc();
+                                ins.type_data_vpu_ls_imm.update_ptr = 1;
+                            }
+                        } else if (tokens.items[i].type == Comma) {
+                            inc();
+                            if (tokens.items[i].type == Register) {
+                                ins.type_data_vpu_ls.v1 = v1;
+                                ins.type_data_vpu_ls.r1 = r1;
+                                ins.type_data_vpu_ls.r2 = parse_reg(tokens.items[i].value);
+                            } else if (tokens.items[i].type == Number) {
+                                ins.type_data_vpu_ls_imm.v1 = v1;
+                                ins.type_data_vpu_ls_imm.r1 = r1;
+                                int16_t num = parse16(tokens.items[i].value);
+                                if (num < 128 && num >= -128) {
+                                    ins.type_data_vpu_ls_imm.use_imm = 1;
+                                    ins.type_data_vpu_ls_imm.imm = num;
+                                } else {
+                                    EXPECT(Eof, "Number out of range: %s");
+                                }
+                            } else {
+                                EXPECT(Eof, "Expected register or number, got %s");
+                            }
+                            inc();
+                            EXPECT(RightBracket, "Expected ']', got %s");
+                            if (tokens.items[i + 1].type == Bang) {
+                                inc();
+                                ins.type_data_vpu_ls_imm.update_ptr = 1;
                             }
                         } else {
-                            i--;
+                            EXPECT(Eof, "Expected comma or ']', got %s");
                         }
-                        ins.type_data_vpu_mov.slot_lo = slot & 0b111;
-                        ins.type_data_vpu_mov.slot_hi = slot >> 3;
-                        ins.type_data_vpu_mov.v1 = v1;
-                        ins.type_data_vpu_mov.r2 = r2;
                     } else {
-                        EXPECT(Eof, "Expected register or vector register, got %s");
+                        inc();
+                        EXPECT(VecRegister, "Expected register, got %s");
+                        uint8_t v1 = parse_vreg(tokens.items[i].value);
+                        inc();
+                        EXPECT(Comma, "Expected comma, got %s");
+                        inc();
+                        EXPECT(LeftBracket, "Expected '[', got %s");
+                        inc();
+                        EXPECT(Register, "Expected register, got %s");
+                        uint8_t r1 = parse_reg(tokens.items[i].value);
+                        inc();
+                        ins.generic.type = MODE_DATA;
+                        ins.type_data_vpu.data_op = SUBOP_DATA_VPU;
+                        ins.type_data_vpu_ls.op = OP_DATA_VPU_str;
+                        if (tokens.items[i].type == RightBracket) {
+                            ins.type_data_vpu_ls_imm.v1 = v1;
+                            ins.type_data_vpu_ls_imm.r1 = r1;
+                            ins.type_data_vpu_ls_imm.imm = 0;
+                            ins.type_data_vpu_ls_imm.use_imm = 1;
+                            if (tokens.items[i + 1].type == Bang) {
+                                inc();
+                                ins.type_data_vpu_ls_imm.update_ptr = 1;
+                            }
+                        } else if (tokens.items[i].type == Comma) {
+                            inc();
+                            if (tokens.items[i].type == Register) {
+                                ins.type_data_vpu_ls.v1 = v1;
+                                ins.type_data_vpu_ls.r1 = r1;
+                                ins.type_data_vpu_ls.r2 = parse_reg(tokens.items[i].value);
+                            } else if (tokens.items[i].type == Number) {
+                                ins.type_data_vpu_ls_imm.v1 = v1;
+                                ins.type_data_vpu_ls_imm.r1 = r1;
+                                int16_t num = parse16(tokens.items[i].value);
+                                if (num < 128 && num >= -128) {
+                                    ins.type_data_vpu_ls_imm.use_imm = 1;
+                                    ins.type_data_vpu_ls_imm.imm = num;
+                                } else {
+                                    EXPECT(Eof, "Number out of range: %s");
+                                }
+                            } else {
+                                EXPECT(Eof, "Expected register or number, got %s");
+                            }
+                            inc();
+                            EXPECT(RightBracket, "Expected ']', got %s");
+                            if (tokens.items[i + 1].type == Bang) {
+                                inc();
+                                ins.type_data_vpu_ls_imm.update_ptr = 1;
+                            }
+                        } else {
+                            EXPECT(Eof, "Expected comma or ']', got %s");
+                        }
                     }
-                } else if (strncmp(mnemonic, "conv", 4) == 0) {
-                    uint8_t target_mode = modes[mnemonic[4]];
-                    if (target_mode == 0xff) {
-                        EXPECT(Eof, "Unknown target mode: %s");
-                    }
-                    ins.type_data_vpu_conv.op = OP_DATA_VPU_conv;
-                    ins.type_data_vpu_conv.target_mode = target_mode;
-                    i++;
-                    EXPECT(VecRegister, "Expected vector register, got %s");
-                    uint8_t v1 = parse_vreg(tokens.items[i].value);
-                    i++;
-                    EXPECT(Comma, "Expected comma, got %s");
-                    i++;
-                    EXPECT(VecRegister, "Expected vector register, got %s");
-                    uint8_t v2 = parse_vreg(tokens.items[i].value);
-                    ins.type_data_vpu_conv.v1 = v1;
-                    ins.type_data_vpu_conv.v2 = v2;
-                } else if (eq(mnemonic, "len")) {
-                    i++;
-                    EXPECT(Register, "Expected register, got %s");
-                    uint8_t r1 = parse_reg(tokens.items[i].value);
-                    i++;
-                    EXPECT(Comma, "Expected comma, got %s");
-                    i++;
-                    EXPECT(VecRegister, "Expected vector register, got %s");
-                    uint8_t v1 = parse_vreg(tokens.items[i].value);
-                    ins.type_data_vpu_len.op = OP_DATA_VPU_len;
-                    ins.type_data_vpu_len.r1 = r1;
-                    ins.type_data_vpu_len.v1 = v1;
                 } else {
-                    EXPECT(Eof, "Unknown vector operation: %s");
+
+                    uint8_t mode = modes[mnemonic[0]];
+                    ins.type_data_vpu.mode = mode;
+                    mnemonic++;
+                    #define vop(_name) \
+                    (eq(mnemonic, #_name)) { \
+                        ins.type_data_vpu.op = OP_DATA_VPU_ ## _name; \
+                        i++; \
+                        EXPECT(VecRegister, "Expected vector register, got %s"); \
+                        uint8_t v1 = parse_vreg(tokens.items[i].value); \
+                        i++; \
+                        EXPECT(Comma, "Expected comma, got %s"); \
+                        i++; \
+                        EXPECT(VecRegister, "Expected vector register, got %s"); \
+                        uint8_t v2 = parse_vreg(tokens.items[i].value); \
+                        i++; \
+                        EXPECT(Comma, "Expected comma, got %s"); \
+                        i++; \
+                        EXPECT(VecRegister, "Expected vector register, got %s"); \
+                        uint8_t v3 = parse_vreg(tokens.items[i].value); \
+                        ins.type_data_vpu.v1 = v1; \
+                        ins.type_data_vpu.v2 = v2; \
+                        ins.type_data_vpu.v3 = v3; \
+                    }
+                    if vop(add)
+                    else if vop(sub)
+                    else if vop(mul)
+                    else if vop(div)
+                    else if vop(addsub)
+                    else if vop(madd)
+                    else if (eq(mnemonic, "mov")) {
+                        i++;
+                        EXPECT(VecRegister, "Expected vector register, got %s");
+                        uint8_t v1 = parse_vreg(tokens.items[i].value);
+                        i++;
+                        EXPECT(Comma, "Expected comma, got %s");
+                        i++;
+                        if (tokens.items[i].type == VecRegister) {
+                            ins.type_data_vpu.op = OP_DATA_VPU_mov_vec;
+                            uint8_t v2 = parse_vreg(tokens.items[i].value);
+                            ins.type_data_vpu.v1 = v1;
+                            ins.type_data_vpu.v2 = v2;
+                        } else if (tokens.items[i].type == Register) {
+                            ins.type_data_vpu_mov.op = OP_DATA_VPU_mov;
+                            uint8_t r2 = parse_reg(tokens.items[i].value);
+                            i++;
+                            uint8_t slot = 0;
+                            if (tokens.items[i].type == Comma) {
+                                i++;
+                                EXPECT(Number, "Expected number, got %s");
+                                slot = parse8(tokens.items[i].value);
+                                if (slot >= max_slots[mode]) {
+                                    EXPECT(Eof, "Slot out of range for mode: %s");
+                                }
+                            } else {
+                                i--;
+                            }
+                            ins.type_data_vpu_mov.slot_lo = slot & 0b111;
+                            ins.type_data_vpu_mov.slot_hi = slot >> 3;
+                            ins.type_data_vpu_mov.v1 = v1;
+                            ins.type_data_vpu_mov.r2 = r2;
+                        } else {
+                            EXPECT(Eof, "Expected register or vector register, got %s");
+                        }
+                    } else if (strncmp(mnemonic, "conv", 4) == 0) {
+                        uint8_t target_mode = modes[mnemonic[4]];
+                        if (target_mode == 0xff) {
+                            EXPECT(Eof, "Unknown target mode: %s");
+                        }
+                        ins.type_data_vpu_conv.op = OP_DATA_VPU_conv;
+                        ins.type_data_vpu_conv.target_mode = target_mode;
+                        i++;
+                        EXPECT(VecRegister, "Expected vector register, got %s");
+                        uint8_t v1 = parse_vreg(tokens.items[i].value);
+                        i++;
+                        EXPECT(Comma, "Expected comma, got %s");
+                        i++;
+                        EXPECT(VecRegister, "Expected vector register, got %s");
+                        uint8_t v2 = parse_vreg(tokens.items[i].value);
+                        ins.type_data_vpu_conv.v1 = v1;
+                        ins.type_data_vpu_conv.v2 = v2;
+                    } else if (eq(mnemonic, "len")) {
+                        i++;
+                        EXPECT(Register, "Expected register, got %s");
+                        uint8_t r1 = parse_reg(tokens.items[i].value);
+                        i++;
+                        EXPECT(Comma, "Expected comma, got %s");
+                        i++;
+                        EXPECT(VecRegister, "Expected vector register, got %s");
+                        uint8_t v1 = parse_vreg(tokens.items[i].value);
+                        ins.type_data_vpu_len.op = OP_DATA_VPU_len;
+                        ins.type_data_vpu_len.r1 = r1;
+                        ins.type_data_vpu_len.v1 = v1;
+                    } else {
+                        EXPECT(Eof, "Unknown vector operation: %s");
+                    }
                 }
             } else {
                 EXPECT(Eof, "Unknown opcode: %s");
@@ -1149,6 +1459,18 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
 
         Nob_String_Builder sect = sects.items[reloc.source_section].data;
 
+        #define POW2(_n) (1 << _n)
+        #define check_align() \
+            if (diff % 4) { \
+                fprintf(stderr, "Relative target not aligned: %x\n", diff); \
+                exit(1); \
+            }
+        #define relative_check(_dist) \
+            if (diff >= _dist || diff < -_dist) { \
+                fprintf(stderr, "Relative address too far: %d > %d (%llx -> %llx)\n", diff, _dist, (QWord_t) &sect.items[current_address], target_address); \
+                exit(1); \
+            }
+
         switch (reloc.type) {
             case sym_abs:
                 *((QWord_t*) &sect.items[current_address]) = target_address;
@@ -1157,31 +1479,28 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             case sym_branch: {
                     hive_instruction_t* s = ((hive_instruction_t*) &sect.items[current_address]);
                     int32_t diff = target_address - (current_address);
-                    if (diff % 4) {
-                        fprintf(stderr, "Relative target not aligned: %x\n", diff);
-                        exit(1);
-                    }
-                    diff >>= 2;
-                    if (diff >= 0x1000000 || diff < -0x1000000) {
-                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &sect.items[current_address], target_address);
-                        exit(1);
-                    }
+                    check_align();
+                    diff /= sizeof(hive_instruction_t);
+                    relative_check(POW2(24));
                     s->type_branch_generic.offset = diff;
                 }
                 break;
             case sym_load: {
                     hive_instruction_t* s = ((hive_instruction_t*) &sect.items[current_address]);
                     int32_t diff = target_address - (current_address);
-                    if (diff % 4) {
-                        fprintf(stderr, "Relative target not aligned: %x\n", diff);
-                        exit(1);
-                    }
-                    diff >>= 2;
-                    if (diff >= 0x80000 || diff < -0x80000) {
-                        fprintf(stderr, "Relative address too far: %x (%llx -> %llx)\n", diff, (QWord_t) &sect.items[current_address], target_address);
-                        exit(1);
-                    }
+                    check_align();
+                    diff /= sizeof(hive_instruction_t);
+                    relative_check(POW2(19));
                     s->type_load_signed.imm = diff;
+                }
+                break;
+            case sym_ls_off: {
+                    hive_instruction_t* s = ((hive_instruction_t*) &sect.items[current_address]);
+                    int32_t diff = target_address - (current_address);
+                    check_align();
+                    diff /= sizeof(hive_instruction_t);
+                    relative_check(POW2(18));
+                    s->type_load_ls_off.imm = diff;
                 }
                 break;
         }

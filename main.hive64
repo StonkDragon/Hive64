@@ -3,6 +3,10 @@
 _main:
     str lr, [sp, -16]!
     
+    ldrb r0, [msg]
+    byte dec r0
+    strb r0, [msg]
+    
     lea r0, msg
     bl _puts
 
@@ -11,6 +15,6 @@ _main:
     ldr lr, [sp, 16]!
     ret
 
-.data
+.bss
 msg:
     .asciz "Hello, World!"
