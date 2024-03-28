@@ -29,7 +29,7 @@ core_loop:
     # destroy the stack
     movz r8, 6              # munmap
     mov r0, sp              # stack
-    movz r1, 0x1, shl 16  # size
+    movz r1, 0x100, shl 16  # size
     svc
 
     mov r0, r2
@@ -110,7 +110,6 @@ _puts:
     psh r0
     psh r1
     psh r2
-    psh r8
 
     mov r1, r0
     bl _strlen
@@ -123,7 +122,6 @@ _puts:
     movz r2, 1
     bl _write
 
-    pp r8
     pp r2
     pp r1
     pp r0
@@ -170,21 +168,20 @@ _setjmp:
     str r17, [r0, 104]
     str r16, [r0, 112]
     str r15, [r0, 120]
-    add r0, 128
-    str r14, [r0, 0]
-    str r13, [r0, 8]
-    str r12, [r0, 16]
-    str r11, [r0, 24]
-    str r10, [r0, 32]
-    str r9,  [r0, 40]
-    str r8,  [r0, 48]
-    str r7,  [r0, 56]
-    str r6,  [r0, 64]
-    str r5,  [r0, 72]
-    str r4,  [r0, 80]
-    str r3,  [r0, 88]
-    str r2,  [r0, 96]
-    str r1,  [r0, 104]
+    str r14, [r0, 128]
+    str r13, [r0, 136]
+    str r12, [r0, 144]
+    str r11, [r0, 152]
+    str r10, [r0, 160]
+    str r9,  [r0, 168]
+    str r8,  [r0, 176]
+    str r7,  [r0, 184]
+    str r6,  [r0, 192]
+    str r5,  [r0, 200]
+    str r4,  [r0, 208]
+    str r3,  [r0, 216]
+    str r2,  [r0, 224]
+    str r1,  [r0, 232]
     xor r0, r0
     ret
 
@@ -211,21 +208,20 @@ _longjmp:
     ldr r17, [r1, 104]
     ldr r16, [r1, 112]
     ldr r15, [r1, 120]
-    add r1, 128
-    ldr r14, [r1, 0]
-    ldr r13, [r1, 8]
-    ldr r12, [r1, 16]
-    ldr r11, [r1, 24]
-    ldr r10, [r1, 32]
-    ldr r9, [r1, 40]
-    ldr r8, [r1, 48]
-    ldr r7, [r1, 56]
-    ldr r6, [r1, 64]
-    ldr r5, [r1, 72]
-    ldr r4, [r1, 80]
-    ldr r3, [r1, 88]
-    ldr r2, [r1, 96]
-    ldr r1, [r1, 104]
+    ldr r14, [r1, 128]
+    ldr r13, [r1, 136]
+    ldr r12, [r1, 144]
+    ldr r11, [r1, 152]
+    ldr r10, [r1, 160]
+    ldr r9, [r1, 168]
+    ldr r8, [r1, 176]
+    ldr r7, [r1, 184]
+    ldr r6, [r1, 192]
+    ldr r5, [r1, 200]
+    ldr r4, [r1, 208]
+    ldr r3, [r1, 216]
+    ldr r2, [r1, 224]
+    ldr r1, [r1, 232]
     ret
 
 .data
