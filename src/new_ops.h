@@ -9,6 +9,7 @@
 
 #include "nob.h"
 #include "opcode.h"
+#include "preproc.h"
 
 #define HIVE_FILE_MAGIC 0xFEEDF00D
 #define HIVE_FAT_FILE_MAGIC 0xFEEDFACF
@@ -67,6 +68,23 @@ typedef union {
     } PACKED type_data;
     struct {
         uint8_t r3: 5;
+        uint8_t cond: 3;
+        uint8_t data_op: 4;
+        uint8_t r2: 5;
+        uint8_t r1: 5;
+        PAD(5);
+        CONDITION_AND_TYPE;
+    } PACKED type_data_cswap;
+    struct {
+        PAD(8);
+        uint8_t data_op: 4;
+        uint8_t r2: 5;
+        uint8_t r1: 5;
+        PAD(5);
+        CONDITION_AND_TYPE;
+    } PACKED type_data_xchg;
+    struct {
+        uint8_t r3: 5;
         PAD(3);
         uint8_t use_imm: 1;
         uint8_t salu: 1;
@@ -89,26 +107,35 @@ typedef union {
         CONDITION_AND_TYPE;
     } PACKED type_data_alui;
     struct {
+        uint8_t from: 2;
+        uint8_t to: 2;
+        PAD(4);
+        uint8_t data_op: 4;
+        uint8_t r2: 5;
+        uint8_t r1: 5;
+        uint8_t no_writeback: 1;
+        uint8_t op: 4;
+        CONDITION_AND_TYPE;
+    } PACKED type_data_sext;
+    struct {
         int8_t imm;
         uint8_t data_op: 4;
         uint8_t r2: 5;
         uint8_t r1: 5;
         uint8_t update_ptr: 1;
-        uint8_t size: 2;
         uint8_t is_store: 1;
         uint8_t use_immediate: 1;
+        PAD(2);
         CONDITION_AND_TYPE;
     } PACKED type_data_ls_imm;
     struct {
-        uint16_t imm: 6;
-        uint8_t shift: 2;
+        uint8_t imm;
         uint8_t data_op: 4;
         uint8_t r2: 5;
         uint8_t r1: 5;
         uint8_t update_ptr: 1;
-        uint8_t size: 2;
         uint8_t is_store: 1;
-        uint8_t shift_hi: 1;
+        uint8_t shift: 3;
         CONDITION_AND_TYPE;
     } PACKED type_data_ls_far;
     struct {
@@ -118,9 +145,9 @@ typedef union {
         uint8_t r2: 5;
         uint8_t r1: 5;
         uint8_t update_ptr: 1;
-        uint8_t size: 2;
         uint8_t is_store: 1;
         uint8_t use_immediate: 1;
+        PAD(2);
         CONDITION_AND_TYPE;
     } PACKED type_data_ls_reg;
     struct {
@@ -242,20 +269,20 @@ typedef union {
         CONDITION_AND_TYPE;
     } PACKED type_other;
     struct {
-        uint8_t size: 2;
-        PAD(20);
-        uint8_t op: 5;
-        CONDITION_AND_TYPE;
-    } PACKED type_other_size_override;
-    struct {
-        uint8_t from: 2;
-        uint8_t to: 2;
-        PAD(8);
-        uint8_t r2: 5;
         uint8_t r1: 5;
+        PAD(17);
         uint8_t op: 5;
         CONDITION_AND_TYPE;
-    } PACKED type_other_signextend;
+    } PACKED type_other_zeroupper;
+    struct {
+        uint8_t size: 2;
+        uint8_t reset_flags: 1;
+        uint8_t reg_override: 4;
+        uint8_t references_cr: 4;
+        PAD(11);
+        uint8_t op: 5;
+        CONDITION_AND_TYPE;
+    } PACKED type_other_prefix;
     struct {
         PAD(17);
         uint8_t priv_op: 5;
@@ -314,6 +341,32 @@ typedef union hive_register_t {
     SDWord_t                asSDWord;
     SWord_t                 asSWord;
     SByte_t                 asSByte;
+
+    struct {
+        SDWord_t            low;
+        SDWord_t            high;
+    }                       asSDWordPair;
+    struct {
+        SWord_t             low;
+        SWord_t             high;
+    }                       asSWordPair;
+    struct {
+        SByte_t             low;
+        SByte_t             high;
+    }                       asSBytePair;
+    struct {
+        DWord_t             low;
+        DWord_t             high;
+    }                       asDWordPair;
+    struct {
+        Word_t              low;
+        Word_t              high;
+    }                       asWordPair;
+    struct {
+        Byte_t              low;
+        Byte_t              high;
+    }                       asBytePair;
+
     Pointer_t               asPointer;
     Byte_t*                 asBytePtr;
     SByte_t*                asSBytePtr;
@@ -330,11 +383,14 @@ typedef union hive_register_t {
 
 typedef union {
     struct {
-        uint8_t             zero:1;
-        uint8_t             negative:1;
-        uint16_t            cpuid:16;
-        uint8_t             size:2;
-    } PACKED flags;
+        struct {
+            uint8_t             zero:1;
+            uint8_t             negative:1;
+            uint8_t             size:2;
+            uint8_t             reg_state:4;
+            uint8_t             references_cr:4;
+        } PACKED flags;
+    };
     DWord_t dword;
 } PACKED hive_flag_register_t;
 
@@ -342,9 +398,21 @@ typedef union {
 static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_register_t is wrong size");
 #endif
 
+#define REG_SRC1 1
+#define REG_SRC2 2
+#define REG_SRC3 3
+#define REG_DEST 0
+
+#define IS_HIGH(_num) (1 << _num)
+
 #define REG_LR 29
 #define REG_SP 30
 #define REG_PC 31
+
+#define CR_CYCLES 0
+#define CR_CORES 1
+#define CR_THREADS 2
+#define CR_CPUID 3
 
 #define SIZE_8BIT   0b00
 #define SIZE_16BIT  0b01
@@ -353,7 +421,7 @@ static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_regist
 
 #define INT_UD 0x01 // Undefined opcode
 #define INT_PF 0x02 // Page fault
-#define INT_IL 0x03 // Illegal instruction
+#define INT_GP 0x02 // General protection
 #define INT_IP 0x04 // Insufficient privileges
 
 #define FLAG_NOT    0b100
@@ -402,6 +470,7 @@ struct cpu_state {
     hive_register_t r[32];
     hive_vector_register_t v[16];
     hive_flag_register_t fr;
+    hive_register_t cr[12];
 };
 
 struct cpu_transfer {
@@ -413,7 +482,10 @@ struct cpu_transfer {
 typedef enum _TokenType {
     Eof,
     Identifier,
-    Register,
+    Register8,
+    Register16,
+    Register32,
+    Register64,
     VecRegister,
     Label,
     Number,
@@ -426,6 +498,7 @@ typedef enum _TokenType {
     Plus,
     Minus,
     Bang,
+    ControlRegister,
 } TokenType;
 
 typedef struct _Token {
@@ -509,6 +582,11 @@ typedef struct {
     size_t count;
     size_t capacity;
 } SB_Array;
+typedef struct {
+    hive_instruction_t* items;
+    size_t count;
+    size_t capacity;
+} Instr_Array;
 
 #define SECT_TYPE_SYMS      0b00000001
 #define SECT_TYPE_RELOC     0b00000010

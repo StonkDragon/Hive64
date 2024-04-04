@@ -4,15 +4,20 @@
 #include <setjmp.h>
 #include <stdatomic.h>
 #include <sys/mman.h>
+#include <unistd.h>
 
 #include "new_ops.h"
 
 extern svc_call svcs[];
 
 struct cpu_state state[CORE_COUNT * THREAD_COUNT] = {0};
-struct cpu_transfer transfers[CORE_COUNT * THREAD_COUNT];
 
 int check_condition(hive_instruction_t ins, hive_flag_register_t fr);
+
+#define set_flagsQWord(state, res) set_flags64((state), (res))
+#define set_flagsDWord(state, res) set_flags32((state), (res))
+#define set_flagsWord(state, res) set_flags16((state), (res))
+#define set_flagsByte(state, res) set_flags8((state), (res))
 
     // lt, mi   -> negative
     // gt       -> !zero && !negative
@@ -81,13 +86,166 @@ typedef void(*hive_executor_t)(hive_instruction_t, struct cpu_state*);
 uint64_t swap_bytes_64(uint64_t x) { return htonll(x); }
 uint32_t swap_bytes_32(uint32_t x) { return htonl(x); }
 uint16_t swap_bytes_16(uint16_t x) { return htons(x); }
-uint8_t swap_bytes_8(uint8_t x) { return x; }
+uint8_t swap_bytes_8(uint8_t x) { raise(SIGILL); return x; }
 #define swap_bytes(x) _Generic((x), int64_t: swap_bytes_64, uint64_t: swap_bytes_64, int32_t: swap_bytes_32, uint32_t: swap_bytes_32, int16_t: swap_bytes_16, uint16_t: swap_bytes_16, int8_t: swap_bytes_8, uint8_t: swap_bytes_8)((x))
 
+#define INTENT_WRITE 1
+#define INTENT_READ 0
+
+#define reg_reader(_type) \
+_type ## _t read ## _type (struct cpu_state* state, uint8_t reg, uint8_t counter) { \
+    if (is_slot_overridden(state, counter)) { \
+        return getRegister(state, reg, counter, INTENT_READ)->as ## _type ## Pair.high; \
+    } else { \
+        return getRegister(state, reg, counter, INTENT_READ)->as ## _type ## Pair.low; \
+    } \
+} \
+S ## _type ## _t readS ## _type (struct cpu_state* state, uint8_t reg, uint8_t counter) { \
+    if (is_slot_overridden(state, counter)) { \
+        return getRegister(state, reg, counter, INTENT_READ)->asS ## _type ## Pair.high; \
+    } else { \
+        return getRegister(state, reg, counter, INTENT_READ)->asS ## _type ## Pair.low; \
+    } \
+}
+#define reg_writer(_type) \
+void write ## _type (struct cpu_state* state, uint8_t reg, _type ## _t val, uint8_t write, uint8_t counter) { \
+    set_flags ## _type (state, val); \
+    if (!write) return; \
+    if (is_slot_overridden(state, counter)) { \
+        getRegister(state, reg, counter, INTENT_WRITE)->as ## _type ## Pair.high = val; \
+    } else { \
+        getRegister(state, reg, counter, INTENT_WRITE)->as ## _type ## Pair.low = val; \
+    } \
+} \
+void writeS ## _type (struct cpu_state* state, uint8_t reg, S ## _type ## _t val, uint8_t write, uint8_t counter) { \
+    set_flags ## _type (state, val); \
+    if (!write) return; \
+    if (is_slot_overridden(state, counter)) { \
+        getRegister(state, reg, counter, INTENT_WRITE)->asS ## _type ## Pair.high = val; \
+    } else { \
+        getRegister(state, reg, counter, INTENT_WRITE)->asS ## _type ## Pair.low = val; \
+    } \
+}
+
+uint8_t is_slot_overridden(struct cpu_state* state, uint8_t counter) {
+    return (state->fr.flags.reg_state & (1 << counter)) != 0;
+}
+uint8_t is_control_register(struct cpu_state* state, uint8_t counter) {
+    return (state->fr.flags.references_cr & (1 << counter)) != 0;
+}
+
+hive_register_t* getRegister(struct cpu_state* state, uint8_t reg, uint8_t counter, uint8_t intent) {
+    if (is_control_register(state, counter)) {
+        if (intent & INTENT_WRITE || reg >= 12) {
+            raise(SIGILL);
+        }
+        return &state->cr[reg];
+    } else {
+        return &state->r[reg];
+    }
+}
+
+reg_reader(Byte)
+reg_reader(Word)
+reg_reader(DWord)
+Float32_t readFloat32(struct cpu_state* state, uint8_t reg, uint8_t counter) {
+    return getRegister(state, reg, counter, INTENT_READ)->asFloat32;
+}
+Float64_t readFloat64(struct cpu_state* state, uint8_t reg, uint8_t counter) {
+    return getRegister(state, reg, counter, INTENT_READ)->asFloat64;
+}
+QWord_t readQWord(struct cpu_state* state, uint8_t reg, uint8_t counter) {
+    return getRegister(state, reg, counter, INTENT_READ)->asQWord;
+}
+SQWord_t readSQWord(struct cpu_state* state, uint8_t reg, uint8_t counter) {
+    return getRegister(state, reg, counter, INTENT_READ)->asSQWord;
+}
+
+reg_writer(Byte)
+reg_writer(Word)
+reg_writer(DWord)
+void writeFloat32(struct cpu_state* state, uint8_t reg, Float32_t val, uint8_t write, uint8_t counter) {
+    set_flagsf32(state, val);
+    if (write) {
+        if (is_control_register(state, counter)) {
+            raise(SIGILL);
+        }
+        getRegister(state, reg, counter, INTENT_WRITE)->asFloat32 = val;
+    }
+}
+void writeFloat64(struct cpu_state* state, uint8_t reg, Float64_t val, uint8_t write, uint8_t counter) {
+    set_flagsf64(state, val);
+    if (write) {
+        if (is_control_register(state, counter)) {
+            raise(SIGILL);
+        }
+        getRegister(state, reg, counter, INTENT_WRITE)->asFloat64 = val;
+    }
+}
+void writeQWord(struct cpu_state* state, uint8_t reg, QWord_t val, uint8_t write, uint8_t counter) {
+    set_flagsQWord(state, val);
+    if (write) {
+        if (is_control_register(state, counter)) {
+            raise(SIGILL);
+        }
+        getRegister(state, reg, counter, INTENT_WRITE)->asQWord = val;
+    }
+}
+void writeSQWord(struct cpu_state* state, uint8_t reg, SQWord_t val, uint8_t write, uint8_t counter) {
+    set_flagsQWord(state, val);
+    if (write) {
+        if (is_control_register(state, counter)) {
+            raise(SIGILL);
+        }
+        getRegister(state, reg, counter, INTENT_WRITE)->asSQWord = val;
+    }
+}
+
+#define mem_reader(_type) \
+_type ## _t memRead ## _type (void* addr) { \
+    if (((uint64_t) addr) % (sizeof(_type ## _t) > 4 ? 4 : sizeof(_type ## _t))) { \
+        raise(SIGBUS); \
+    } \
+    return *(_type ## _t*) addr; \
+}
+#define mem_writer(_type) \
+void memWrite ## _type (void* addr, _type ## _t val) { \
+    if (((uint64_t) addr) % (sizeof(_type ## _t) > 4 ? 4 : sizeof(_type ## _t))) { \
+        raise(SIGBUS); \
+    } \
+    *(_type ## _t*) addr = val; \
+}
+
+mem_reader(Byte)
+mem_reader(Word)
+mem_reader(DWord)
+mem_reader(QWord)
+mem_reader(SByte)
+mem_reader(SWord)
+mem_reader(SDWord)
+mem_reader(SQWord)
+mem_reader(Float32)
+mem_reader(Float64)
+mem_reader(hive_vector_register)
+mem_reader(hive_instruction)
+
+mem_writer(Byte)
+mem_writer(Word)
+mem_writer(DWord)
+mem_writer(QWord)
+mem_writer(SByte)
+mem_writer(SWord)
+mem_writer(SDWord)
+mem_writer(SQWord)
+mem_writer(Float32)
+mem_writer(Float64)
+mem_writer(hive_vector_register)
+mem_writer(hive_instruction)
+
 #define ALU(nbits) \
-uint ## nbits ## _t alu ## nbits(uint8_t op, uint ## nbits ## _t a, uint ## nbits ## _t b, struct cpu_state* state) { \
+uint ## nbits ## _t alu ## nbits(hive_instruction_t ins, struct cpu_state *state, uint ## nbits ## _t a, uint ## nbits ## _t b) { \
     hive_register_t target; \
-    switch (op) { \
+    switch (ins.type_data_alui.op) { \
         case OP_DATA_ALU_add: target.asU ## nbits = a + b; break; \
         case OP_DATA_ALU_sub: target.asU ## nbits = a - b; break; \
         case OP_DATA_ALU_mul: target.asU ## nbits = a * b; break; \
@@ -102,17 +260,17 @@ uint ## nbits ## _t alu ## nbits(uint8_t op, uint ## nbits ## _t a, uint ## nbit
         case OP_DATA_ALU_ror: target.asU ## nbits = ROR(a, b); break; \
         case OP_DATA_ALU_neg: target.asI ## nbits = -((int ## nbits ## _t) a); break; \
         case OP_DATA_ALU_not: target.asU ## nbits = ~a; break; \
-        case OP_DATA_ALU_asr: target.asI ## nbits = ((int ## nbits ## _t) a) >> b; break; \
         case OP_DATA_ALU_swe: target.asU ## nbits = swap_bytes(a); break; \
+        default: raise(SIGILL); \
     } \
     set_flags ## nbits(state, target.asI ## nbits); \
     return target.asU ## nbits; \
 } \
-uint ## nbits ## _t salu ## nbits(uint8_t op, uint ## nbits ## _t _a, uint ## nbits ## _t _b, struct cpu_state* state) { \
+uint ## nbits ## _t salu ## nbits(hive_instruction_t ins, struct cpu_state *state, uint ## nbits ## _t _a, uint ## nbits ## _t _b) { \
     int ## nbits ## _t a = *(int ## nbits ## _t*) &_a; \
     int ## nbits ## _t b = *(int ## nbits ## _t*) &_b; \
     hive_register_t target; \
-    switch (op) { \
+    switch (ins.type_data_alui.op) { \
         case OP_DATA_ALU_add: target.asI ## nbits = a + b; break; \
         case OP_DATA_ALU_sub: target.asI ## nbits = a - b; break; \
         case OP_DATA_ALU_mul: target.asI ## nbits = a * b; break; \
@@ -125,18 +283,52 @@ uint ## nbits ## _t salu ## nbits(uint8_t op, uint ## nbits ## _t _a, uint ## nb
         case OP_DATA_ALU_shr: target.asI ## nbits = a >> b; break; \
         case OP_DATA_ALU_rol: target.asI ## nbits = ROL(a, b); break; \
         case OP_DATA_ALU_ror: target.asI ## nbits = ROR(a, b); break; \
-        case OP_DATA_ALU_neg: target.asI ## nbits = -((int ## nbits ## _t) a); break; \
+        case OP_DATA_ALU_neg: target.asI ## nbits = -(*(int ## nbits ## _t*) &a); break; \
         case OP_DATA_ALU_not: target.asI ## nbits = ~a; break; \
-        case OP_DATA_ALU_asr: target.asI ## nbits = ((int ## nbits ## _t) a) >> b; break; \
         case OP_DATA_ALU_swe: target.asI ## nbits = swap_bytes(a); break; \
+        default: raise(SIGILL); \
     } \
     set_flags ## nbits(state, target.asI ## nbits); \
     return target.asU ## nbits; \
 } \
-uint ## nbits ## _t (*alu ## nbits ## _func[2])(uint8_t op, uint ## nbits ## _t a, uint ## nbits ## _t b, struct cpu_state *state) = { \
+uint ## nbits ## _t (*alu ## nbits ## _func[2])(hive_instruction_t ins, struct cpu_state *state, uint ## nbits ## _t a, uint ## nbits ## _t b) = { \
     alu ## nbits, \
     salu ## nbits, \
 };
+
+hive_register_t signextend(hive_instruction_t ins, struct cpu_state* state, uint8_t src) {
+    uint8_t from = ins.type_data_sext.from;
+    uint8_t to = ins.type_data_sext.to;
+    if (to <= from) {
+        raise(SIGILL);
+    }
+    hive_register_t dest;
+    switch (from) {
+        case SIZE_8BIT:
+            switch (to) {
+                case SIZE_16BIT: dest.asSWord = readSByte(state, src, REG_SRC1); break;
+                case SIZE_32BIT: dest.asSDWord = readSByte(state, src, REG_SRC1); break;
+                case SIZE_64BIT: dest.asSQWord = readSByte(state, src, REG_SRC1); break;
+                default: raise(SIGILL);
+            }
+            break;
+        case SIZE_16BIT:
+            switch (to) {
+                case SIZE_32BIT: dest.asSDWord = readSWord(state, src, REG_SRC1); break;
+                case SIZE_64BIT: dest.asSQWord = readSWord(state, src, REG_SRC1); break;
+                default: raise(SIGILL);
+            }
+            break;
+        case SIZE_32BIT:
+            switch (to) {
+                case SIZE_64BIT: dest.asSQWord = readSDWord(state, src, REG_SRC1); break;
+                default: raise(SIGILL);
+            }
+            break;
+        default: raise(SIGILL);
+    }
+    return dest;
+}
 
 ALU(64)
 ALU(32)
@@ -145,88 +337,100 @@ ALU(8)
 
 BEGIN_OP(data_alu)
     hive_register_t target;
-    hive_register_t src1 = state->r[ins.type_data_alui.r2];
-    uint64_t src2;
-    if (ins.type_data_alui.use_imm) {
-        src2 = ins.type_data_alui.imm;
+    if (ins.type_data_alui.op == OP_DATA_ALU_sext) {
+        target = signextend(ins, state, ins.type_data_sext.r2);
     } else {
-        src2 = state->r[ins.type_data_alur.r3].asQWord;
+        if (ins.type_data_alui.use_imm) {
+            switch (state->fr.flags.size) {
+                case SIZE_64BIT: target.asQWord = alu64_func[ins.type_data_alui.salu](ins, state, readQWord(state, ins.type_data_alui.r2, REG_SRC1), (QWord_t) (ins.type_data_alui.imm)); break;
+                case SIZE_32BIT: target.asDWord = alu32_func[ins.type_data_alui.salu](ins, state, readDWord(state, ins.type_data_alui.r2, REG_SRC1), (DWord_t) (ins.type_data_alui.imm)); break;
+                case SIZE_16BIT: target.asWord = alu16_func[ins.type_data_alui.salu](ins, state, readWord(state, ins.type_data_alui.r2, REG_SRC1), (Word_t) (ins.type_data_alui.imm)); break;
+                case SIZE_8BIT:  target.asByte = alu8_func[ins.type_data_alui.salu](ins, state, readByte(state, ins.type_data_alui.r2, REG_SRC1), (Byte_t) (ins.type_data_alui.imm)); break;
+            }
+        } else {
+            switch (state->fr.flags.size) {
+                case SIZE_64BIT: target.asQWord = alu64_func[ins.type_data_alui.salu](ins, state, readSQWord(state, ins.type_data_alui.r2, REG_SRC1), readSQWord(state, ins.type_data_alur.r3, REG_SRC2)); break;
+                case SIZE_32BIT: target.asDWord = alu32_func[ins.type_data_alui.salu](ins, state, readSDWord(state, ins.type_data_alui.r2, REG_SRC1), readSDWord(state, ins.type_data_alur.r3, REG_SRC2)); break;
+                case SIZE_16BIT: target.asWord = alu16_func[ins.type_data_alui.salu](ins, state, readSWord(state, ins.type_data_alui.r2, REG_SRC1), readSWord(state, ins.type_data_alur.r3, REG_SRC2)); break;
+                case SIZE_8BIT:  target.asByte = alu8_func[ins.type_data_alui.salu](ins, state, readSByte(state, ins.type_data_alui.r2, REG_SRC1), readSByte(state, ins.type_data_alur.r3, REG_SRC2)); break;
+            }
+        }
     }
     switch (state->fr.flags.size) {
-        case SIZE_64BIT: target.asQWord = alu64_func[ins.type_data_alui.salu](ins.type_data_alui.op, src1.asSQWord, src2, state); break;
-        case SIZE_32BIT: target.asDWord = alu32_func[ins.type_data_alui.salu](ins.type_data_alui.op, src1.asSQWord, src2, state); break;
-        case SIZE_16BIT: target.asWord = alu16_func[ins.type_data_alui.salu](ins.type_data_alui.op, src1.asSQWord, src2, state); break;
-        case SIZE_8BIT:  target.asByte = alu8_func[ins.type_data_alui.salu](ins.type_data_alui.op, src1.asSQWord, src2, state); break;
-    }
-    if (ins.type_data_alui.no_writeback == 0) {
-        switch (state->fr.flags.size) {
-            case SIZE_64BIT: state->r[ins.type_data_alui.r1].asQWord = target.asQWord; break;
-            case SIZE_32BIT: state->r[ins.type_data_alui.r1].asDWord = target.asDWord; break;
-            case SIZE_16BIT: state->r[ins.type_data_alui.r1].asWord = target.asWord; break;
-            case SIZE_8BIT:  state->r[ins.type_data_alui.r1].asByte = target.asByte; break;
-        }
+        case SIZE_64BIT: writeQWord(state, ins.type_data_alui.r1, target.asQWord, ins.type_data_alui.no_writeback == 0, REG_DEST); break;
+        case SIZE_32BIT: writeDWord(state, ins.type_data_alui.r1, target.asDWord, ins.type_data_alui.no_writeback == 0, REG_DEST); break;
+        case SIZE_16BIT: writeWord(state, ins.type_data_alui.r1, target.asWord, ins.type_data_alui.no_writeback == 0, REG_DEST); break;
+        case SIZE_8BIT:  writeByte(state, ins.type_data_alui.r1, target.asByte, ins.type_data_alui.no_writeback == 0, REG_DEST); break;
     }
 END_OP
 BEGIN_OP(data_fpu)
     hive_register_t target;
-    hive_register_t src1 = state->r[ins.type_data_fpu.r2];
-    hive_register_t src2 = state->r[ins.type_data_fpu.r3];
+    uint8_t src1 = ins.type_data_fpu.r2;
+    uint8_t src2 = ins.type_data_fpu.r3;
     if (ins.type_data_fpu.is_single_op) {
         if (ins.type_data_fpu.use_int_arg2) {
             switch (ins.type_data_fpu.op) {
-                case OP_DATA_FLOAT_add: target.asFloat32 = set_flagsf32(state, src1.asFloat32 + src2.asSDWord); break;
-                case OP_DATA_FLOAT_sub: target.asFloat32 = set_flagsf32(state, src1.asFloat32 - src2.asSDWord); break;
-                case OP_DATA_FLOAT_mul: target.asFloat32 = set_flagsf32(state, src1.asFloat32 * src2.asSDWord); break;
-                case OP_DATA_FLOAT_div: target.asFloat32 = set_flagsf32(state, src1.asFloat32 / src2.asSDWord); break;
-                case OP_DATA_FLOAT_mod: target.asFloat32 = set_flagsf32(state, fmod(src1.asFloat32, src2.asSDWord)); break;
-                case OP_DATA_FLOAT_f2i: target.asFloat32 = set_flagsf32(state, (Float32_t) src1.asSDWord); break;
-                case OP_DATA_FLOAT_sin: target.asFloat32 = set_flagsf32(state, sinf(src1.asSDWord)); break;
-                case OP_DATA_FLOAT_sqrt: target.asFloat32 = set_flagsf32(state, sqrtf(src1.asSDWord)); break;
+                case OP_DATA_FLOAT_add: target.asFloat32 = set_flagsf32(state, readFloat32(state, src1, REG_SRC1) + readSDWord(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_sub: target.asFloat32 = set_flagsf32(state, readFloat32(state, src1, REG_SRC1) - readSDWord(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_mul: target.asFloat32 = set_flagsf32(state, readFloat32(state, src1, REG_SRC1) * readSDWord(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_div: target.asFloat32 = set_flagsf32(state, readFloat32(state, src1, REG_SRC1) / readSDWord(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_mod: target.asFloat32 = set_flagsf32(state, fmod(readFloat32(state, src1, REG_SRC1), readSDWord(state, src2, REG_SRC2))); break;
+                case OP_DATA_FLOAT_f2i: target.asFloat32 = set_flagsf32(state, (Float32_t) readSDWord(state, src1, REG_SRC1)); break;
+                case OP_DATA_FLOAT_sin: target.asFloat32 = set_flagsf32(state, sinf(readSDWord(state, src1, REG_SRC1))); break;
+                case OP_DATA_FLOAT_sqrt: target.asFloat32 = set_flagsf32(state, sqrtf(readSDWord(state, src1, REG_SRC1))); break;
+                default: raise(SIGILL);
             }
         } else {
             switch (ins.type_data_fpu.op) {
-                case OP_DATA_FLOAT_add: target.asFloat32 = set_flagsf32(state, src1.asFloat32 + src2.asFloat32); break;
-                case OP_DATA_FLOAT_sub: target.asFloat32 = set_flagsf32(state, src1.asFloat32 - src2.asFloat32); break;
-                case OP_DATA_FLOAT_mul: target.asFloat32 = set_flagsf32(state, src1.asFloat32 * src2.asFloat32); break;
-                case OP_DATA_FLOAT_div: target.asFloat32 = set_flagsf32(state, src1.asFloat32 / src2.asFloat32); break;
-                case OP_DATA_FLOAT_mod: target.asFloat32 = set_flagsf32(state, fmod(src1.asFloat32, src2.asFloat32)); break;
-                case OP_DATA_FLOAT_f2i: target.asSDWord = set_flags32(state, (SDWord_t) src1.asFloat32); break;
-                case OP_DATA_FLOAT_sin: target.asFloat32 = set_flagsf32(state, sinf(src1.asFloat32)); break;
-                case OP_DATA_FLOAT_sqrt: target.asFloat32 = set_flagsf32(state, sqrtf(src1.asFloat32)); break;
-                case OP_DATA_FLOAT_s2f: target.asFloat32 = set_flagsf32(state, (Float32_t) src1.asFloat64); break;
+                case OP_DATA_FLOAT_add: target.asFloat32 = set_flagsf32(state, readFloat32(state, src1, REG_SRC1) + readFloat32(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_sub: target.asFloat32 = set_flagsf32(state, readFloat32(state, src1, REG_SRC1) - readFloat32(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_mul: target.asFloat32 = set_flagsf32(state, readFloat32(state, src1, REG_SRC1) * readFloat32(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_div: target.asFloat32 = set_flagsf32(state, readFloat32(state, src1, REG_SRC1) / readFloat32(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_mod: target.asFloat32 = set_flagsf32(state, fmod(readFloat32(state, src1, REG_SRC1), readFloat32(state, src2, REG_SRC2))); break;
+                case OP_DATA_FLOAT_f2i: target.asSDWord = set_flags32(state, (SDWord_t) readFloat32(state, src1, REG_SRC1)); break;
+                case OP_DATA_FLOAT_sin: target.asFloat32 = set_flagsf32(state, sinf(readFloat32(state, src1, REG_SRC1))); break;
+                case OP_DATA_FLOAT_sqrt: target.asFloat32 = set_flagsf32(state, sqrtf(readFloat32(state, src1, REG_SRC1))); break;
+                case OP_DATA_FLOAT_s2f: target.asFloat32 = set_flagsf32(state, (Float32_t) readFloat32(state, src1, REG_SRC1)); break;
+                default: raise(SIGILL);
             }
         }
     } else {
         if (ins.type_data_fpu.use_int_arg2) {
             switch (ins.type_data_fpu.op) {
-                case OP_DATA_FLOAT_add: target.asFloat64 = set_flagsf64(state, src1.asFloat64 + src2.asSQWord); break;
-                case OP_DATA_FLOAT_sub: target.asFloat64 = set_flagsf64(state, src1.asFloat64 - src2.asSQWord); break;
-                case OP_DATA_FLOAT_mul: target.asFloat64 = set_flagsf64(state, src1.asFloat64 * src2.asSQWord); break;
-                case OP_DATA_FLOAT_div: target.asFloat64 = set_flagsf64(state, src1.asFloat64 / src2.asSQWord); break;
-                case OP_DATA_FLOAT_mod: target.asFloat64 = set_flagsf64(state, fmod(src1.asFloat64, src2.asSQWord)); break;
-                case OP_DATA_FLOAT_f2i: target.asFloat64 = set_flagsf64(state, (Float64_t) src1.asSQWord); break;
-                case OP_DATA_FLOAT_sin: target.asFloat64 = set_flagsf64(state, sin(src1.asSQWord)); break;
-                case OP_DATA_FLOAT_sqrt: target.asFloat64 = set_flagsf64(state, sqrt(src1.asSQWord)); break;
+                case OP_DATA_FLOAT_add: target.asFloat64 = set_flagsf64(state, readFloat64(state, src1, REG_SRC1) + readSQWord(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_sub: target.asFloat64 = set_flagsf64(state, readFloat64(state, src1, REG_SRC1) - readSQWord(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_mul: target.asFloat64 = set_flagsf64(state, readFloat64(state, src1, REG_SRC1) * readSQWord(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_div: target.asFloat64 = set_flagsf64(state, readFloat64(state, src1, REG_SRC1) / readSQWord(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_mod: target.asFloat64 = set_flagsf64(state, fmod(readFloat64(state, src1, REG_SRC1), readSQWord(state, src2, REG_SRC2))); break;
+                case OP_DATA_FLOAT_f2i: target.asFloat64 = set_flagsf64(state, (Float64_t) readSQWord(state, src1, REG_SRC1)); break;
+                case OP_DATA_FLOAT_sin: target.asFloat64 = set_flagsf64(state, sin(readSQWord(state, src1, REG_SRC1))); break;
+                case OP_DATA_FLOAT_sqrt: target.asFloat64 = set_flagsf64(state, sqrt(readSQWord(state, src1, REG_SRC1))); break;
+                default: raise(SIGILL);
             }
         } else {
             switch (ins.type_data_fpu.op) {
-                case OP_DATA_FLOAT_add: target.asFloat64 = set_flagsf64(state, src1.asFloat64 + src2.asFloat64); break;
-                case OP_DATA_FLOAT_sub: target.asFloat64 = set_flagsf64(state, src1.asFloat64 - src2.asFloat64); break;
-                case OP_DATA_FLOAT_mul: target.asFloat64 = set_flagsf64(state, src1.asFloat64 * src2.asFloat64); break;
-                case OP_DATA_FLOAT_div: target.asFloat64 = set_flagsf64(state, src1.asFloat64 / src2.asFloat64); break;
-                case OP_DATA_FLOAT_mod: target.asFloat64 = set_flagsf64(state, fmod(src1.asFloat64, src2.asFloat64)); break;
-                case OP_DATA_FLOAT_f2i: target.asSQWord = set_flags64(state, (SQWord_t) src1.asFloat64); break;
-                case OP_DATA_FLOAT_sin: target.asFloat64 = set_flagsf64(state, sin(src1.asFloat64)); break;
-                case OP_DATA_FLOAT_sqrt: target.asFloat64 = set_flagsf64(state, sqrt(src1.asFloat64)); break;
-                case OP_DATA_FLOAT_s2f: target.asFloat64 = set_flagsf64(state, (Float64_t) src1.asFloat32); break;
+                case OP_DATA_FLOAT_add: target.asFloat64 = set_flagsf64(state, readFloat64(state, src1, REG_SRC1) + readFloat64(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_sub: target.asFloat64 = set_flagsf64(state, readFloat64(state, src1, REG_SRC1) - readFloat64(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_mul: target.asFloat64 = set_flagsf64(state, readFloat64(state, src1, REG_SRC1) * readFloat64(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_div: target.asFloat64 = set_flagsf64(state, readFloat64(state, src1, REG_SRC1) / readFloat64(state, src2, REG_SRC2)); break;
+                case OP_DATA_FLOAT_mod: target.asFloat64 = set_flagsf64(state, fmod(readFloat64(state, src1, REG_SRC1), readFloat64(state, src2, REG_SRC2))); break;
+                case OP_DATA_FLOAT_f2i: target.asSQWord = set_flags64(state, (SQWord_t) readFloat64(state, src1, REG_SRC1)); break;
+                case OP_DATA_FLOAT_sin: target.asFloat64 = set_flagsf64(state, sin(readFloat64(state, src1, REG_SRC1))); break;
+                case OP_DATA_FLOAT_sqrt: target.asFloat64 = set_flagsf64(state, sqrt(readFloat64(state, src1, REG_SRC1))); break;
+                case OP_DATA_FLOAT_s2f: target.asFloat64 = set_flagsf64(state, (Float64_t) readFloat64(state, src1, REG_SRC1)); break;
+                default: raise(SIGILL);
             }
         }
     }
-    state->r[ins.type_data_fpu.r1] = ins.type_data_fpu.no_writeback ? state->r[ins.type_data_fpu.r1] : target;
+    if (ins.type_data_fpu.is_single_op) {
+        writeFloat32(state, ins.type_data_fpu.r1, target.asFloat32, ins.type_data_fpu.no_writeback == 0, REG_DEST);
+    } else {
+        writeFloat64(state, ins.type_data_fpu.r1, target.asFloat64, ins.type_data_fpu.no_writeback == 0, REG_DEST);
+    }
 END_OP
 BEGIN_OP(data_vpu)
     extern hive_executor_t vpu_execs[];
-    vpu_execs[ins.type_data_vpu.data_op](ins, state);
+    vpu_execs[ins.type_data_vpu.op](ins, state);
 END_OP
 
 BEGIN_OP(data_bit)
@@ -236,15 +440,16 @@ BEGIN_OP(data_bit)
     num = (ins.type_data_bit.count_hi << 1 | ins.type_data_bit.count_lo) + 1;
     uint64_t mask = ((1ULL << num) - 1);
     if (ins.type_data_bit.is_dep) {
-        state->r[ins.type_data_bit.r1].asQWord &= ~(mask << lowest);
-        state->r[ins.type_data_bit.r1].asQWord |= (state->r[ins.type_data_bit.r2].asQWord & mask) << lowest;
+        QWord_t val = readQWord(state, ins.type_data_bit.r1, REG_DEST);
+        val &= ~(mask << lowest);
+        val |= (readQWord(state, ins.type_data_bit.r2, REG_SRC1) & mask) << lowest;
+        writeQWord(state, ins.type_data_bit.r1, val, 1, REG_DEST);
     } else {
-        uint64_t val = (state->r[ins.type_data_bit.r2].asQWord >> lowest) & mask;
+        uint64_t val = (readQWord(state, ins.type_data_bit.r2, REG_SRC1) >> lowest) & mask;
         uint64_t sign_bit = val & (1ULL << (num - 1));
         val |= ins.type_data_bit.extend * (-sign_bit);
-        state->r[ins.type_data_bit.r1].asQWord = val;
+        writeQWord(state, ins.type_data_bit.r1, val, 1, REG_DEST);
     }
-    set_flags64(state, state->r[ins.type_data_bit.r1].asQWord);
 END_OP
 BEGIN_OP(data_ls)
     QWord_t addr;
@@ -252,77 +457,148 @@ BEGIN_OP(data_ls)
     uint8_t r2 = ins.type_data_ls_imm.r2;
     if (ins.type_data_ls_imm.data_op == SUBOP_DATA_LS_FAR) {
         uint32_t imm = ins.type_data_ls_far.imm;
-        uint32_t shift = (((ins.type_data_ls_far.shift_hi << 2) | ins.type_data_ls_far.shift) + 1);
+        uint32_t shift = ins.type_data_ls_far.shift + 1;
         if (ins.type_data_ls_far.update_ptr) {
             if (ins.type_data_ls_far.is_store) {
-                state->r[r2].asQWord += (imm << shift);
-                addr = state->r[r2].asQWord;
+                QWord_t val = readQWord(state, r2, REG_SRC1) + (imm << shift);
+                writeQWord(state, r2, val, 1, REG_SRC1);
+                addr = val;
             } else {
-                addr = state->r[r2].asQWord;
-                state->r[r2].asQWord += (imm << shift);
+                QWord_t val = readQWord(state, r2, REG_SRC1);
+                addr = val;
+                writeQWord(state, r2, val + (imm << shift), 1, REG_SRC1);
             }
         } else {
-            addr = (state->r[r2].asQWord + (imm << shift));
+            addr = (readQWord(state, r2, REG_SRC1) + (imm << shift));
         }
     } else if (ins.type_data_ls_imm.use_immediate) {
         if (ins.type_data_ls_imm.update_ptr) {
             if (ins.type_data_ls_imm.is_store) {
-                state->r[r2].asQWord += ins.type_data_ls_imm.imm;
-                addr = state->r[r2].asQWord;
+                QWord_t val = readQWord(state, r2, REG_SRC1) + ins.type_data_ls_imm.imm;
+                writeQWord(state, r2, val, 1, REG_SRC1);
+                addr = val;
             } else {
-                addr = state->r[r2].asQWord;
-                state->r[r2].asQWord += ins.type_data_ls_imm.imm;
+                QWord_t val = readQWord(state, r2, REG_SRC1);
+                addr = val;
+                writeQWord(state, r2, val + ins.type_data_ls_imm.imm, 1, REG_SRC1);
             }
         } else {
-            addr = (state->r[r2].asQWord + ins.type_data_ls_imm.imm);
+            addr = (readQWord(state, r2, REG_SRC1) + ins.type_data_ls_imm.imm);
         }
     } else {
         uint8_t r3 = ins.type_data_ls_reg.r3;
-        if (ins.type_data_ls_reg.update_ptr) {
-            if (ins.type_data_ls_reg.is_store) {
-                state->r[r2].asQWord += state->r[r3].asQWord;
-                addr = state->r[r2].asQWord;
+        if (ins.type_data_ls_imm.update_ptr) {
+            if (ins.type_data_ls_imm.is_store) {
+                QWord_t val = readQWord(state, r2, REG_SRC1) + readQWord(state, r3, REG_SRC2);
+                writeQWord(state, r2, val, 1, REG_SRC1);
+                addr = val;
             } else {
-                addr = state->r[r2].asQWord;
-                state->r[r2].asQWord += state->r[r3].asQWord;
+                QWord_t val = readQWord(state, r2, REG_SRC1);
+                addr = val;
+                writeQWord(state, r2, val + readQWord(state, r3, REG_SRC2), 1, REG_SRC1);
             }
         } else {
-            addr = (state->r[r2].asQWord + state->r[r3].asQWord);
+            addr = (readQWord(state, r2, REG_SRC1) + readQWord(state, r3, REG_SRC2));
         }
     }
     if (ins.type_data_ls_imm.is_store) {
-        QWord_t value = state->r[r1].asQWord;
-        switch (ins.type_data_ls_imm.size) {
-            case SIZE_8BIT: *(uint8_t*) addr = value; break;
-            case SIZE_16BIT: *(uint32_t*) addr = value; break;
-            case SIZE_32BIT: *(uint16_t*) addr = value; break;
-            case SIZE_64BIT: *(uint64_t*) addr = value; break;
+        switch (state->fr.flags.size) {
+            case SIZE_8BIT: memWriteByte((void*) addr, readByte(state, r1, REG_DEST)); break;
+            case SIZE_16BIT: memWriteWord((void*) addr, readWord(state, r1, REG_DEST)); break;
+            case SIZE_32BIT: memWriteDWord((void*) addr, readDWord(state, r1, REG_DEST)); break;
+            case SIZE_64BIT: memWriteQWord((void*) addr, readQWord(state, r1, REG_DEST)); break;
         }
     } else {
-        switch (ins.type_data_ls_imm.size) {
-            case SIZE_8BIT: state->r[r1].asByte = *(uint8_t*) addr; set_flags8(state, state->r[r1].asSByte); break;
-            case SIZE_16BIT: state->r[r1].asDWord = *(uint32_t*) addr; set_flags16(state, state->r[r1].asSDWord); break;
-            case SIZE_32BIT: state->r[r1].asWord = *(uint16_t*) addr; set_flags32(state, state->r[r1].asSWord); break;
-            case SIZE_64BIT: state->r[r1].asQWord = *(uint64_t*) addr; set_flags64(state, state->r[r1].asSQWord); break;
+        switch (state->fr.flags.size) {
+            case SIZE_8BIT: writeByte(state, r1, memReadByte((void*) addr), 1, REG_DEST); break;
+            case SIZE_16BIT: writeDWord(state, r1, memReadDWord((void*) addr), 1, REG_DEST); break;
+            case SIZE_32BIT: writeWord(state, r1, memReadWord((void*) addr), 1, REG_DEST); break;
+            case SIZE_64BIT: writeQWord(state, r1, memReadQWord((void*) addr), 1, REG_DEST); break;
         }
+    }
+END_OP
+BEGIN_OP(data_cswap)
+    int check_condition1(uint8_t cond, hive_flag_register_t fr);
+    uint8_t r2 = ins.type_data_cswap.r2;
+    uint8_t r3 = ins.type_data_cswap.r3;
+    uint8_t dest;
+    uint8_t destC;
+    if (check_condition1(ins.type_data_cswap.cond, state->fr)) {
+        dest = r2;
+        destC = REG_SRC1;
+    } else {
+        dest = r3;
+        destC = REG_SRC2;
+    }
+    switch (state->fr.flags.size) {
+        case SIZE_8BIT: writeByte(state, ins.type_data_cswap.r1, readByte(state, dest, destC), 1, REG_DEST); break;
+        case SIZE_16BIT: writeWord(state, ins.type_data_cswap.r1, readWord(state, dest, destC), 1, REG_DEST); break;
+        case SIZE_32BIT: writeDWord(state, ins.type_data_cswap.r1, readDWord(state, dest, destC), 1, REG_DEST); break;
+        case SIZE_64BIT: writeQWord(state, ins.type_data_cswap.r1, readQWord(state, dest, destC), 1, REG_DEST); break;
+    }
+END_OP
+BEGIN_OP(data_xchg)
+    uint8_t r1 = ins.type_data_xchg.r1;
+    uint8_t r2 = ins.type_data_xchg.r2;
+    switch (state->fr.flags.size) {
+        case SIZE_8BIT: {
+                Byte_t tmp = readByte(state, r1, REG_DEST);
+                writeByte(state, r1, readByte(state, r2, REG_SRC1), 1, REG_DEST);
+                writeByte(state, r2, tmp, 1, REG_SRC1);
+            }
+            break;
+        case SIZE_16BIT: {
+                Word_t tmp = readWord(state, r1, REG_DEST);
+                writeWord(state, r1, readWord(state, r2, REG_SRC1), 1, REG_DEST);
+                writeWord(state, r2, tmp, 1, REG_SRC1);
+            }
+            break;
+        case SIZE_32BIT: {
+                DWord_t tmp = readDWord(state, r1, REG_DEST);
+                writeDWord(state, r1, readDWord(state, r2, REG_SRC1), 1, REG_DEST);
+                writeDWord(state, r2, tmp, 1, REG_SRC1);
+            }
+            break;
+        case SIZE_64BIT: {
+                QWord_t tmp = readQWord(state, r1, REG_DEST);
+                writeQWord(state, r1, readQWord(state, r2, REG_SRC1), 1, REG_DEST);
+                writeQWord(state, r2, tmp, 1, REG_SRC1);
+            }
+            break;
     }
 END_OP
 
 BEGIN_OP(load_lea)
-    state->r[ins.type_load_signed.r1].asQWord = set_flags64(state, PC_REL(ins.type_load_signed.imm));
+    writeQWord(state, ins.type_load_signed.r1, PC_REL(ins.type_load_signed.imm), 1, REG_DEST);
 END_OP
 BEGIN_OP(load_movzk)
     QWord_t shift = (16 * ins.type_load_mov.shift);
     QWord_t mask = ~ROL((QWord_t) 0xFFFF, shift);
     QWord_t value = ((QWord_t) ins.type_load_mov.imm) << shift;
     if (ins.type_load_mov.no_zero) {
-        state->r[ins.type_load_mov.r1].asQWord &= mask;
-        state->r[ins.type_load_mov.r1].asQWord |= value;
+        QWord_t val;
+        switch (state->fr.flags.size) {
+            case SIZE_64BIT: val = readQWord(state, ins.type_load_mov.r1, REG_DEST); break;
+            case SIZE_32BIT: val = readDWord(state, ins.type_load_mov.r1, REG_DEST); break;
+            case SIZE_16BIT: val = readWord(state, ins.type_load_mov.r1, REG_DEST); break;
+            case SIZE_8BIT: val = readByte(state, ins.type_load_mov.r1, REG_DEST); break;
+        }
+        val &= mask;
+        val |= value;
+        switch (state->fr.flags.size) {
+            case SIZE_64BIT: writeQWord(state, ins.type_load_mov.r1, val, 1, REG_DEST); break;
+            case SIZE_32BIT: writeDWord(state, ins.type_load_mov.r1, val, 1, REG_DEST); break;
+            case SIZE_16BIT: writeWord(state, ins.type_load_mov.r1, val, 1, REG_DEST); break;
+            case SIZE_8BIT: writeByte(state, ins.type_load_mov.r1, val, 1, REG_DEST); break;
+        }
     } else {
-        state->r[ins.type_load_mov.r1].asQWord = 0;
-        state->r[ins.type_load_mov.r1].asQWord = value;
+        switch (state->fr.flags.size) {
+            case SIZE_64BIT: writeQWord(state, ins.type_load_mov.r1, value, 1, REG_DEST); break;
+            case SIZE_32BIT: writeDWord(state, ins.type_load_mov.r1, value, 1, REG_DEST); break;
+            case SIZE_16BIT: writeWord(state, ins.type_load_mov.r1, value, 1, REG_DEST); break;
+            case SIZE_8BIT: writeByte(state, ins.type_load_mov.r1, value, 1, REG_DEST); break;
+        }
     }
-    set_flags64(state, state->r[ins.type_load_mov.r1].asQWord);
 END_OP
 BEGIN_OP(load_svc)
     state->r[0].asQWord = svcs[state->r[8].asQWord](
@@ -339,36 +615,33 @@ END_OP
 BEGIN_OP(load_ls_off)
     QWord_t addr = PC_REL(ins.type_load_ls_off.imm);
     if (ins.type_load_ls_off.is_store) {
-        hive_register_t value = state->r[ins.type_load_ls_off.r1];
         switch (state->fr.flags.size) {
-            case SIZE_8BIT:  *(Byte_t*) addr = value.asByte; break;
-            case SIZE_16BIT: *(Word_t*) addr = value.asWord; break;
-            case SIZE_32BIT: *(DWord_t*) addr = value.asDWord; break;
-            case SIZE_64BIT: *(QWord_t*) addr = value.asQWord; break;
+            case SIZE_8BIT:  memWriteByte((void*) addr, readByte(state, ins.type_load_ls_off.r1, REG_DEST)); break;
+            case SIZE_16BIT: memWriteWord((void*) addr, readWord(state, ins.type_load_ls_off.r1, REG_DEST)); break;
+            case SIZE_32BIT: memWriteDWord((void*) addr, readDWord(state, ins.type_load_ls_off.r1, REG_DEST)); break;
+            case SIZE_64BIT: memWriteQWord((void*) addr, readQWord(state, ins.type_load_ls_off.r1, REG_DEST)); break;
         }
     } else {
         uint8_t reg = ins.type_load_ls_off.r1;
-        hive_register_t val;
         switch (state->fr.flags.size) {
-            case SIZE_8BIT:  val.asByte = *(Byte_t*) addr; break;
-            case SIZE_16BIT: val.asWord = *(Word_t*) addr; break;
-            case SIZE_32BIT: val.asDWord = *(DWord_t*) addr; break;
-            case SIZE_64BIT: val.asQWord = *(QWord_t*) addr; break;
+            case SIZE_8BIT:  writeByte(state, reg, memReadByte((void*) addr), 1, REG_DEST); break;
+            case SIZE_16BIT: writeWord(state, reg, memReadWord((void*) addr), 1, REG_DEST); break;
+            case SIZE_32BIT: writeDWord(state, reg, memReadDWord((void*) addr), 1, REG_DEST); break;
+            case SIZE_64BIT: writeQWord(state, reg, memReadQWord((void*) addr), 1, REG_DEST); break;
         }
-        state->r[reg] = val;
     }
 END_OP
 
 BEGIN_OP(other_cpuid)
     switch (state->r[0].asQWord) {
         case 0:
-            state->r[0].asQWord = set_flags64(state, state->fr.flags.cpuid);
+            state->r[0].asQWord = set_flags64(state, state->cr[CR_CPUID].asQWord);
             break;
         case 1:
-            state->r[0].asQWord = set_flags64(state, CORE_COUNT);
+            state->r[0].asQWord = set_flags64(state, state->cr[CR_CORES].asQWord);
             break;
         case 2:
-            state->r[0].asQWord = set_flags64(state, THREAD_COUNT);
+            state->r[0].asQWord = set_flags64(state, state->cr[CR_THREADS].asQWord);
             break;
     }
 END_OP
@@ -376,51 +649,72 @@ END_OP
 BEGIN_OP(other_privileged)
     switch (ins.type_other_priv.priv_op) {
         case SUBOP_OTHER_cpuid:     exec_other_cpuid(ins, state); break;
+        default:                    raise(SIGILL); break;
     }
 END_OP
-BEGIN_OP(other_size_override)
+BEGIN_OP(other_prefix)
     void exec_instr(hive_instruction_t ins, struct cpu_state* state);
+    // save
     uint8_t old_size = state->fr.flags.size;
-    state->fr.flags.size = ins.type_other_size_override.size;
+    uint8_t old_overrides = state->fr.flags.reg_state;
+    uint8_t old_crs = state->fr.flags.references_cr;
+    uint8_t nz = state->fr.dword & 0b11;
+
+    // update
+    state->fr.flags.size = ins.type_other_prefix.size;
+    state->fr.flags.reg_state = ins.type_other_prefix.reg_override;
+    state->fr.flags.references_cr = ins.type_other_prefix.references_cr;
     state->r[REG_PC].asInstrPtr++;
-    exec_instr(*state->r[REG_PC].asInstrPtr, state);
-    state->fr.flags.size = old_size;
-END_OP
-BEGIN_OP(other_signextend)
-    uint8_t from = ins.type_other_signextend.from;
-    uint8_t to = ins.type_other_signextend.to;
-    if (to <= from) {
+
+    if (state->fr.flags.size == SIZE_64BIT && state->fr.flags.reg_state != 0) {
+        state->fr.flags.size = old_size;
+        state->fr.flags.reg_state = old_overrides;
+        state->fr.flags.references_cr = old_crs;
         raise(SIGILL);
     }
-    hive_register_t src = state->r[ins.type_other_signextend.r1];
-    hive_register_t dest;
-    switch (from) {
-        case SIZE_8BIT:
-            switch (to) {
-                case SIZE_16BIT: dest.asSWord = src.asSByte; break;
-                case SIZE_32BIT: dest.asSDWord = src.asSByte; break;
-                case SIZE_64BIT: dest.asSQWord = src.asSByte; break;
-            }
-            break;
-        case SIZE_16BIT:
-            switch (to) {
-                case SIZE_32BIT: dest.asSDWord = src.asSWord; break;
-                case SIZE_64BIT: dest.asSQWord = src.asSWord; break;
-            }
-            break;
-        case SIZE_32BIT:
-            switch (to) {
-                case SIZE_64BIT: dest.asSQWord = src.asSDWord; break;
-            }
-            break;
+    
+    // exec
+    exec_instr(memReadhive_instruction(state->r[REG_PC].asInstrPtr), state);
+    
+    // restore
+    state->fr.flags.size = old_size;
+    state->fr.flags.reg_state = old_overrides;
+    state->fr.flags.references_cr = old_crs;
+    if (ins.type_other_prefix.reset_flags) {
+        state->fr.dword &= ~0b11;
+        state->fr.dword |= nz;
     }
-    state->r[ins.type_other_signextend.r2] = dest;
+END_OP
+BEGIN_OP(other_zeroupper)
+    switch (state->fr.flags.size) {
+        case SIZE_8BIT: {
+            Byte_t value = readByte(state, ins.type_other_zeroupper.r1, REG_DEST);
+            state->r[ins.type_other_zeroupper.r1].asQWord = 0;
+            writeByte(state, ins.type_other_zeroupper.r1, value, 1, REG_DEST);
+            break;
+        }
+        case SIZE_16BIT: {
+            Word_t value = readWord(state, ins.type_other_zeroupper.r1, REG_DEST);
+            state->r[ins.type_other_zeroupper.r1].asQWord = 0;
+            writeWord(state, ins.type_other_zeroupper.r1, value, 1, REG_DEST);
+            break;
+        }
+        case SIZE_32BIT: {
+            DWord_t value = readDWord(state, ins.type_other_zeroupper.r1, REG_DEST);
+            state->r[ins.type_other_zeroupper.r1].asQWord = 0;
+            writeDWord(state, ins.type_other_zeroupper.r1, value, 1, REG_DEST);
+            break;
+        }
+        case SIZE_64BIT: {
+            raise(SIGILL);
+        }
+    }
 END_OP
 
 BEGIN_OP(branch)
     QWord_t target;
     if (ins.type_branch.is_reg) {
-        target = state->r[ins.type_branch_register.r1].asQWord;
+        target = readQWord(state, ins.type_branch_register.r1, REG_DEST);
     } else {
         target = PC_REL(ins.type_branch.offset);
     }
@@ -441,6 +735,9 @@ BEGIN_OP(data)
         case SUBOP_DATA_LS_FAR: exec_data_ls(ins, state); break;
         case SUBOP_DATA_FPU:    exec_data_fpu(ins, state); break;
         case SUBOP_DATA_VPU:    exec_data_vpu(ins, state); break;
+        case SUBOP_DATA_CSWAP:  exec_data_cswap(ins, state); break;
+        case SUBOP_DATA_XCHG:   exec_data_xchg(ins, state); break;
+        default:                raise(SIGILL); break;
     }
 END_OP
 BEGIN_OP(load)
@@ -449,13 +746,15 @@ BEGIN_OP(load)
         case OP_LOAD_movzk:     exec_load_movzk(ins, state); break;
         case OP_LOAD_svc:       exec_load_svc(ins, state); break;
         case OP_LOAD_ls_off:    exec_load_ls_off(ins, state); break;
+        default:                raise(SIGILL); break;
     }
 END_OP
 BEGIN_OP(other)
     switch (ins.type_other.op) {
-        case OP_OTHER_priv_op:          exec_other_privileged(ins, state); break;
-        case OP_OTHER_size_override:    exec_other_size_override(ins, state); break;
-        case OP_OTHER_signextend:       exec_other_signextend(ins, state); break;
+        case OP_OTHER_priv_op:  exec_other_privileged(ins, state); break;
+        case OP_OTHER_prefix:   exec_other_prefix(ins, state); break;
+        case OP_OTHER_zeroupper:exec_other_zeroupper(ins, state); break;
+        default:                raise(SIGILL); break;
     }
 END_OP
 
@@ -564,14 +863,14 @@ uint8_t decode_slot(hive_instruction_t ins) {
 BEGIN_OP(vpu_mov)
     uint8_t slot = decode_slot(ins);
     switch (ins.type_data_vpu.mode) {
-        case 0: state->v[ins.type_data_vpu_mov.v1].asQWord[slot] = state->r[ins.type_data_vpu_mov.r2].asQWord;
-        case 1: state->v[ins.type_data_vpu_mov.v1].asBytes[slot] = state->r[ins.type_data_vpu_mov.r2].asByte;
-        case 2: state->v[ins.type_data_vpu_mov.v1].asWords[slot] = state->r[ins.type_data_vpu_mov.r2].asWord;
-        case 3: state->v[ins.type_data_vpu_mov.v1].asDWords[slot] = state->r[ins.type_data_vpu_mov.r2].asDWord;
-        case 4: state->v[ins.type_data_vpu_mov.v1].asQWords[slot] = state->r[ins.type_data_vpu_mov.r2].asQWord;
-        case 5: state->v[ins.type_data_vpu_mov.v1].asLWords[slot] = state->r[ins.type_data_vpu_mov.r2].asQWord;
-        case 6: state->v[ins.type_data_vpu_mov.v1].asFloat32s[slot] = state->r[ins.type_data_vpu_mov.r2].asFloat32;
-        case 7: state->v[ins.type_data_vpu_mov.v1].asFloat64s[slot] = state->r[ins.type_data_vpu_mov.r2].asFloat64;
+        case 0: state->v[ins.type_data_vpu_mov.v1].asQWord[slot] = readQWord(state, ins.type_data_vpu_mov.r2, REG_SRC1);
+        case 1: state->v[ins.type_data_vpu_mov.v1].asBytes[slot] = readByte(state, ins.type_data_vpu_mov.r2, REG_SRC1);
+        case 2: state->v[ins.type_data_vpu_mov.v1].asWords[slot] = readWord(state, ins.type_data_vpu_mov.r2, REG_SRC1);
+        case 3: state->v[ins.type_data_vpu_mov.v1].asDWords[slot] = readDWord(state, ins.type_data_vpu_mov.r2, REG_SRC1);
+        case 4: state->v[ins.type_data_vpu_mov.v1].asQWords[slot] = readQWord(state, ins.type_data_vpu_mov.r2, REG_SRC1);
+        case 5: state->v[ins.type_data_vpu_mov.v1].asLWords[slot] = readQWord(state, ins.type_data_vpu_mov.r2, REG_SRC1);
+        case 6: state->v[ins.type_data_vpu_mov.v1].asFloat32s[slot] = readFloat32(state, ins.type_data_vpu_mov.r2, REG_SRC1);
+        case 7: state->v[ins.type_data_vpu_mov.v1].asFloat64s[slot] = readFloat64(state, ins.type_data_vpu_mov.r2, REG_SRC1);
     }
 END_OP
 BEGIN_OP(vpu_mov_vec)
@@ -614,26 +913,29 @@ BEGIN_OP(vpu_conv)
 END_OP
 
 #define vpu_len_(_what) \
-    state->r[ins.type_data_vpu_len.r1].asQWord = 0; \
-    for (size_t i = 0; sizeof(state->v[0].as ## _what) / sizeof(state->v[0].as ## _what[0]); i++) { \
-        if (state->v[ins.type_data_vpu_len.v1].as ## _what[i]) { \
-            state->r[ins.type_data_vpu_len.r1].asQWord++; \
-        } else { \
-            break; \
+    do { \
+        QWord_t count = 0; \
+        for (size_t i = 0; sizeof(state->v[0].as ## _what) / sizeof(state->v[0].as ## _what[0]); i++) { \
+            if (state->v[ins.type_data_vpu_len.v1].as ## _what[i]) { \
+                count++; \
+            } else { \
+                break; \
+            } \
         } \
-    }
+        writeQWord(state, ins.type_data_vpu_len.r1, count, 1, REG_DEST); \
+    } while (0)
 #define vpu_len(_what) vpu_len_(_what)
 
 BEGIN_OP(vpu_len)
     switch (ins.type_data_vpu.mode) {
-        case 0: vpu_len(vpu_o)
-        case 1: vpu_len(vpu_b)
-        case 2: vpu_len(vpu_w)
-        case 3: vpu_len(vpu_d)
-        case 4: vpu_len(vpu_q)
-        case 5: vpu_len(vpu_l)
-        case 6: vpu_len(vpu_s)
-        case 7: vpu_len(vpu_f)
+        case 0: vpu_len(vpu_o);
+        case 1: vpu_len(vpu_b);
+        case 2: vpu_len(vpu_w);
+        case 3: vpu_len(vpu_d);
+        case 4: vpu_len(vpu_q);
+        case 5: vpu_len(vpu_l);
+        case 6: vpu_len(vpu_s);
+        case 7: vpu_len(vpu_f);
     }
 END_OP
 BEGIN_OP(vpu_ldr)
@@ -642,15 +944,15 @@ BEGIN_OP(vpu_ldr)
     if (ins.type_data_vpu_ls_imm.use_imm) {
         offset = ins.type_data_vpu_ls_imm.imm;
     } else {
-        offset = state->r[ins.type_data_vpu_ls.r2].asSQWord;
+        offset = readSQWord(state, ins.type_data_vpu_ls.r2, REG_SRC2);
     }
     if (ins.type_data_vpu_ls.update_ptr) {
-        addr = state->r[ins.type_data_vpu_ls_imm.r1].asQWord;
-        state->r[ins.type_data_vpu_ls_imm.r1].asQWord += offset;
+        addr = readQWord(state, ins.type_data_vpu_ls_imm.r1, REG_SRC1);
+        writeQWord(state, ins.type_data_vpu_ls_imm.r1, addr + offset, 1, REG_SRC1);
     } else {
-        addr = (state->r[ins.type_data_vpu_ls_imm.r1].asQWord + offset);
+        addr = (readQWord(state, ins.type_data_vpu_ls_imm.r1, REG_SRC1) + offset);
     }
-    state->v[ins.type_data_vpu_ls.v1] = *(hive_vector_register_t*) addr;
+    state->v[ins.type_data_vpu_ls.v1] = memReadhive_vector_register((void*) addr);
 END_OP
 BEGIN_OP(vpu_str)
     QWord_t addr;
@@ -658,15 +960,15 @@ BEGIN_OP(vpu_str)
     if (ins.type_data_vpu_ls_imm.use_imm) {
         offset = ins.type_data_vpu_ls_imm.imm;
     } else {
-        offset = state->r[ins.type_data_vpu_ls.r2].asSQWord;
+        offset = readSQWord(state, ins.type_data_vpu_ls.r2, REG_SRC2);
     }
     if (ins.type_data_vpu_ls.update_ptr) {
-        state->r[ins.type_data_vpu_ls_imm.r1].asQWord += offset;
-        addr = state->r[ins.type_data_vpu_ls_imm.r1].asQWord;
+        addr = readQWord(state, ins.type_data_vpu_ls_imm.r1, REG_SRC1) + offset;
+        writeQWord(state, ins.type_data_vpu_ls_imm.r1, addr, 1, REG_SRC1);
     } else {
-        addr = (state->r[ins.type_data_vpu_ls_imm.r1].asQWord + offset);
+        addr = (readQWord(state, ins.type_data_vpu_ls_imm.r1, REG_SRC1) + offset);
     }
-    *(hive_vector_register_t*) addr = state->v[ins.type_data_vpu_ls.v1];
+    memWritehive_vector_register((void*) addr, state->v[ins.type_data_vpu_ls.v1]);
 END_OP
 
 hive_executor_t vpu_execs[] = {
@@ -685,7 +987,7 @@ hive_executor_t vpu_execs[] = {
 };
 
 void coredump(struct cpu_state* state);
-char* dis(hive_instruction_t ins, uint64_t addr);
+char* dis(hive_instruction_t** ins, uint64_t addr);
 
 void exec_instr(hive_instruction_t ins, struct cpu_state* state) {
     if (!check_condition(ins, state->fr)) return;
@@ -694,6 +996,7 @@ void exec_instr(hive_instruction_t ins, struct cpu_state* state) {
         case MODE_DATA:   exec_data(ins, state); break;
         case MODE_LOAD:   exec_load(ins, state); break;
         case MODE_OTHER:  exec_other(ins, state); break;
+        default:          raise(SIGILL); break;
     }
 }
 
@@ -707,43 +1010,34 @@ int check_condition0(uint8_t ins, hive_flag_register_t fr) {
     return 0;
 }
 
-int check_condition(hive_instruction_t ins, hive_flag_register_t fr) {
-    if (ins.generic.condition & FLAG_NOT) {
-        return !check_condition0(ins.generic.condition & 0b11, fr);
+int check_condition1(uint8_t cond, hive_flag_register_t fr) {
+    if (cond & FLAG_NOT) {
+        return !check_condition0(cond & 0b11, fr);
     } else {
-        return check_condition0(ins.generic.condition & 0b11, fr);
+        return check_condition0(cond & 0b11, fr);
     }
+}
+
+int check_condition(hive_instruction_t ins, hive_flag_register_t fr) {
+    return check_condition1(ins.generic.condition, fr);
 }
 
 __thread jmp_buf lidt;
 
 int runstate(struct cpu_state* state) {
-    int sig = setjmp(lidt);
+    size_t current_thread = 0;
 
-    size_t t = 0;
-    
+    int sig = setjmp(lidt);
     if (sig) {
-        fprintf(stderr, "Fault on vcore #%d: %s\n", state[t].fr.flags.cpuid, strsignal(sig));
-        fprintf(stderr, "%016llx: %s\n", state[t].r[REG_PC].asQWord, dis(*state[t].r[REG_PC].asInstrPtr, state[t].r[REG_PC].asQWord));
+        fprintf(stderr, "Fault on vcore #%llu: %s\n", state[current_thread].cr[CR_CPUID].asQWord, strsignal(sig));
         return sig;
     }
     while (1) {
-        hive_instruction_t ins[THREAD_COUNT];
-        for (t = 0; t < THREAD_COUNT; t++) {
-            ins[t] = *(state[t].r[REG_PC].asInstrPtr);
-        }
-        for (t = 0; t < THREAD_COUNT; t++) {
-            exec_instr(ins[t], &(state[t]));
-        }
-        for (t = 0; t < THREAD_COUNT; t++) {
-            state[t].r[REG_PC].asInstrPtr++;
-        }
-        for (t = 0; t < THREAD_COUNT; t++) {
-            struct cpu_transfer tr = transfers[state[t].fr.flags.cpuid];
-            if (tr.request) {
-                state[t].r[tr.dest_reg].asQWord = tr.value;
-                transfers[state[t].fr.flags.cpuid].request = 0;
-            }
+        for (current_thread = 0; current_thread < THREAD_COUNT; current_thread++) {
+            hive_instruction_t ins = memReadhive_instruction(state[current_thread].r[REG_PC].asInstrPtr);
+            exec_instr(ins, &(state[current_thread]));
+            state[current_thread].r[REG_PC].asInstrPtr++;
+            state[current_thread].cr[CR_CYCLES].asQWord++;
         }
     }
 }
@@ -754,9 +1048,11 @@ void interrupt_handler(int sig) {
 
 void exec(void* start) {
     for (uint16_t cpuid = 0; cpuid < CORE_COUNT * THREAD_COUNT; cpuid++) {
-        state[cpuid].r[REG_PC].asPointer = start;
-        state[cpuid].fr.flags.cpuid = cpuid;
         state[cpuid].fr.flags.size = SIZE_64BIT;
+        state[cpuid].r[REG_PC].asPointer = start;
+        state[cpuid].cr[CR_CPUID].asQWord = cpuid;
+        state[cpuid].cr[CR_CORES].asQWord = CORE_COUNT;
+        state[cpuid].cr[CR_THREADS].asQWord = THREAD_COUNT;
     }
 
     pthread_t cores[CORE_COUNT] = {0};

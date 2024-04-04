@@ -141,8 +141,8 @@ bool is_ ## _type ## _cmd(const char* s) { \
 IS(as)
 IS(ld)
 IS(dis)
-IS(dbg)
 IS(run)
+IS(shell)
 
 int main(int argc, char **argv) {
     const char* exe_name = argv[0];
@@ -306,8 +306,10 @@ int main(int argc, char **argv) {
         exec((void*) find_symbol_address(all_syms, "_start"));
         fprintf(stderr, "Could not find _start symbol\n");
         return 1;
-    } else if (is_dbg_cmd(exe_name)) {
-        return debug(argc, argv);
+    } else if (is_shell_cmd(exe_name)) {
+        void shell();
+        shell();
+        return 0;
     } else if (is_dis_cmd(exe_name)) {
         HiveFile_Array hf = {0};
         get_all_files(argv[1], &hf, false, false);

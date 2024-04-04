@@ -4,8 +4,8 @@
 _start:
     movz r0, 0
     cpuid
-core_loop:
-    b.nz core_loop
+    $loop:
+        b.nz $loop
 
     # create a stack
     movz r8, 5              # svc id for mmap
@@ -135,13 +135,13 @@ _strlen:
     psh r1
 
     movz r1, 0
-    _strlen$loop:
-        ldrb r2, [r0, r1]
-        b.z _strlen$end
+    $loop:
+        ldr b2, [r0, r1]
+        b.z $end
 
         add r1, r1, 1
-        b _strlen$loop
-    _strlen$end:
+        b $loop
+    $end:
 
     mov r0, r1
 
@@ -152,36 +152,36 @@ _strlen:
 
 .global _setjmp
 _setjmp:
-    str sp,  [r0, 0]
-    str lr,  [r0, 8]
-    str r28, [r0, 16]
-    str r27, [r0, 24]
-    str r26, [r0, 32]
-    str r25, [r0, 40]
-    str r24, [r0, 48]
-    str r23, [r0, 56]
-    str r22, [r0, 64]
-    str r21, [r0, 72]
-    str r20, [r0, 80]
-    str r19, [r0, 88]
-    str r18, [r0, 96]
-    str r17, [r0, 104]
-    str r16, [r0, 112]
-    str r15, [r0, 120]
-    str r14, [r0, 128]
-    str r13, [r0, 136]
-    str r12, [r0, 144]
-    str r11, [r0, 152]
-    str r10, [r0, 160]
-    str r9,  [r0, 168]
-    str r8,  [r0, 176]
-    str r7,  [r0, 184]
-    str r6,  [r0, 192]
-    str r5,  [r0, 200]
-    str r4,  [r0, 208]
-    str r3,  [r0, 216]
-    str r2,  [r0, 224]
-    str r1,  [r0, 232]
+    str r1, [r0, 0]
+    str r2, [r0, 8]
+    str r3, [r0, 16]
+    str r4, [r0, 24]
+    str r5, [r0, 32]
+    str r6, [r0, 40]
+    str r7, [r0, 48]
+    str r8, [r0, 56]
+    str r9, [r0, 64]
+    str r10, [r0, 72]
+    str r11, [r0, 80]
+    str r12, [r0, 88]
+    str r13, [r0, 96]
+    str r14, [r0, 104]
+    str r15, [r0, 112]
+    str r16, [r0, 120]
+    str r17, [r0, 128]
+    str r18, [r0, 136]
+    str r19, [r0, 144]
+    str r20, [r0, 152]
+    str r21, [r0, 160]
+    str r22, [r0, 168]
+    str r23, [r0, 176]
+    str r24, [r0, 184]
+    str r25, [r0, 192]
+    str r26, [r0, 200]
+    str r27, [r0, 208]
+    str r28, [r0, 216]
+    str lr, [r0, 224]
+    str sp, [r0, 232]
     xor r0, r0
     ret
 
@@ -192,36 +192,137 @@ _longjmp:
     movz.z r0, 1
     mov r1, r2
 
-    ldr sp, [r1, 0]
-    ldr lr, [r1, 8]
-    ldr r28, [r1, 16]
-    ldr r27, [r1, 24]
-    ldr r26, [r1, 32]
-    ldr r25, [r1, 40]
-    ldr r24, [r1, 48]
-    ldr r23, [r1, 56]
-    ldr r22, [r1, 64]
-    ldr r21, [r1, 72]
-    ldr r20, [r1, 80]
-    ldr r19, [r1, 88]
-    ldr r18, [r1, 96]
-    ldr r17, [r1, 104]
-    ldr r16, [r1, 112]
-    ldr r15, [r1, 120]
-    ldr r14, [r1, 128]
-    ldr r13, [r1, 136]
-    ldr r12, [r1, 144]
-    ldr r11, [r1, 152]
-    ldr r10, [r1, 160]
-    ldr r9, [r1, 168]
-    ldr r8, [r1, 176]
-    ldr r7, [r1, 184]
-    ldr r6, [r1, 192]
-    ldr r5, [r1, 200]
-    ldr r4, [r1, 208]
-    ldr r3, [r1, 216]
-    ldr r2, [r1, 224]
-    ldr r1, [r1, 232]
+    ldr sp, [r1, 232]
+    ldr lr, [r1, 224]
+    ldr r28, [r1, 216]
+    ldr r27, [r1, 208]
+    ldr r26, [r1, 200]
+    ldr r25, [r1, 192]
+    ldr r24, [r1, 184]
+    ldr r23, [r1, 176]
+    ldr r22, [r1, 168]
+    ldr r21, [r1, 160]
+    ldr r20, [r1, 152]
+    ldr r19, [r1, 144]
+    ldr r18, [r1, 136]
+    ldr r17, [r1, 128]
+    ldr r16, [r1, 120]
+    ldr r15, [r1, 112]
+    ldr r14, [r1, 104]
+    ldr r13, [r1, 96]
+    ldr r12, [r1, 88]
+    ldr r11, [r1, 80]
+    ldr r10, [r1, 72]
+    ldr r9, [r1, 64]
+    ldr r8, [r1, 56]
+    ldr r7, [r1, 48]
+    ldr r6, [r1, 40]
+    ldr r5, [r1, 32]
+    ldr r4, [r1, 24]
+    ldr r3, [r1, 16]
+    ldr r2, [r1, 8]
+    ldr r1, [r1, 0]
+    ret
+
+.global _strcpy
+_strcpy:
+    psh lr
+    psh r2
+    xchg r0, r1
+    bl _strlen
+    mov r2, r0
+    xchg r0, r1
+    bl _memcpy
+    pp r2
+    pp lr
+    ret
+
+.global _strncpy
+_strncpy:
+    b _memcpy
+
+.global _memcmp
+_memcmp:
+    psh lr
+    psh r1
+    psh r2
+    psh r8
+    psh r9
+
+    $loop:
+        ldr b8, [r0, 1]!
+        ldr b9, [r1, 1]!
+        cmp b8, b9
+        b.ne $end
+
+        dec r2
+        b.nz $loop
+    $end:
+    cmp b8, b9
+    b.lt $lt
+    b.gt $gt
+
+    xor r0, r0
+    
+$ret:
+    pp r9
+    pp r8
+    pp r2
+    pp r1
+    pp lr
+    ret
+$lt:
+    mov b0, 0xFF
+    extbq r0
+    b $ret
+$gt:
+    mov r0, 1
+    b $ret
+
+.global _memcpy
+_memcpy:
+    cmp r2, 0
+    ret.z
+    psh v0
+    psh lr
+    psh r8
+    psh r9
+    psh r0
+
+    xor r9, r9
+
+    cmp r2, 32
+    b.lt $no_vector_copy
+
+    $vector_loop:
+        cmp r9, r2
+        b.ge $finish_vector
+
+        vldr v0, [r1, r9]
+        vstr v0, [r0, r9]
+
+        add r9, 32
+        b $vector_loop
+
+    $finish_vector:
+    sub r9, 32
+
+    $no_vector_copy:
+        cmp r9, r2
+        b.eq $finish_copy
+
+        ldr b8, [r1, r9]
+        str b8, [r0, r9]
+
+        inc r9
+        b $no_vector_copy
+    $finish_copy:
+
+    pp r0
+    pp r9
+    pp r8
+    pp lr
+    pp v0
     ret
 
 .data

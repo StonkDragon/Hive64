@@ -17,7 +17,7 @@ $copier build/h64 hive64-unknown-as
 $copier build/h64 hive64-unknown-run
 $copier build/h64 hive64-unknown-ld
 $copier build/h64 hive64-unknown-dis
-$copier build/h64 hive64-unknown-dbg
+$copier build/h64 hive64-unknown-shell
 $copier build/h64 h64
 
 rm -rf build

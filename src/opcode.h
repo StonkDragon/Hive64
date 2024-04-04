@@ -18,6 +18,8 @@
 #define SUBOP_DATA_LS_FAR       0b0111
 #define SUBOP_DATA_FPU          0b1000
 #define SUBOP_DATA_VPU          0b1001
+#define SUBOP_DATA_CSWAP        0b1010
+#define SUBOP_DATA_XCHG         0b1011
 
 #define OP_DATA_ALU_add         0x0
 #define OP_DATA_ALU_sub         0x1
@@ -35,7 +37,7 @@
 #define OP_DATA_ALU_ror         0xB
 #define OP_DATA_ALU_neg         0xC
 #define OP_DATA_ALU_not         0xD
-#define OP_DATA_ALU_asr         0xE
+#define OP_DATA_ALU_sext        0xE
 #define OP_DATA_ALU_swe         0xF
 
 #define OP_DATA_FLOAT_add       0x0
@@ -84,7 +86,7 @@
 #define OP_LOAD_ls_off          0b11
 
 #define OP_OTHER_priv_op        0b00000
-#define OP_OTHER_size_override  0b00001
-#define OP_OTHER_signextend     0b00010
+#define OP_OTHER_prefix         0b00001
+#define OP_OTHER_zeroupper      0b00010
 
 #define SUBOP_OTHER_cpuid       0b00000

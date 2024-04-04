@@ -5,10 +5,17 @@
 
 #include "new_ops.h"
 
-Token_Array parse(char* src);
-SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* relocations);
+Token_Array parse(char* src, int l);
+SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* relocations, uint64_t current_sect_type);
+char* dis(hive_instruction_t** insp, uint64_t addr);
+
+#ifdef __printflike
+__printflike(1, 2)
+#endif
+char* strformat(const char* fmt, ...);
 
 static char* file;
+Nob_File_Paths errors = {0};
 
 SB_Array run_compile(const char* file_name, Symbol_Array* syms, Relocation_Array* relocations) {
     file = malloc(strlen(file_name) + 1);
@@ -53,13 +60,129 @@ SB_Array run_compile(const char* file_name, Symbol_Array* syms, Relocation_Array
         }
     }
 
-    Token_Array tokens = parse(src);
+    Token_Array tokens = parse(src, 1);
+    if (errors.count) {
+        for (size_t i = 0; i < errors.count; i++) {
+            fprintf(stderr, "%s", errors.items[i]);
+        }
+        exit(errors.count);
+    }
 
-    return compile(tokens, syms, relocations);
+    return compile(tokens, syms, relocations, SECT_TYPE_NOEMIT);
+}
+
+bool isHex(char c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+void disline(char* line, size_t size) {
+    uint8_t bytes[size < 8 ? 8 : size];
+    memset(bytes, 0, size < 8 ? 8 : size);
+    size_t count = 0;
+    size_t index = 0;
+    while (line[index]) {
+        if (!isHex(line[index])) {
+            index++;
+            continue;
+        }
+
+        for (int i = 0; i < 2; i++) {
+            bytes[count] *= 16;
+            if (line[index + i] >= '0' && line[index + i] <= '9') {
+                bytes[count] += line[index + i] - '0';
+            } else if (line[index + i] >= 'a' && line[index + i] <= 'f') {
+                bytes[count] += line[index + i] - 'a' + 10;
+            } else if (line[index + i] >= 'A' && line[index + i] <= 'F') {
+                bytes[count] += line[index + i] - 'A' + 10;
+            } else {
+                nob_da_append(&errors, strformat("(stdin): Invalid hex number: %s\n", line));
+            }
+        }
+        count++;
+        index += 2;
+    }
+    hive_instruction_t* ins = (hive_instruction_t*) bytes;
+    char* s = dis(&ins, (uint64_t) ins);
+    printf("%s\n", s);
+    free(s);
+}
+
+void asline(char* line, size_t size, int lc) {
+    Token_Array tokens = parse(line, lc);
+    if (errors.count) {
+        for (size_t i = 0; i < errors.count; i++) {
+            fprintf(stderr, "%s", errors.items[i]);
+        }
+        return;
+    }
+    Symbol_Array syms = {0};
+    Relocation_Array relocations = {0};
+    SB_Array cur = compile(tokens, &syms, &relocations, SECT_TYPE_TEXT);
+    for (size_t i = 0; i < cur.count; i++) {
+        for (size_t j = 0; j < cur.items[i].data.count; j++) {
+            printf("%02x ", cur.items[i].data.items[j] & 0xFF);
+        }
+        printf("\n");
+    }
+}
+
+void shell() {
+    file = "(stdin)";
+    FILE* file = stdin;
+    if (!file) {
+        printf("Could not open stdin\n");
+        return;
+    }
+    printf("Hive64 interactive shell\nRun /help for a list of all commands\n");
+
+    char* line = NULL;
+    size_t size = 0;
+    int lc = 1;
+    bool dis_mode = false;
+    do {
+        errors = (Nob_File_Paths) {0};
+        #define strstarts(a, b) (strncmp(a, b, strlen(b)) == 0)
+        if (line) {
+            if (line[0] == '/') {
+                if (strstarts(line, "/dis\n")) {
+                    dis_mode = true;
+                } else if (strstarts(line, "/as\n")) {
+                    dis_mode = false;
+                } else if (strstarts(line, "/dis ")) {
+                    disline(line + 5, size - 5);
+                } else if (strstarts(line, "/as ")) {
+                    asline(line + 4, size - 4, lc);
+                } else if (strstarts(line, "/exit")) {
+                    return;
+                } else if (strstarts(line, "/help")) {
+                    printf("/as [instr]: Switch to assembly mode or assemble instruction\n");
+                    printf("/dis [bytes]: Switch to disassembly mode or disassemble bytes\n");
+                    printf("/exit: Exit\n");
+                    printf("/help: Show this\n");
+                }
+            } else {
+                if (dis_mode) {
+                    disline(line, size);
+                } else {
+                    asline(line, size, lc);
+                }
+            }
+            lc++;
+
+            line[0] = 0;
+            free(line);
+            line = NULL;
+        }
+        if (dis_mode) {
+            printf("dis> ");
+        } else {
+            printf("as> ");
+        }
+    } while (getline(&line, &size, file) >= 0);
 }
 
 int isValidBegin(int c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '$';
 }
 
 int isValid(int c) {
@@ -97,8 +220,8 @@ uint64_t parse64_(char* s, char* file, int line, char* value) {
             } else if (*s >= 'A' && *s <= 'F') {
                 result += *s - 'A' + 10;
             } else {
-                printf("%s:%d: Invalid hex number: %s\n", file, line, value);
-                exit(1);
+                nob_da_append(&errors, strformat("%s:%d: Invalid hex number: %s\n", file, line, value));
+                return 0;
             }
             s++;
         }
@@ -109,8 +232,8 @@ uint64_t parse64_(char* s, char* file, int line, char* value) {
             if (*s == '0' || *s == '1') {
                 result += *s - '0';
             } else {
-                printf("%s:%d: Invalid binary number: %s\n", file, line, value);
-                exit(1);
+                nob_da_append(&errors, strformat("%s:%d: Invalid binary number: %s\n", file, line, value));
+                return 0;
             }
             s++;
         }
@@ -121,8 +244,8 @@ uint64_t parse64_(char* s, char* file, int line, char* value) {
             if (*s >= '0' && *s <= '7') {
                 result += *s - '0';
             } else {
-                printf("%s:%d: Invalid octal number: %s\n", file, line, value);
-                exit(1);
+                nob_da_append(&errors, strformat("%s:%d: Invalid octal number: %s\n", file, line, value));
+                return 0;
             }
             s++;
         }
@@ -132,8 +255,8 @@ uint64_t parse64_(char* s, char* file, int line, char* value) {
             if (*s >= '0' && *s <= '9') {
                 result += *s - '0';
             } else {
-                printf("%s:%d: Invalid decimal number: %s\n", file, line, value);
-                exit(1);
+                nob_da_append(&errors, strformat("%s:%d: Invalid decimal number: %s\n", file, line, value));
+                return 0;
             }
             s++;
         }
@@ -158,9 +281,44 @@ uint8_t parse8_(char* s, char* file, int line, char* value) {
 #define parse16(s) parse16_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
 #define parse8(s) parse8_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
 
-uint8_t parse_reg_(char* s, char* file, int line, char* value) {
-    if (s[0] == 'r') {
-        return strtoul(s + 1, NULL, 0);
+static hive_instruction_t prefix = {0};
+
+uint8_t parse_reg_(char* s, uint8_t c, char* file, int line, char* value, ...) {
+    if (s[0] == 'r' || s[0] == 'b' || s[0] == 'w' || s[0] == 'd' || s[0] == 'q') {
+        char* suf = NULL;
+        uint8_t val = strtoul(s + 1, &suf, 0);
+        if (val >= 32) {
+            nob_da_append(&errors, strformat("%s:%d: Unknown register: %s\n", file, line, value));
+        }
+        if (suf[0] == 'h') {
+            va_list ap;
+            va_start(ap, value);
+            prefix.generic.condition = COND_ALWAYS;
+            for (uint8_t i = 0; i < c; i++) {
+                uint32_t x = va_arg(ap, uint32_t);
+                prefix.type_other_prefix.reg_override |= IS_HIGH(x);
+            }
+            va_end(ap);
+        }
+        return val;
+    } else if (s[0] == 'c' && s[1] == 'r') {
+        char* suf = NULL;
+        uint8_t val = strtoul(s + 2, &suf, 0);
+        if (val >= 12) {
+            nob_da_append(&errors, strformat("%s:%d: Unknown control register: %s\n", file, line, value));
+        }
+        prefix.generic.condition = COND_ALWAYS;
+        va_list ap;
+        va_start(ap, value);
+        for (uint8_t i = 0; i < c; i++) {
+            uint32_t x = va_arg(ap, uint32_t);
+            prefix.type_other_prefix.references_cr |= IS_HIGH(x);
+            if (suf[0] == 'h') {
+                prefix.type_other_prefix.reg_override |= IS_HIGH(x);
+            }
+        }
+        va_end(ap);
+        return val;
     } else if (eq(s, "lr")) {
         return REG_LR;
     } else if (eq(s, "sp")) {
@@ -172,15 +330,19 @@ uint8_t parse_reg_(char* s, char* file, int line, char* value) {
     } else if (eq(s, "y")) {
         return 1;
     }
-    printf("%s:%d: Unknown register: %s\n", file, line, value);
-    exit(1);
+    nob_da_append(&errors, strformat("%s:%d: Unknown register: %s\n", file, line, value));
+    return -1;
 }
 uint8_t parse_vreg_(char* s, char* file, int line, char* value) {
     if (s[0] == 'v') {
-        return strtoul(s + 1, NULL, 0);
+        uint8_t val = strtoul(s + 1, NULL, 0);
+        if (val >= 16) {
+            nob_da_append(&errors, strformat("%s:%d: Unknown vector register: %s\n", file, line, value));
+        }
+        return val;
     }
-    printf("%s:%d: Unknown vector register: %s\n", file, line, value);
-    exit(1);
+    nob_da_append(&errors, strformat("%s:%d: Unknown vector register: %s\n", file, line, value));
+    return -1;
 }
 uint8_t parse_condition_(char* s, char* file, int line, char* value) {
     if (eq(s, "eq") || eq(s, "z")) return COND_EQ;
@@ -189,25 +351,25 @@ uint8_t parse_condition_(char* s, char* file, int line, char* value) {
     if (eq(s, "gt")) return COND_GT;
     if (eq(s, "le")) return COND_LE;
     if (eq(s, "lt") || eq(s, "mi")) return COND_LT;
-    printf("%s:%d: Unknown condition: %s\n", file, line, value);
-    exit(1);
+    nob_da_append(&errors, strformat("%s:%d: Unknown condition: %s\n", file, line, value));
+    return -1;
 }
 uint8_t parse_size_(char* s, char* file, int line, char* value) {
     if (eq(s, "byte")) return SIZE_8BIT;
     if (eq(s, "word")) return SIZE_16BIT;
     if (eq(s, "dword")) return SIZE_32BIT;
     if (eq(s, "qword")) return SIZE_64BIT;
-    printf("%s:%d: Unknown condition: %s\n", file, line, value);
-    exit(1);
+    nob_da_append(&errors, strformat("%s:%d: Unknown condition: %s\n", file, line, value));
+    return -1;
 }
 
-#define EXPECT(_type, _diag) \
+#define EXPECT(_type, _diag, ...) \
     if (tokens.items[i].type != _type) { \
-        printf("%s:%d: " _diag "\n", tokens.items[i].file, tokens.items[i].line, tokens.items[i].value); \
-        return (SB_Array) {0}; \
+        nob_da_append(&errors, strformat("%s:%d: " _diag "\n", tokens.items[i].file, tokens.items[i].line, __VA_ARGS__ __VA_OPT__(,) tokens.items[i].value)); \
+        continue; \
     }
 
-#define parse_reg(s) parse_reg_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
+#define parse_reg(s, ...) parse_reg_((s), PREPROC_NARG(__VA_ARGS__), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value, __VA_ARGS__)
 #define parse_condition(s) parse_condition_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
 #define parse_vreg(s) parse_vreg_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
 #define parse_size(s) parse_size_((s), tokens.items[i].file, tokens.items[i].line, tokens.items[i].value)
@@ -216,29 +378,64 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
 
 #define POW2(_n) (1 << _n)
 
-#define LDR(_sz) \
+TokenType register_types[] = {
+    [SIZE_8BIT] = Register8,
+    [SIZE_16BIT] = Register16,
+    [SIZE_32BIT] = Register32,
+    [SIZE_64BIT] = Register64,
+};
+
+#define EXPECT_REG(_diag, ...) \
+    if (tokens.items[i].type > Register64 || tokens.items[i].type < Register8) { \
+        EXPECT(Eof, _diag, __VA_ARGS__);  \
+    } else if (!set_size) { \
+        set_size = 1; \
+        if (tokens.items[i].type != Register64) { \
+            register_type = tokens.items[i].type; \
+            prefix.generic.condition = COND_ALWAYS; \
+            switch ((int) register_type) { \
+                case Register8: \
+                    register_size = 8; \
+                    prefix.type_other_prefix.size = SIZE_8BIT; \
+                    break; \
+                case Register16: \
+                    register_size = 16; \
+                    prefix.type_other_prefix.size = SIZE_16BIT; \
+                    break; \
+                case Register32: \
+                    register_size = 32; \
+                    prefix.type_other_prefix.size = SIZE_32BIT; \
+                    break; \
+                case Register64: \
+                    register_size = 64; \
+                    prefix.type_other_prefix.size = SIZE_64BIT; \
+                    break; \
+            } \
+        } \
+    } else if (register_type != tokens.items[i].type) { \
+        EXPECT(Eof, _diag, __VA_ARGS__);  \
+    }
+
+#define LDR() \
     inc(); \
-    EXPECT(Register, "Expected register, got %s"); \
-    uint8_t r1 = parse_reg(tokens.items[i].value); \
+    EXPECT_REG("Expected %d-bit register, got %s", register_size); \
+    uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST); \
     inc(); \
     EXPECT(Comma, "Expected comma, got %s"); \
     inc(); \
     EXPECT(LeftBracket, "Expected '[', got %s"); \
     inc(); \
     if (tokens.items[i].type == Identifier) { \
-        if (_sz != SIZE_64BIT) { \
-            hive_instruction_t ins; \
-            ins.generic.condition = COND_ALWAYS; \
-            ins.generic.type = MODE_OTHER; \
-            ins.type_other_size_override.op = OP_OTHER_size_override; \
-            ins.type_other_size_override.size = _sz; \
-            nob_da_append_many(&current_section, &ins, sizeof(ins)); \
-        } \
         ins.generic.type = MODE_LOAD; \
         ins.type_load_ls_off.op = OP_LOAD_ls_off; \
         ins.type_load_ls_off.r1 = r1; \
+        char* str = tokens.items[i].value; \
+        str = unquote(str); \
+        if (last_global_symbol && str[0] == '$') { \
+            str = strformat("%s%s", last_global_symbol, str); \
+        } \
         Relocation off = { \
-            .data.name = tokens.items[i].value, \
+            .data.name = str, \
             .source_offset = current_section.count, \
             .source_section = sects.count, \
             .type = sym_ls_off \
@@ -247,8 +444,8 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
         inc(); \
         EXPECT(RightBracket, "Expected ']', got %s"); \
     } else { \
-        EXPECT(Register, "Expected register or identifier, got %s"); \
-        uint8_t r2 = parse_reg(tokens.items[i].value); \
+        EXPECT(Register64, "Expected 64-bit register or identifier, got %s"); \
+        uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1); \
         inc(); \
         ins.generic.type = MODE_DATA; \
         ins.type_data_ls_imm.data_op = SUBOP_DATA_LS; \
@@ -256,7 +453,6 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
             ins.type_data_ls_imm.is_store = 0; \
             ins.type_data_ls_imm.r1 = r1; \
             ins.type_data_ls_imm.r2 = r2; \
-            ins.type_data_ls_imm.size = _sz; \
             ins.type_data_ls_imm.imm = 0; \
             ins.type_data_ls_imm.use_immediate = 1; \
             if (tokens.items[i + 1].type == Bang) { \
@@ -265,17 +461,15 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
             } \
         } else if (tokens.items[i].type == Comma) { \
             inc(); \
-            if (tokens.items[i].type == Register) { \
+            if (tokens.items[i].type == Register64) { \
                 ins.type_data_ls_reg.is_store = 0; \
                 ins.type_data_ls_reg.r1 = r1; \
                 ins.type_data_ls_reg.r2 = r2; \
-                ins.type_data_ls_reg.size = _sz; \
-                ins.type_data_ls_reg.r3 = parse_reg(tokens.items[i].value); \
+                ins.type_data_ls_reg.r3 = parse_reg(tokens.items[i].value, REG_SRC2); \
             } else if (tokens.items[i].type == Number) { \
                 ins.type_data_ls_imm.is_store = 0; \
                 ins.type_data_ls_imm.r1 = r1; \
                 ins.type_data_ls_imm.r2 = r2; \
-                ins.type_data_ls_imm.size = _sz; \
                 int16_t num = parse16(tokens.items[i].value); \
                 if (num < 128 && num >= -128) { \
                     ins.type_data_ls_imm.use_immediate = 1; \
@@ -284,39 +478,38 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
                     uint16_t x = *(uint16_t*) &num; \
                     ins.type_data_ls_far.data_op = SUBOP_DATA_LS_FAR; \
                     uint8_t shift = 0; \
-                    if (x % 2 == 0 && x < POW2(7)) { \
-                        ins.type_data_ls_far.imm = (x >> 1); \
-                    } else if (x % 4 == 0 && x < POW2(8)) { \
-                        ins.type_data_ls_far.imm = (x >> 2); \
-                        shift = 1; \
-                    } else if (x % 8 == 0 && x < POW2(9)) { \
-                        ins.type_data_ls_far.imm = (x >> 3); \
-                        shift = 2; \
-                    } else if (x % 16 == 0 && x < POW2(10)) { \
-                        ins.type_data_ls_far.imm = (x >> 4); \
-                        shift = 3; \
-                    } else if (x % 32 == 0 && x < POW2(11)) { \
-                        ins.type_data_ls_far.imm = (x >> 5); \
-                        shift = 4; \
-                    } else if (x % 64 == 0 && x < POW2(12)) { \
-                        ins.type_data_ls_far.imm = (x >> 6); \
-                        shift = 5; \
-                    } else if (x % 128 == 0 && x < POW2(13)) { \
-                        ins.type_data_ls_far.imm = (x >> 7); \
-                        shift = 6; \
-                    } else if (x % 256 == 0 && x < POW2(14)) { \
+                    if (x % 256 == 0) { \
                         ins.type_data_ls_far.imm = (x >> 8); \
                         shift = 7; \
+                    } else if (x % 128 == 0 && x < POW2(15)) { \
+                        ins.type_data_ls_far.imm = (x >> 7); \
+                        shift = 6; \
+                    } else if (x % 64 == 0 && x < POW2(14)) { \
+                        ins.type_data_ls_far.imm = (x >> 6); \
+                        shift = 5; \
+                    } else if (x % 32 == 0 && x < POW2(13)) { \
+                        ins.type_data_ls_far.imm = (x >> 5); \
+                        shift = 4; \
+                    } else if (x % 16 == 0 && x < POW2(12)) { \
+                        ins.type_data_ls_far.imm = (x >> 4); \
+                        shift = 3; \
+                    } else if (x % 8 == 0 && x < POW2(11)) { \
+                        ins.type_data_ls_far.imm = (x >> 3); \
+                        shift = 2; \
+                    } else if (x % 4 == 0 && x < POW2(10)) { \
+                        ins.type_data_ls_far.imm = (x >> 2); \
+                        shift = 1; \
+                    } else if (x % 2 == 0 && x < POW2(9)) { \
+                        ins.type_data_ls_far.imm = (x >> 1); \
                     } else { \
                         EXPECT(Eof, "Number out of range: %s"); \
                     } \
-                    ins.type_data_ls_far.shift = shift & 0b11; \
-                    ins.type_data_ls_far.shift_hi = (shift & 0b100) >> 2; \
+                    ins.type_data_ls_far.shift = shift; \
                 } else { \
                     EXPECT(Eof, "Number out of range: %s"); \
                 } \
             } else { \
-                EXPECT(Eof, "Expected register or number, got %s"); \
+                EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size); \
             } \
             inc(); \
             EXPECT(RightBracket, "Expected ']', got %s"); \
@@ -329,30 +522,27 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
         } \
     }
 
-#define STR(_sz)  \
+#define STR()  \
     inc(); \
-    EXPECT(Register, "Expected register, got %s"); \
-    uint8_t r1 = parse_reg(tokens.items[i].value); \
+    EXPECT_REG("Expected %d-bit register, got %s", register_size); \
+    uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST); \
     inc(); \
     EXPECT(Comma, "Expected comma, got %s"); \
     inc(); \
     EXPECT(LeftBracket, "Expected '[', got %s"); \
     inc(); \
     if (tokens.items[i].type == Identifier) { \
-        if (_sz != SIZE_64BIT) { \
-            hive_instruction_t ins; \
-            ins.generic.condition = COND_ALWAYS; \
-            ins.generic.type = MODE_OTHER; \
-            ins.type_other_size_override.op = OP_OTHER_size_override; \
-            ins.type_other_size_override.size = _sz; \
-            nob_da_append_many(&current_section, &ins, sizeof(ins)); \
-        } \
         ins.generic.type = MODE_LOAD; \
         ins.type_load_ls_off.op = OP_LOAD_ls_off; \
         ins.type_load_ls_off.is_store = 1; \
         ins.type_load_ls_off.r1 = r1; \
+        char* str = tokens.items[i].value; \
+        str = unquote(str); \
+        if (last_global_symbol && str[0] == '$') { \
+            str = strformat("%s%s", last_global_symbol, str); \
+        } \
         Relocation off = { \
-            .data.name = tokens.items[i].value, \
+            .data.name = str, \
             .source_offset = current_section.count, \
             .source_section = sects.count, \
             .type = sym_ls_off \
@@ -361,8 +551,8 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
         inc(); \
         EXPECT(RightBracket, "Expected ']', got %s"); \
     } else { \
-        EXPECT(Register, "Expected register, got %s"); \
-        uint8_t r2 = parse_reg(tokens.items[i].value); \
+        EXPECT(Register64, "Expected 64-bit register or identifier, got %s"); \
+        uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1); \
         inc(); \
         ins.generic.type = MODE_DATA; \
         ins.type_data_ls_imm.data_op = SUBOP_DATA_LS; \
@@ -370,7 +560,6 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
             ins.type_data_ls_imm.is_store = 1; \
             ins.type_data_ls_imm.r1 = r1; \
             ins.type_data_ls_imm.r2 = r2; \
-            ins.type_data_ls_imm.size = _sz; \
             ins.type_data_ls_imm.imm = 0; \
             ins.type_data_ls_imm.use_immediate = 1; \
             if (tokens.items[i + 1].type == Bang) { \
@@ -379,17 +568,15 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
             } \
         } else if (tokens.items[i].type == Comma) { \
             inc(); \
-            if (tokens.items[i].type == Register) { \
+            if (tokens.items[i].type == Register64) { \
                 ins.type_data_ls_reg.is_store = 1; \
                 ins.type_data_ls_reg.r1 = r1; \
                 ins.type_data_ls_reg.r2 = r2; \
-                ins.type_data_ls_reg.size = _sz; \
-                ins.type_data_ls_reg.r3 = parse_reg(tokens.items[i].value); \
+                ins.type_data_ls_reg.r3 = parse_reg(tokens.items[i].value, REG_SRC2); \
             } else if (tokens.items[i].type == Number) { \
                 ins.type_data_ls_imm.is_store = 1; \
                 ins.type_data_ls_imm.r1 = r1; \
                 ins.type_data_ls_imm.r2 = r2; \
-                ins.type_data_ls_imm.size = _sz; \
                 int16_t num = parse16(tokens.items[i].value); \
                 if (num < 128 && num >= -128) { \
                     ins.type_data_ls_imm.use_immediate = 1; \
@@ -398,39 +585,38 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
                     uint16_t x = *(uint16_t*) &num; \
                     ins.type_data_ls_far.data_op = SUBOP_DATA_LS_FAR; \
                     uint8_t shift = 0; \
-                    if (x % 2 == 0 && x < POW2(7)) { \
+                    if (x % 2 == 0 && x < POW2(9)) { \
                         ins.type_data_ls_far.imm = (x >> 1); \
-                    } else if (x % 4 == 0 && x < POW2(8)) { \
+                    } else if (x % 4 == 0 && x < POW2(10)) { \
                         ins.type_data_ls_far.imm = (x >> 2); \
                         shift = 1; \
-                    } else if (x % 8 == 0 && x < POW2(9)) { \
+                    } else if (x % 8 == 0 && x < POW2(11)) { \
                         ins.type_data_ls_far.imm = (x >> 3); \
                         shift = 2; \
-                    } else if (x % 16 == 0 && x < POW2(10)) { \
+                    } else if (x % 16 == 0 && x < POW2(12)) { \
                         ins.type_data_ls_far.imm = (x >> 4); \
                         shift = 3; \
-                    } else if (x % 32 == 0 && x < POW2(11)) { \
+                    } else if (x % 32 == 0 && x < POW2(13)) { \
                         ins.type_data_ls_far.imm = (x >> 5); \
                         shift = 4; \
-                    } else if (x % 64 == 0 && x < POW2(12)) { \
+                    } else if (x % 64 == 0 && x < POW2(14)) { \
                         ins.type_data_ls_far.imm = (x >> 6); \
                         shift = 5; \
-                    } else if (x % 128 == 0 && x < POW2(13)) { \
+                    } else if (x % 128 == 0 && x < POW2(15)) { \
                         ins.type_data_ls_far.imm = (x >> 7); \
                         shift = 6; \
-                    } else if (x % 256 == 0 && x < POW2(14)) { \
+                    } else if (x % 256 == 0) { \
                         ins.type_data_ls_far.imm = (x >> 8); \
                         shift = 7; \
                     } else { \
                         EXPECT(Eof, "Number out of range: %s"); \
                     } \
-                    ins.type_data_ls_far.shift = shift & 0b11; \
-                    ins.type_data_ls_far.shift_hi = (shift & 0b100) >> 2; \
+                    ins.type_data_ls_far.shift = shift; \
                 } else { \
                     EXPECT(Eof, "Number out of range: %s"); \
                 } \
             } else { \
-                EXPECT(Eof, "Expected register or number, got %s"); \
+                EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size); \
             } \
             inc(); \
             EXPECT(RightBracket, "Expected ']', got %s"); \
@@ -445,15 +631,15 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
 
 #define OP(_what) \
     inc(); \
-    EXPECT(Register, "Expected register, got %s"); \
-    uint8_t r1 = parse_reg(tokens.items[i].value); \
+    EXPECT_REG("Expected %d-bit register, got %s", register_size); \
+    uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST, REG_SRC1); \
     inc(); \
     EXPECT(Comma, "Expected comma, got %s"); \
     inc(); \
     ins.generic.type = MODE_DATA; \
     ins.type_data_alui.op = OP_DATA_ALU_ ## _what; \
-    if (tokens.items[i].type == Register) { \
-        uint8_t r2 = parse_reg(tokens.items[i].value); \
+    if (tokens.items[i].type == register_type) { \
+        uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1, REG_SRC2); \
         if (tokens.items[i + 1].type == Comma) { \
             i += 2; \
             if (tokens.items[i].type == Number) { \
@@ -462,8 +648,8 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
                 ins.type_data_alui.r1 = r1; \
                 ins.type_data_alui.r2 = r2; \
                 ins.type_data_alui.imm = num; \
-            } else if (tokens.items[i].type == Register) { \
-                uint8_t r3 = parse_reg(tokens.items[i].value); \
+            } else if (tokens.items[i].type == register_type) { \
+                uint8_t r3 = parse_reg(tokens.items[i].value, REG_SRC2); \
                 ins.type_data.data_op = SUBOP_DATA_ALU_R; \
                 ins.type_data_alur.r1 = r1; \
                 ins.type_data_alur.r2 = r2; \
@@ -484,24 +670,24 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
         ins.type_data_alui.r2 = r1; \
         ins.type_data_alui.imm = num; \
     } else { \
-        EXPECT(Register, "Expected register or number, got %s"); \
+        EXPECT_REG("Expected %d-bit register or number, got %s", register_size); \
     }
 
 #define FLOAT_OP(_op) \
     uint8_t full_float = eq(mnemonic, #_op); \
     inc(); \
-    EXPECT(Register, "Expected register, got %s"); \
-    uint8_t r1 = parse_reg(tokens.items[i].value); \
+    EXPECT_REG("Expected %d-bit register, got %s", register_size); \
+    uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST); \
     inc(); \
     EXPECT(Comma, "Expected comma, got %s"); \
     inc(); \
-    EXPECT(Register, "Expected register, got %s"); \
-    uint8_t r2 = parse_reg(tokens.items[i].value); \
+    EXPECT_REG("Expected %d-bit register, got %s", register_size); \
+    uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1); \
     inc(); \
     EXPECT(Comma, "Expected comma, got %s"); \
     inc(); \
-    EXPECT(Register, "Expected register, got %s"); \
-    uint8_t r3 = parse_reg(tokens.items[i].value); \
+    EXPECT_REG("Expected %d-bit register, got %s", register_size); \
+    uint8_t r3 = parse_reg(tokens.items[i].value, REG_SRC2); \
     ins.type_data_fpu.op = OP_DATA_FLOAT_ ## _op; \
     ins.type_data_fpu.use_int_arg2 = !full_float; \
     ins.type_data_fpu.r1 = r1; \
@@ -511,37 +697,70 @@ uint8_t parse_size_(char* s, char* file, int line, char* value) {
 uint64_t find_symbol_address(Symbol_Array syms, char* name);
 Symbol find_symbol(Symbol_Array syms, char* name);
 
-
-SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* relocations) {
+SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* relocations, uint64_t current_sect_type) {
     Nob_String_Builder current_section = {0};
-    uint64_t current_sect_type = SECT_TYPE_NOEMIT;
     SB_Array sects = {0};
 
     Nob_File_Paths exported_symbols = {0};
+
+    char* last_global_symbol = NULL;
 
     for (size_t i = 0; i < tokens.count; i++) {
         if (tokens.items[i].type == Eof) break;
 
         if (tokens.items[i].type == Identifier) {
+            Nob_String_Builder additional_ops = {0};
             char* mnemonic = lower(tokens.items[i].value);
 
-            if (eq(mnemonic, "byte") || eq(mnemonic, "word") || eq(mnemonic, "dword") || eq(mnemonic, "qword")) {
-                hive_instruction_t ins;
-                ins.generic.condition = COND_ALWAYS;
-                ins.generic.type = MODE_OTHER;
-                ins.type_other_size_override.op = OP_OTHER_size_override;
-                ins.type_other_size_override.size = parse_size(mnemonic);
-                nob_da_append_many(&current_section, &ins, sizeof(ins));
-                inc();
-                mnemonic = lower(tokens.items[i].value);
-            }
+            uint8_t register_size = 64;
+            TokenType register_type = Register64;
+            uint8_t set_size = 0;
 
+            prefix = (hive_instruction_t) {0};
+            prefix.generic.condition = COND_NEVER;
+            prefix.generic.type = MODE_OTHER;
+            prefix.type_other_prefix.op = OP_OTHER_prefix;
+            prefix.type_other_prefix.reg_override = 0;
+            prefix.type_other_prefix.reset_flags = 0;
+            prefix.type_other_prefix.size = SIZE_64BIT;
+            
             hive_instruction_t ins = {0};
-            if (tokens.items[i + 1].line == tokens.items[i].line && tokens.items[i + 1].type == Directive) {
-                inc();
-                ins.generic.condition = parse_condition(tokens.items[i].value);
-            } else {
-                ins.generic.condition = COND_ALWAYS;
+            ins.generic.condition = COND_ALWAYS;
+        check_again:
+            if (tokens.items[i + 1].line == tokens.items[i].line) {
+                if (tokens.items[i + 1].type == Directive) {
+                    inc();
+                    ins.generic.condition = parse_condition(tokens.items[i].value);
+                    goto check_again;
+                } else if (
+                    eq(tokens.items[i + 1].value, "byte") ||
+                    eq(tokens.items[i + 1].value, "word") ||
+                    eq(tokens.items[i + 1].value, "dword") ||
+                    eq(tokens.items[i + 1].value, "qword")
+                ) {
+                    inc();
+                    prefix.generic.condition = COND_ALWAYS;
+                    prefix.type_other_prefix.size = parse_size(tokens.items[i].value);
+                    set_size = 1;
+                    switch (prefix.type_other_prefix.size) {
+                        case SIZE_8BIT:
+                            register_size = 8;
+                            register_type = Register8;
+                            break;
+                        case SIZE_16BIT:
+                            register_size = 16;
+                            register_type = Register16;
+                            break;
+                        case SIZE_32BIT:
+                            register_size = 32;
+                            register_type = Register32;
+                            break;
+                        case SIZE_64BIT:
+                            register_size = 64;
+                            register_type = Register64;
+                            break;
+                    }
+                }
             }
             if (eq(mnemonic, "nop")) {
                 ins.generic.condition = COND_NEVER;
@@ -561,16 +780,16 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 ins.generic.type = MODE_BRANCH;
                 ins.type_branch.is_reg = 1;
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t reg = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t reg = parse_reg(tokens.items[i].value, REG_DEST);
                 ins.type_branch_register.r1 = reg;
             } else if (eq(mnemonic, "blr")) {
                 ins.generic.type = MODE_BRANCH;
                 ins.type_branch.is_reg = 1;
                 ins.type_branch.link = 1;
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t reg = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t reg = parse_reg(tokens.items[i].value, REG_DEST);
                 ins.type_branch_register.r1 = reg;
             } else if (eq(mnemonic, "svc")) {
                 ins.generic.type = MODE_LOAD;
@@ -603,8 +822,14 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 OP(xor)
             } else if (eq(mnemonic, "shl") || eq(mnemonic, "asl")) {
                 OP(shl)
-            } else if (eq(mnemonic, "shr")) {
+                if (eq(mnemonic, "asl")) {
+                    ins.type_data_alui.salu = 1;
+                }
+            } else if (eq(mnemonic, "shr") || eq(mnemonic, "asr")) {
                 OP(shr)
+                if (eq(mnemonic, "asr")) {
+                    ins.type_data_alui.salu = 1;
+                }
             } else if (eq(mnemonic, "rol")) {
                 OP(rol)
             } else if (eq(mnemonic, "ror")) {
@@ -615,85 +840,145 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 ins.type_data.data_op = SUBOP_DATA_ALU_R;
                 ins.type_data_alur.op = not ? OP_DATA_ALU_not : OP_DATA_ALU_neg;
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST, REG_SRC1);
                 uint8_t r2 = r1;
                 inc();
                 if (tokens.items[i].type == Comma) {
                     inc();
-                    EXPECT(Register, "Expected register, got %s");
-                    r2 = parse_reg(tokens.items[i].value);
+                    EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                    r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                 } else {
                     i--;
                 }
                 ins.type_data_alur.r1 = r1;
                 ins.type_data_alur.r2 = r2;
-            } else if (eq(mnemonic, "asr")) {
-                OP(asr)
+            } else if (eq(mnemonic, "zeroupper")) {
+                ins.generic.type = MODE_OTHER;
+                ins.type_other_zeroupper.op = OP_OTHER_zeroupper;
+                inc();
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
+                if (register_size == 64) {
+                    EXPECT(Eof, "Expected register of at most 32 bits, got %s");
+                }
+                ins.type_other_zeroupper.r1 = r1;
             } else if (eq(mnemonic, "swe")) {
                 ins.generic.type = MODE_DATA;
                 ins.type_data.data_op = SUBOP_DATA_ALU_R;
                 ins.type_data_alur.op = OP_DATA_ALU_swe;
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST, REG_SRC1);
                 uint8_t r2 = r1;
                 inc();
                 if (tokens.items[i].type == Comma) {
                     inc();
-                    EXPECT(Register, "Expected register, got %s");
-                    r2 = parse_reg(tokens.items[i].value);
+                    EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                    r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                 } else {
                     i--;
                 }
                 ins.type_data_alur.r1 = r1;
                 ins.type_data_alur.r2 = r2;
-            } else if (eq(mnemonic, "ldr") || eq(mnemonic, "ldrq")) {
-                LDR(SIZE_64BIT)
-            } else if (eq(mnemonic, "str") || eq(mnemonic, "strq")) {
-                STR(SIZE_64BIT)
-            } else if (eq(mnemonic, "ldrd")) {
-                LDR(SIZE_32BIT)
-            } else if (eq(mnemonic, "strd")) {
-                STR(SIZE_32BIT)
-            } else if (eq(mnemonic, "ldrw")) {
-                LDR(SIZE_16BIT)
-            } else if (eq(mnemonic, "strw")) {
-                STR(SIZE_16BIT)
-            } else if (eq(mnemonic, "ldrb")) {
-                LDR(SIZE_8BIT)
-            } else if (eq(mnemonic, "strb")) {
-                STR(SIZE_8BIT)
+                if (register_size == 8) {
+                    EXPECT(Eof, "Expected register of at least 16 bits, got %s");
+                }
+            } else if (eq(mnemonic, "xchg")) {
+                ins.generic.type = MODE_DATA;
+                ins.type_data_xchg.data_op = SUBOP_DATA_XCHG;
+                inc();
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
+                inc();
+                EXPECT(Comma, "Expected comma, got %s");
+                inc();
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
+                ins.type_data_xchg.r1 = r1;
+                ins.type_data_xchg.r2 = r2;
+            } else if (eq(mnemonic, "cswp")) {
+                ins.generic.type = MODE_DATA;
+                ins.type_data_cswap.data_op = SUBOP_DATA_CSWAP;
+                inc();
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
+                inc();
+                EXPECT(Comma, "Expected comma, got %s");
+                inc();
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
+                inc();
+                EXPECT(Comma, "Expected comma, got %s");
+                inc();
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r3 = parse_reg(tokens.items[i].value, REG_SRC2);
+                ins.type_data_cswap.r1 = r1;
+                ins.type_data_cswap.r2 = r2;
+                ins.type_data_cswap.r3 = r3;
+                inc();
+                EXPECT(Comma, "Expected comma, got %s");
+                inc();
+                EXPECT(Identifier, "Expected identifier, got %s");
+                ins.type_data_cswap.cond = parse_condition(tokens.items[i].value);
+            } else if (eq(mnemonic, "ldr")) {
+                LDR()
+            } else if (eq(mnemonic, "str")) {
+                STR()
             } else if (eq(mnemonic, "psh")) {
                 ins.generic.type = MODE_DATA;
-                ins.type_data_ls_imm.data_op = SUBOP_DATA_LS;
-                ins.type_data_ls_imm.is_store = 1;
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t reg = parse_reg(tokens.items[i].value);
-                ins.type_data_ls_imm.r1 = reg;
-                ins.type_data_ls_imm.r2 = REG_SP;
-                ins.type_data_ls_imm.size = SIZE_64BIT;
-                ins.type_data_ls_imm.imm = -16;
-                ins.type_data_ls_imm.update_ptr = 1;
-                ins.type_data_ls_imm.use_immediate = 1;
+                if (tokens.items[i].type >= Register8 && tokens.items[i].type <= Register64) {
+                    EXPECT_REG("Expected %d-bit register or vector register, got %s", register_size);
+                    uint8_t reg = parse_reg(tokens.items[i].value, REG_DEST);
+                    ins.type_data_ls_imm.data_op = SUBOP_DATA_LS;
+                    ins.type_data_ls_imm.is_store = 1;
+                    ins.type_data_ls_imm.r1 = reg;
+                    ins.type_data_ls_imm.r2 = REG_SP;
+                    ins.type_data_ls_imm.imm = -16;
+                    ins.type_data_ls_imm.update_ptr = 1;
+                    ins.type_data_ls_imm.use_immediate = 1;
+                } else if (tokens.items[i].type == VecRegister) {
+                    ins.type_data_vpu_ls_imm.data_op = SUBOP_DATA_VPU;
+                    uint8_t reg = parse_vreg(tokens.items[i].value);
+                    ins.type_data_vpu_ls_imm.r1 = REG_SP;
+                    ins.type_data_vpu_ls_imm.v1 = reg;
+                    ins.type_data_vpu_ls_imm.imm = -32;
+                    ins.type_data_vpu_ls_imm.update_ptr = 1;
+                    ins.type_data_vpu_ls_imm.use_imm = 1;
+                    ins.type_data_vpu_ls_imm.op = OP_DATA_VPU_str;
+                } else {
+                    EXPECT_REG("Expected %d-bit register or vector register, got %s", register_size);
+                }
             } else if (eq(mnemonic, "pp")) {
                 ins.generic.type = MODE_DATA;
-                ins.type_data_ls_imm.data_op = SUBOP_DATA_LS;
-                ins.type_data_ls_imm.is_store = 0;
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t reg = parse_reg(tokens.items[i].value);
-                ins.type_data_ls_imm.r1 = reg;
-                ins.type_data_ls_imm.r2 = REG_SP;
-                ins.type_data_ls_imm.size = SIZE_64BIT;
-                ins.type_data_ls_imm.imm = 16;
-                ins.type_data_ls_imm.update_ptr = 1;
-                ins.type_data_ls_imm.use_immediate = 1;
+                if (tokens.items[i].type >= Register8 && tokens.items[i].type <= Register64) {
+                    EXPECT_REG("Expected %d-bit register or vector register, got %s", register_size);
+                    uint8_t reg = parse_reg(tokens.items[i].value, REG_DEST);
+                    ins.type_data_ls_imm.data_op = SUBOP_DATA_LS;
+                    ins.type_data_ls_imm.is_store = 0;
+                    ins.type_data_ls_imm.r1 = reg;
+                    ins.type_data_ls_imm.r2 = REG_SP;
+                    ins.type_data_ls_imm.imm = 16;
+                    ins.type_data_ls_imm.update_ptr = 1;
+                    ins.type_data_ls_imm.use_immediate = 1;
+                } else if (tokens.items[i].type == VecRegister) {
+                    ins.type_data_vpu_ls_imm.data_op = SUBOP_DATA_VPU;
+                    uint8_t reg = parse_vreg(tokens.items[i].value);
+                    ins.type_data_vpu_ls_imm.r1 = REG_SP;
+                    ins.type_data_vpu_ls_imm.v1 = reg;
+                    ins.type_data_vpu_ls_imm.imm = 32;
+                    ins.type_data_vpu_ls_imm.update_ptr = 1;
+                    ins.type_data_vpu_ls_imm.use_imm = 1;
+                    ins.type_data_vpu_ls_imm.op = OP_DATA_VPU_ldr;
+                } else {
+                    EXPECT_REG("Expected %d-bit register or vector register, got %s", register_size);
+                }
             } else if (eq(mnemonic, "lea")) {
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t reg = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t reg = parse_reg(tokens.items[i].value, REG_DEST);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 ins.generic.type = MODE_LOAD;
@@ -702,8 +987,8 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             } else if (eq(mnemonic, "movz") || eq(mnemonic, "movk")) {
                 bool no_zero = eq(mnemonic, "movk");
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t reg = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t reg = parse_reg(tokens.items[i].value, REG_DEST);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
@@ -734,13 +1019,13 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 ins.type_load_mov.imm = num;
             } else if (eq(mnemonic, "mov")) {
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
-                if (tokens.items[i].type == Register) {
-                    uint8_t r2 = parse_reg(tokens.items[i].value);
+                if (tokens.items[i].type == register_type) {
+                    uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                     ins.generic.type = MODE_DATA;
                     ins.type_data.data_op = SUBOP_DATA_ALU_I;
                     ins.type_data_alui.op = OP_DATA_ALU_shl;
@@ -769,20 +1054,20 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                         EXPECT(Eof, "Number out of range for mov: %s");
                     }
                 } else {
-                    EXPECT(Eof, "Expected register or number, got %s");
+                    EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size);
                 }
             } else if (eq(mnemonic, "inc") || eq(mnemonic, "dec")) {
                 uint8_t inc = eq(mnemonic, "inc");
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST, REG_SRC1);
                 uint8_t r2 = r1;
                 if (tokens.items[i + 1].type == Comma) {
                     inc();
                     EXPECT(Comma, "Expected comma, got %s");
                     inc();
-                    EXPECT(Register, "Expected register, got %s");
-                    r2 = parse_reg(tokens.items[i].value);
+                    EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                    r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                 }
                 ins.generic.type = MODE_DATA;
                 ins.type_data.data_op = SUBOP_DATA_ALU_I;
@@ -807,32 +1092,33 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     EXPECT(Eof, "Illegal sign extend: %s");
                 }
 
-                ins.type_other_signextend.from = from;
-                ins.type_other_signextend.to = to;
+                ins.type_data_sext.from = from;
+                ins.type_data_sext.to = to;
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST, REG_SRC1);
                 uint8_t r2 = r1;
                 if (tokens.items[i + 1].type == Comma) {
                     inc();
                     EXPECT(Comma, "Expected comma, got %s");
                     inc();
-                    EXPECT(Register, "Expected register, got %s");
-                    r2 = parse_reg(tokens.items[i].value);
+                    EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                    r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                 }
-                ins.generic.type = MODE_OTHER;
-                ins.type_other_signextend.op = OP_OTHER_signextend;
-                ins.type_other_signextend.r1 = r1;
-                ins.type_other_signextend.r2 = r2;
+                ins.generic.type = MODE_DATA;
+                ins.type_data_sext.data_op = SUBOP_DATA_ALU_I;
+                ins.type_data_sext.op = OP_DATA_ALU_sext;
+                ins.type_data_sext.r1 = r1;
+                ins.type_data_sext.r2 = r2;
             } else if (eq(mnemonic, "tst")) {
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_SRC1);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
-                if (tokens.items[i].type == Register) {
-                    uint8_t r2 = parse_reg(tokens.items[i].value);
+                if (tokens.items[i].type == register_type) {
+                    uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC2);
                     ins.generic.type = MODE_DATA;
                     ins.type_data.data_op = SUBOP_DATA_ALU_R;
                     ins.type_data_alur.op = OP_DATA_ALU_and;
@@ -848,17 +1134,17 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     ins.type_data_alui.imm = num;
                     ins.type_data_alui.no_writeback = 1;
                 } else {
-                    EXPECT(Eof, "Expected register or number, got %s");
+                    EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size);
                 }
             } else if (eq(mnemonic, "cmp")) {
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_SRC1);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
-                if (tokens.items[i].type == Register) {
-                    uint8_t r2 = parse_reg(tokens.items[i].value);
+                if (tokens.items[i].type == register_type) {
+                    uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC2);
                     ins.generic.type = MODE_DATA;
                     ins.type_data.data_op = SUBOP_DATA_ALU_R;
                     ins.type_data_alur.op = OP_DATA_ALU_sub;
@@ -874,7 +1160,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     ins.type_data_alui.imm = num;
                     ins.type_data_alui.no_writeback = 1;
                 } else {
-                    EXPECT(Eof, "Expected register or number, got %s");
+                    EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size);
                 }
             } else if (eq(mnemonic, "sbxt") || eq(mnemonic, "ubxt")) {
                 ins.generic.type = MODE_DATA;
@@ -883,13 +1169,13 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 ins.type_data_bit.is_dep = 0;
 
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
@@ -920,13 +1206,13 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 ins.type_data_bit.is_dep = 1;
 
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
@@ -953,13 +1239,13 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             } else if (eq(mnemonic, "i2f") || eq(mnemonic, "f2i")) {
                 uint8_t i2f = eq(mnemonic, "i2f");
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                 ins.generic.type = MODE_DATA;
                 ins.type_data_fpu.data_op = SUBOP_DATA_FPU;
                 ins.type_data_fpu.op = OP_DATA_FLOAT_f2i;
@@ -969,13 +1255,13 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             } else if (eq(mnemonic, "f2s") || eq(mnemonic, "s2f")) {
                 uint8_t f2s = eq(mnemonic, "f2s");
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r1 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
                 inc();
                 EXPECT(Comma, "Expected comma, got %s");
                 inc();
-                EXPECT(Register, "Expected register, got %s");
-                uint8_t r2 = parse_reg(tokens.items[i].value);
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                 ins.generic.type = MODE_DATA;
                 ins.type_data_fpu.data_op = SUBOP_DATA_FPU;
                 ins.type_data_fpu.op = OP_DATA_FLOAT_s2f;
@@ -990,26 +1276,26 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 if (eq(mnemonic, "sin") || eq(mnemonic, "sqrt")) {
                     uint8_t sin = eq(mnemonic, "sin");
                     inc();
-                    EXPECT(Register, "Expected register, got %s");
-                    uint8_t r1 = parse_reg(tokens.items[i].value);
+                    EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                    uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
                     inc();
                     EXPECT(Comma, "Expected comma, got %s");
                     inc();
-                    EXPECT(Register, "Expected register, got %s");
-                    uint8_t r2 = parse_reg(tokens.items[i].value);
+                    EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                    uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                     ins.type_data_fpu.op = sin ? OP_DATA_FLOAT_sin : OP_DATA_FLOAT_sqrt;
                     ins.type_data_fpu.r1 = r1;
                     ins.type_data_fpu.r2 = r2;
                 } else if (eq(mnemonic, "cmp") || eq(mnemonic, "cmpi")) {
                     uint8_t fcmp = eq(mnemonic, "cmp");
                     inc();
-                    EXPECT(Register, "Expected register, got %s");
-                    uint8_t r1 = parse_reg(tokens.items[i].value);
+                    EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                    uint8_t r1 = parse_reg(tokens.items[i].value, REG_SRC1);
                     inc();
                     EXPECT(Comma, "Expected comma, got %s");
                     inc();
-                    EXPECT(Register, "Expected register, got %s");
-                    uint8_t r2 = parse_reg(tokens.items[i].value);
+                    EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                    uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC2);
                     ins.type_data_fpu.op = OP_DATA_FLOAT_sub;
                     ins.type_data_fpu.use_int_arg2 = !fcmp;
                     ins.type_data_fpu.r2 = r1;
@@ -1056,15 +1342,15 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 if (eq(mnemonic, "ldr") || eq(mnemonic, "str")) {
                     if (eq(mnemonic, "ldr")) {
                         inc();
-                        EXPECT(VecRegister, "Expected register, got %s");
+                        EXPECT(VecRegister, "Expected vector register, got %s");
                         uint8_t v1 = parse_vreg(tokens.items[i].value);
                         inc();
                         EXPECT(Comma, "Expected comma, got %s");
                         inc();
                         EXPECT(LeftBracket, "Expected '[', got %s");
                         inc();
-                        EXPECT(Register, "Expected register, got %s");
-                        uint8_t r1 = parse_reg(tokens.items[i].value);
+                        EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                        uint8_t r1 = parse_reg(tokens.items[i].value, REG_SRC1);
                         inc();
                         ins.generic.type = MODE_DATA;
                         ins.type_data_vpu.data_op = SUBOP_DATA_VPU;
@@ -1080,10 +1366,10 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                             }
                         } else if (tokens.items[i].type == Comma) {
                             inc();
-                            if (tokens.items[i].type == Register) {
+                            if (tokens.items[i].type == register_type) {
                                 ins.type_data_vpu_ls.v1 = v1;
                                 ins.type_data_vpu_ls.r1 = r1;
-                                ins.type_data_vpu_ls.r2 = parse_reg(tokens.items[i].value);
+                                ins.type_data_vpu_ls.r2 = parse_reg(tokens.items[i].value, REG_SRC2);
                             } else if (tokens.items[i].type == Number) {
                                 ins.type_data_vpu_ls_imm.v1 = v1;
                                 ins.type_data_vpu_ls_imm.r1 = r1;
@@ -1095,7 +1381,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                                     EXPECT(Eof, "Number out of range: %s");
                                 }
                             } else {
-                                EXPECT(Eof, "Expected register or number, got %s");
+                                EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size);
                             }
                             inc();
                             EXPECT(RightBracket, "Expected ']', got %s");
@@ -1108,15 +1394,15 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                         }
                     } else {
                         inc();
-                        EXPECT(VecRegister, "Expected register, got %s");
+                        EXPECT(VecRegister, "Expected vector register, got %s");
                         uint8_t v1 = parse_vreg(tokens.items[i].value);
                         inc();
                         EXPECT(Comma, "Expected comma, got %s");
                         inc();
                         EXPECT(LeftBracket, "Expected '[', got %s");
                         inc();
-                        EXPECT(Register, "Expected register, got %s");
-                        uint8_t r1 = parse_reg(tokens.items[i].value);
+                        EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                        uint8_t r1 = parse_reg(tokens.items[i].value, REG_SRC1);
                         inc();
                         ins.generic.type = MODE_DATA;
                         ins.type_data_vpu.data_op = SUBOP_DATA_VPU;
@@ -1132,10 +1418,10 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                             }
                         } else if (tokens.items[i].type == Comma) {
                             inc();
-                            if (tokens.items[i].type == Register) {
+                            if (tokens.items[i].type == register_type) {
                                 ins.type_data_vpu_ls.v1 = v1;
                                 ins.type_data_vpu_ls.r1 = r1;
-                                ins.type_data_vpu_ls.r2 = parse_reg(tokens.items[i].value);
+                                ins.type_data_vpu_ls.r2 = parse_reg(tokens.items[i].value, REG_SRC2);
                             } else if (tokens.items[i].type == Number) {
                                 ins.type_data_vpu_ls_imm.v1 = v1;
                                 ins.type_data_vpu_ls_imm.r1 = r1;
@@ -1147,7 +1433,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                                     EXPECT(Eof, "Number out of range: %s");
                                 }
                             } else {
-                                EXPECT(Eof, "Expected register or number, got %s");
+                                EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size);
                             }
                             inc();
                             EXPECT(RightBracket, "Expected ']', got %s");
@@ -1202,9 +1488,10 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                             uint8_t v2 = parse_vreg(tokens.items[i].value);
                             ins.type_data_vpu.v1 = v1;
                             ins.type_data_vpu.v2 = v2;
-                        } else if (tokens.items[i].type == Register) {
+                        } else if (tokens.items[i].type >= Register8 && tokens.items[i].type <= Register64) {
                             ins.type_data_vpu_mov.op = OP_DATA_VPU_mov;
-                            uint8_t r2 = parse_reg(tokens.items[i].value);
+                            EXPECT_REG("Epxected %d-bit register, got %s", register_size);
+                            uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
                             i++;
                             uint8_t slot = 0;
                             if (tokens.items[i].type == Comma) {
@@ -1222,7 +1509,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                             ins.type_data_vpu_mov.v1 = v1;
                             ins.type_data_vpu_mov.r2 = r2;
                         } else {
-                            EXPECT(Eof, "Expected register or vector register, got %s");
+                            EXPECT(Eof, "Expected %d-bit register or vector register, got %s", register_size);
                         }
                     } else if (strncmp(mnemonic, "conv", 4) == 0) {
                         uint8_t target_mode = modes[mnemonic[4]];
@@ -1243,8 +1530,8 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                         ins.type_data_vpu_conv.v2 = v2;
                     } else if (eq(mnemonic, "len")) {
                         i++;
-                        EXPECT(Register, "Expected register, got %s");
-                        uint8_t r1 = parse_reg(tokens.items[i].value);
+                        EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                        uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
                         i++;
                         EXPECT(Comma, "Expected comma, got %s");
                         i++;
@@ -1261,28 +1548,46 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 EXPECT(Eof, "Unknown opcode: %s");
             }
 
-            if (ins.generic.type == MODE_BRANCH && !ins.type_branch.is_reg) {
-                inc();
-                EXPECT(Identifier, "Expected identifier, got %s");
-                Relocation off = {
-                    .data.name = tokens.items[i].value,
-                    .source_offset = current_section.count,
-                    .source_section = sects.count,
-                    .type = sym_branch
-                }; 
-                nob_da_append(relocations, off);
-            } else if (ins.generic.type == MODE_LOAD && ins.type_load_signed.op == OP_LOAD_lea) {
-                inc();
-                EXPECT(Identifier, "Expected identifier, got %s");
-                Relocation off = {
-                    .data.name = tokens.items[i].value,
-                    .source_offset = current_section.count,
-                    .source_section = sects.count,
-                    .type = sym_load
-                }; 
-                nob_da_append(relocations, off);
+            if (prefix.generic.condition != COND_NEVER) {
+                nob_da_append_many(&current_section, &prefix, sizeof(prefix));
+            }
+            if (ins.generic.condition != COND_NEVER) {
+                if (ins.generic.type == MODE_BRANCH && !ins.type_branch.is_reg) {
+                    inc();
+                    EXPECT(Identifier, "Expected identifier, got %s");
+                    char* str = tokens.items[i].value;
+                    str = unquote(str);
+                    if (last_global_symbol && str[0] == '$') {
+                        str = strformat("%s%s", last_global_symbol, str);
+                    }
+                    Relocation off = {
+                        .data.name = str,
+                        .source_offset = current_section.count,
+                        .source_section = sects.count,
+                        .type = sym_branch
+                    }; 
+                    nob_da_append(relocations, off);
+                } else if (ins.generic.type == MODE_LOAD && ins.type_load_signed.op == OP_LOAD_lea) {
+                    inc();
+                    EXPECT(Identifier, "Expected identifier, got %s");
+                    char* str = tokens.items[i].value;
+                    str = unquote(str);
+                    if (last_global_symbol && str[0] == '$') {
+                        str = strformat("%s%s", last_global_symbol, str);
+                    }
+                    Relocation off = {
+                        .data.name = str,
+                        .source_offset = current_section.count,
+                        .source_section = sects.count,
+                        .type = sym_load
+                    }; 
+                    nob_da_append(relocations, off);
+                }
             }
             nob_da_append_many(&current_section, &ins, sizeof(ins));
+            for (size_t k = 0; k < additional_ops.count; k++) {
+                nob_da_append_many(&current_section, &additional_ops.items[k], sizeof(additional_ops.items[k]));
+            }
         } else if (tokens.items[i].type == Directive) {
             if (eq(tokens.items[i].value, "asciz") || eq(tokens.items[i].value, "ascii")) {
                 inc();
@@ -1297,6 +1602,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     nob_sb_append_null(&current_section);
                 }
             } else if (eq(tokens.items[i].value, "text")) {
+                last_global_symbol = NULL;
                 if (current_sect_type != SECT_TYPE_NOEMIT) {
                     CompilerSection s = {
                         .data = current_section,
@@ -1307,6 +1613,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 current_section = (Nob_String_Builder) {0};
                 current_sect_type = SECT_TYPE_TEXT;
             } else if (eq(tokens.items[i].value, "data")) {
+                last_global_symbol = NULL;
                 if (current_sect_type != SECT_TYPE_NOEMIT) {
                     CompilerSection s = {
                         .data = current_section,
@@ -1317,6 +1624,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 current_section = (Nob_String_Builder) {0};
                 current_sect_type = SECT_TYPE_DATA;
             } else if (eq(tokens.items[i].value, "bss")) {
+                last_global_symbol = NULL;
                 if (current_sect_type != SECT_TYPE_NOEMIT) {
                     CompilerSection s = {
                         .data = current_section,
@@ -1347,8 +1655,13 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     uint64_t num = parse64(tokens.items[i].value);
                     nob_da_append_many(&current_section, &num, 8);
                 } else if (tokens.items[i].type == Identifier) {
+                    char* str = tokens.items[i].value;
+                    str = unquote(str);
+                    if (last_global_symbol && str[0] == '$') {
+                        str = strformat("%s%s", last_global_symbol, str);
+                    }
                     Relocation off = {
-                        .data.name = tokens.items[i].value,
+                        .data.name = str,
                         .source_offset = current_section.count,
                         .source_section = sects.count,
                         .type = sym_abs
@@ -1371,8 +1684,13 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             } else if (eq(tokens.items[i].value, "offset")) {
                 inc();
                 EXPECT(Identifier, "Expected identifier, got %s");
+                char* str = tokens.items[i].value;
+                str = unquote(str);
+                if (last_global_symbol && str[0] == '$') {
+                    str = strformat("%s%s", last_global_symbol, str);
+                }
                 Relocation off = {
-                    .data.name = tokens.items[i].value,
+                    .data.name = str,
                     .source_offset = current_section.count,
                     .source_section = sects.count,
                     .type = sym_abs
@@ -1406,6 +1724,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             } else if (eq(tokens.items[i].value, "global") || eq(tokens.items[i].value, "globl")) {
                 inc();
                 EXPECT(Identifier, "Expected identifier, got %s");
+                last_global_symbol = tokens.items[i].value;
                 nob_da_append(&exported_symbols, tokens.items[i].value);
             } else {
                 EXPECT(Eof, "Unknown directive: %s");
@@ -1413,6 +1732,9 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
         } else if (tokens.items[i].type == Label) {
             char* str = tokens.items[i].value;
             str = unquote(str);
+            if (last_global_symbol && str[0] == '$') {
+                str = strformat("%s%s", last_global_symbol, str);
+            }
             Symbol off = {
                 .name = str,
                 .offset = current_section.count,
@@ -1420,6 +1742,13 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             };
             nob_da_append(syms, off);
         }
+    }
+
+    if (errors.count) {
+        for (size_t i = 0; i < errors.count; i++) {
+            fprintf(stderr, "%s", errors.items[i]);
+        }
+        return (SB_Array) {0};
     }
 
     if (current_sect_type != SECT_TYPE_NOEMIT) {
@@ -1554,12 +1883,12 @@ char* unquote(const char* str) {
 Token nextToken(void);
 
 static char* src;
-static int line = 1;
+static int line;
 
-Token_Array parse(char* data) {
+Token_Array parse(char* data, int l) {
     Token_Array tokens = {0};
     src = data;
-    line = 1;
+    line = l;
     while (*src) {
         Token t = nextToken();
         if (t.type == Eof) break;
@@ -1570,7 +1899,7 @@ Token_Array parse(char* data) {
 }
 
 Token nextToken(void) {
-    while (*src == ' ' || *src == '\n' || *src == '\r') {
+    while (*src == ' ' || *src == '\n' || *src == '\r' || *src == '\t') {
         if (*src == '\n')
             line++;
         src++;
@@ -1584,18 +1913,33 @@ Token nextToken(void) {
     if (isValidBegin(*src)) {
         char* s = strdup(src);
         char* start = src;
-        if (*s == 'r') {
+        if (*s == 'r' || *s == 'b' || *s == 'w' || *s == 'd' || *s == 'q') {
+            TokenType type[] = {
+                ['b'] = Register8,
+                ['w'] = Register16,
+                ['d'] = Register32,
+                ['q'] = Register64,
+                ['r'] = Register64,
+            };
             src++;
             if (isnumber(*src)) {
                 while (isnumber(*src))
                     src++;
+
+                if (*src == 'l' || *src == 'h') {
+                    if (type[*s] == Register64 && *src == 'h') {
+                        s[src - start + 1] = 0;
+                        nob_da_append(&errors, strformat("%s:%d: Unsupported addressing form: %s\n", file, line, s));
+                    }
+                    src++;
+                }
 
                 s[src - start] = 0;
                 return (Token) {
                     .file = file,
                     .line = line,
                     .value = s,
-                    .type = Register
+                    .type = type[*s]
                 };
             }
             src--;
@@ -1614,6 +1958,26 @@ Token nextToken(void) {
                 };
             }
             src--;
+        } else if (s[0] == 'c' && s[1] == 'r') {
+            src += 2;
+            if (isnumber(*src)) {
+                while (isnumber(*src))
+                    src++;
+
+                if (*src == 'l' || *src == 'h') {
+                    src++;
+                }
+
+                s[src - start] = 0;
+                return (Token) {
+                    .file = file,
+                    .line = line,
+                    .value = s,
+                    .type = Register64
+                };
+
+            }
+            src -= 2;
         }
         while (isValid(*src))
             src++;
@@ -1634,14 +1998,14 @@ Token nextToken(void) {
                     .file = file,
                     .line = line,
                     .value = "x",
-                    .type = Register
+                    .type = Register64
                 };
             } else {
                 return (Token) {
                     .file = file,
                     .line = line,
                     .value = "y",
-                    .type = Register
+                    .type = Register64
                 };
             }
         } else if (eq(s, "pc")) {
@@ -1649,28 +2013,28 @@ Token nextToken(void) {
                 .file = file,
                 .line = line,
                 .value = "pc",
-                .type = Register
+                .type = Register64
             };
         } else if (eq(s, "lr")) {
             return (Token) {
                 .file = file,
                 .line = line,
                 .value = "lr",
-                .type = Register
+                .type = Register64
             };
         } else if (eq(s, "sp")) {
             return (Token) {
                 .file = file,
                 .line = line,
                 .value = "sp",
-                .type = Register
+                .type = Register64
             };
         } else if (eq(s, "fr")) {
             return (Token) {
                 .file = file,
                 .line = line,
                 .value = "fr",
-                .type = Register
+                .type = Register64
             };
         }
         return (Token) {
@@ -1783,7 +2147,7 @@ Token nextToken(void) {
                     num = '\"';
                     break;
                 default:
-                    printf("Unknown escape sequence: \\%c\n", s[1]);
+                    nob_da_append(&errors, strformat("Unknown escape sequence: \\%c\n", s[1]));
                     return (Token) {
                         .file = file,
                         .line = line,
