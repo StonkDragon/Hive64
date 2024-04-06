@@ -5,7 +5,7 @@ set -xe
 mkdir -p build
 
 # clang -O0 -g -std=gnu17 -o build/h64 -Isrc/ src/**/*.c
-clang -O3 -std=gnu17 -o build/h64 -Isrc/ src/**/*.c
+clang -O3 -std=gnu17 -o build/h64 -Isrc/ src/**/*.c -lm
 
 copier=cp
 
