@@ -323,6 +323,18 @@ typedef union {
     Float64_t   asFloat64s[4];
 } hive_vector_register_t;
 
+typedef struct {
+    uint8_t             zero:1;
+    uint8_t             negative:1;
+    uint8_t             size:2;
+    uint8_t             reg_state:4;
+    uint8_t             references_cr:4;
+    uint8_t             execution_mode:2;
+    #define EM_HYPERVISOR 0
+    #define EM_SUPERVISOR 1
+    #define EM_USER 2
+} PACKED hive_flag_register_t;
+
 typedef union hive_register_t {
     QWord_t                 asU64;
     DWord_t                 asU32;
@@ -379,23 +391,11 @@ typedef union hive_register_t {
     Float64_t               asFloat64;
     Float32_t               asFloat32;
     hive_instruction_t*     asInstrPtr;
+    hive_flag_register_t    asFlags;
 } hive_register_t;
 
-typedef union {
-    struct {
-        struct {
-            uint8_t             zero:1;
-            uint8_t             negative:1;
-            uint8_t             size:2;
-            uint8_t             reg_state:4;
-            uint8_t             references_cr:4;
-        } PACKED flags;
-    };
-    DWord_t dword;
-} PACKED hive_flag_register_t;
-
 #ifdef static_assert
-static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_register_t is wrong size");
+static_assert(sizeof(hive_flag_register_t) <= sizeof(QWord_t), "hive_flag_register_t is wrong size");
 #endif
 
 #define REG_SRC1 1
@@ -413,6 +413,7 @@ static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_regist
 #define CR_CORES 1
 #define CR_THREADS 2
 #define CR_CPUID 3
+#define CR_FLAGS 4
 
 #define SIZE_8BIT   0b00
 #define SIZE_16BIT  0b01
@@ -445,10 +446,12 @@ static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_regist
 #define SVC_write           2
 #define SVC_open            3
 #define SVC_close           4
-#define SVC_mmap            5
+#define SVC_sys_mmap        5
 #define SVC_munmap          6
 #define SVC_mprotect        7
 #define SVC_fstat           8
+
+void* sys_mmap(void* addr, size_t sz, int prot, int map, int fd, long long off);
 
 #ifndef CORE_COUNT
 #define CORE_COUNT 6
@@ -469,7 +472,6 @@ static_assert(sizeof(hive_flag_register_t) == sizeof(DWord_t), "hive_flag_regist
 struct cpu_state {
     hive_register_t r[32];
     hive_vector_register_t v[16];
-    hive_flag_register_t fr;
     hive_register_t cr[12];
 };
 
@@ -598,7 +600,10 @@ typedef struct {
 
 #define SECT_TYPE_NOEMIT    0b01111111
 
-#define HIVE_PAGE_SIZE 0x4000
+#define HIVE_PAGE_SHIFT 14
+#define HIVE_PAGE_SIZE (1ULL << HIVE_PAGE_SHIFT)
+#define HIVE_MEMORY_SIZE (0x0000100000000000ULL)
+#define HIVE_MEMORY_BASE ((void*) 0x0000100000000000ULL)
 
 #define PAGE_FLAG_READ  0x01
 #define PAGE_FLAG_WRITE 0x02

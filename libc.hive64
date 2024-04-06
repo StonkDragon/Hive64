@@ -2,10 +2,9 @@
 
 .global _start
 _start:
-    movz r0, 0
-    cpuid
-    $loop:
-        b.nz $loop
+    mov r0, cr3
+$loop:
+    b.nz $loop
 
     # create a stack
     movz r8, 5              # svc id for mmap

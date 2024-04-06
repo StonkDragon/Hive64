@@ -17,7 +17,7 @@
 #define SVC(what) [SVC_ ## what] = (svc_call) &what
 
 void coredump(struct cpu_state* state) {
-    printf("Flags: %08x\n", state->fr.dword);
+    printf("Flags: %08x\n", state->cr[CR_FLAGS].asDWord);
     printf("Registers:\n");
     for (size_t i = 0; i < 32; i++) {
         printf("  r%zu: 0x%llx %f %f\n", i, state->r[i].asQWord, state->r[i].asFloat64, state->r[i].asFloat32);
@@ -63,13 +63,17 @@ void coredump(struct cpu_state* state) {
     }
 }
 
+void* sys_mmap(void* addr, size_t sz, int prot, int map, int fd, long long off) {
+    return mmap((void*) ((uint64_t) HIVE_MEMORY_BASE + (uint64_t) addr), sz, prot, map, fd, off);
+}
+
 svc_call svcs[] = {
     SVC(exit),
     SVC(read),
     SVC(write),
     SVC(open),
     SVC(close),
-    SVC(mmap),
+    SVC(sys_mmap),
     SVC(munmap),
     SVC(mprotect),
     SVC(fstat),

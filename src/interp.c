@@ -28,33 +28,33 @@ int check_condition(hive_instruction_t ins, hive_flag_register_t fr);
     // always   -> 1
     // never    -> 0
 static inline SQWord_t set_flags64(struct cpu_state* state, SQWord_t res) {
-    state->fr.flags.negative = (res < 0);
-    state->fr.flags.zero = (res == 0);
+    state->cr[CR_FLAGS].asFlags.negative = (res < 0);
+    state->cr[CR_FLAGS].asFlags.zero = (res == 0);
     return res;
 }
 static inline SDWord_t set_flags32(struct cpu_state* state, SDWord_t res) {
-    state->fr.flags.zero = (res == 0);
-    state->fr.flags.negative = (res < 0);
+    state->cr[CR_FLAGS].asFlags.zero = (res == 0);
+    state->cr[CR_FLAGS].asFlags.negative = (res < 0);
     return res;
 }
 static inline SWord_t set_flags16(struct cpu_state* state, SWord_t res) {
-    state->fr.flags.zero = (res == 0);
-    state->fr.flags.negative = (res < 0);
+    state->cr[CR_FLAGS].asFlags.zero = (res == 0);
+    state->cr[CR_FLAGS].asFlags.negative = (res < 0);
     return res;
 }
 static inline SByte_t set_flags8(struct cpu_state* state, SByte_t res) {
-    state->fr.flags.zero = (res == 0);
-    state->fr.flags.negative = (res < 0);
+    state->cr[CR_FLAGS].asFlags.zero = (res == 0);
+    state->cr[CR_FLAGS].asFlags.negative = (res < 0);
     return res;
 }
 static inline Float64_t set_flagsf64(struct cpu_state* state, Float64_t res) {
-    state->fr.flags.zero = (res == 0.0);
-    state->fr.flags.negative = (res < 0.0);
+    state->cr[CR_FLAGS].asFlags.zero = (res == 0.0);
+    state->cr[CR_FLAGS].asFlags.negative = (res < 0.0);
     return res;
 }
 static inline Float32_t set_flagsf32(struct cpu_state* state, Float32_t res) {
-    state->fr.flags.zero = (res == 0.0);
-    state->fr.flags.negative = (res < 0.0);
+    state->cr[CR_FLAGS].asFlags.zero = (res == 0.0);
+    state->cr[CR_FLAGS].asFlags.negative = (res < 0.0);
     return res;
 }
 
@@ -128,15 +128,15 @@ void writeS ## _type (struct cpu_state* state, uint8_t reg, S ## _type ## _t val
 }
 
 uint8_t is_slot_overridden(struct cpu_state* state, uint8_t counter) {
-    return (state->fr.flags.reg_state & (1 << counter)) != 0;
+    return (state->cr[CR_FLAGS].asFlags.reg_state & (1 << counter)) != 0;
 }
 uint8_t is_control_register(struct cpu_state* state, uint8_t counter) {
-    return (state->fr.flags.references_cr & (1 << counter)) != 0;
+    return (state->cr[CR_FLAGS].asFlags.references_cr & (1 << counter)) != 0;
 }
 
 hive_register_t* getRegister(struct cpu_state* state, uint8_t reg, uint8_t counter, uint8_t intent) {
     if (is_control_register(state, counter)) {
-        if (intent & INTENT_WRITE || reg >= 12) {
+        if (reg >= 12 || state->cr[CR_FLAGS].asFlags.execution_mode != EM_HYPERVISOR) {
             raise(SIGILL);
         }
         return &state->cr[reg];
@@ -167,53 +167,54 @@ reg_writer(DWord)
 void writeFloat32(struct cpu_state* state, uint8_t reg, Float32_t val, uint8_t write, uint8_t counter) {
     set_flagsf32(state, val);
     if (write) {
-        if (is_control_register(state, counter)) {
-            raise(SIGILL);
-        }
         getRegister(state, reg, counter, INTENT_WRITE)->asFloat32 = val;
     }
 }
 void writeFloat64(struct cpu_state* state, uint8_t reg, Float64_t val, uint8_t write, uint8_t counter) {
     set_flagsf64(state, val);
     if (write) {
-        if (is_control_register(state, counter)) {
-            raise(SIGILL);
-        }
         getRegister(state, reg, counter, INTENT_WRITE)->asFloat64 = val;
     }
 }
 void writeQWord(struct cpu_state* state, uint8_t reg, QWord_t val, uint8_t write, uint8_t counter) {
     set_flagsQWord(state, val);
     if (write) {
-        if (is_control_register(state, counter)) {
-            raise(SIGILL);
-        }
         getRegister(state, reg, counter, INTENT_WRITE)->asQWord = val;
     }
 }
 void writeSQWord(struct cpu_state* state, uint8_t reg, SQWord_t val, uint8_t write, uint8_t counter) {
     set_flagsQWord(state, val);
     if (write) {
-        if (is_control_register(state, counter)) {
-            raise(SIGILL);
-        }
         getRegister(state, reg, counter, INTENT_WRITE)->asSQWord = val;
     }
 }
 
 #define mem_reader(_type) \
-_type ## _t memRead ## _type (void* addr) { \
+_type ## _t memRead ## _type (struct cpu_state* state, void* addr) { \
+    if (!authenticate_ptr(state, addr)) { \
+        fprintf(stderr, "Invalid ptr: %p\n", addr); \
+        raise(SIGBUS); \
+    } \
     if (((uint64_t) addr) % (sizeof(_type ## _t) > 4 ? 4 : sizeof(_type ## _t))) { \
         raise(SIGBUS); \
     } \
     return *(_type ## _t*) addr; \
 }
 #define mem_writer(_type) \
-void memWrite ## _type (void* addr, _type ## _t val) { \
+void memWrite ## _type (struct cpu_state* state, void* addr, _type ## _t val) { \
+    if (!authenticate_ptr(state, addr)) { \
+        fprintf(stderr, "Invalid ptr: %p\n", addr); \
+        raise(SIGBUS); \
+    } \
     if (((uint64_t) addr) % (sizeof(_type ## _t) > 4 ? 4 : sizeof(_type ## _t))) { \
         raise(SIGBUS); \
     } \
     *(_type ## _t*) addr = val; \
+}
+
+bool authenticate_ptr(struct cpu_state* state, void* addr) {
+    bool in_addr_range = ((uint64_t) addr >= (uint64_t) HIVE_MEMORY_BASE) && ((uint64_t) addr < ((uint64_t) HIVE_MEMORY_BASE + HIVE_MEMORY_SIZE));
+    return in_addr_range;
 }
 
 mem_reader(Byte)
@@ -341,14 +342,14 @@ BEGIN_OP(data_alu)
         target = signextend(ins, state, ins.type_data_sext.r2);
     } else {
         if (ins.type_data_alui.use_imm) {
-            switch (state->fr.flags.size) {
+            switch (state->cr[CR_FLAGS].asFlags.size) {
                 case SIZE_64BIT: target.asQWord = alu64_func[ins.type_data_alui.salu](ins, state, readQWord(state, ins.type_data_alui.r2, REG_SRC1), (QWord_t) (ins.type_data_alui.imm)); break;
                 case SIZE_32BIT: target.asDWord = alu32_func[ins.type_data_alui.salu](ins, state, readDWord(state, ins.type_data_alui.r2, REG_SRC1), (DWord_t) (ins.type_data_alui.imm)); break;
                 case SIZE_16BIT: target.asWord = alu16_func[ins.type_data_alui.salu](ins, state, readWord(state, ins.type_data_alui.r2, REG_SRC1), (Word_t) (ins.type_data_alui.imm)); break;
                 case SIZE_8BIT:  target.asByte = alu8_func[ins.type_data_alui.salu](ins, state, readByte(state, ins.type_data_alui.r2, REG_SRC1), (Byte_t) (ins.type_data_alui.imm)); break;
             }
         } else {
-            switch (state->fr.flags.size) {
+            switch (state->cr[CR_FLAGS].asFlags.size) {
                 case SIZE_64BIT: target.asQWord = alu64_func[ins.type_data_alui.salu](ins, state, readSQWord(state, ins.type_data_alui.r2, REG_SRC1), readSQWord(state, ins.type_data_alur.r3, REG_SRC2)); break;
                 case SIZE_32BIT: target.asDWord = alu32_func[ins.type_data_alui.salu](ins, state, readSDWord(state, ins.type_data_alui.r2, REG_SRC1), readSDWord(state, ins.type_data_alur.r3, REG_SRC2)); break;
                 case SIZE_16BIT: target.asWord = alu16_func[ins.type_data_alui.salu](ins, state, readSWord(state, ins.type_data_alui.r2, REG_SRC1), readSWord(state, ins.type_data_alur.r3, REG_SRC2)); break;
@@ -356,7 +357,7 @@ BEGIN_OP(data_alu)
             }
         }
     }
-    switch (state->fr.flags.size) {
+    switch (state->cr[CR_FLAGS].asFlags.size) {
         case SIZE_64BIT: writeQWord(state, ins.type_data_alui.r1, target.asQWord, ins.type_data_alui.no_writeback == 0, REG_DEST); break;
         case SIZE_32BIT: writeDWord(state, ins.type_data_alui.r1, target.asDWord, ins.type_data_alui.no_writeback == 0, REG_DEST); break;
         case SIZE_16BIT: writeWord(state, ins.type_data_alui.r1, target.asWord, ins.type_data_alui.no_writeback == 0, REG_DEST); break;
@@ -502,18 +503,18 @@ BEGIN_OP(data_ls)
         }
     }
     if (ins.type_data_ls_imm.is_store) {
-        switch (state->fr.flags.size) {
-            case SIZE_8BIT: memWriteByte((void*) addr, readByte(state, r1, REG_DEST)); break;
-            case SIZE_16BIT: memWriteWord((void*) addr, readWord(state, r1, REG_DEST)); break;
-            case SIZE_32BIT: memWriteDWord((void*) addr, readDWord(state, r1, REG_DEST)); break;
-            case SIZE_64BIT: memWriteQWord((void*) addr, readQWord(state, r1, REG_DEST)); break;
+        switch (state->cr[CR_FLAGS].asFlags.size) {
+            case SIZE_8BIT: memWriteByte(state, (void*) addr, readByte(state, r1, REG_DEST)); break;
+            case SIZE_16BIT: memWriteWord(state, (void*) addr, readWord(state, r1, REG_DEST)); break;
+            case SIZE_32BIT: memWriteDWord(state, (void*) addr, readDWord(state, r1, REG_DEST)); break;
+            case SIZE_64BIT: memWriteQWord(state, (void*) addr, readQWord(state, r1, REG_DEST)); break;
         }
     } else {
-        switch (state->fr.flags.size) {
-            case SIZE_8BIT: writeByte(state, r1, memReadByte((void*) addr), 1, REG_DEST); break;
-            case SIZE_16BIT: writeDWord(state, r1, memReadDWord((void*) addr), 1, REG_DEST); break;
-            case SIZE_32BIT: writeWord(state, r1, memReadWord((void*) addr), 1, REG_DEST); break;
-            case SIZE_64BIT: writeQWord(state, r1, memReadQWord((void*) addr), 1, REG_DEST); break;
+        switch (state->cr[CR_FLAGS].asFlags.size) {
+            case SIZE_8BIT: writeByte(state, r1, memReadByte(state, (void*) addr), 1, REG_DEST); break;
+            case SIZE_16BIT: writeDWord(state, r1, memReadDWord(state, (void*) addr), 1, REG_DEST); break;
+            case SIZE_32BIT: writeWord(state, r1, memReadWord(state, (void*) addr), 1, REG_DEST); break;
+            case SIZE_64BIT: writeQWord(state, r1, memReadQWord(state, (void*) addr), 1, REG_DEST); break;
         }
     }
 END_OP
@@ -523,14 +524,14 @@ BEGIN_OP(data_cswap)
     uint8_t r3 = ins.type_data_cswap.r3;
     uint8_t dest;
     uint8_t destC;
-    if (check_condition1(ins.type_data_cswap.cond, state->fr)) {
+    if (check_condition1(ins.type_data_cswap.cond, state->cr[CR_FLAGS].asFlags)) {
         dest = r2;
         destC = REG_SRC1;
     } else {
         dest = r3;
         destC = REG_SRC2;
     }
-    switch (state->fr.flags.size) {
+    switch (state->cr[CR_FLAGS].asFlags.size) {
         case SIZE_8BIT: writeByte(state, ins.type_data_cswap.r1, readByte(state, dest, destC), 1, REG_DEST); break;
         case SIZE_16BIT: writeWord(state, ins.type_data_cswap.r1, readWord(state, dest, destC), 1, REG_DEST); break;
         case SIZE_32BIT: writeDWord(state, ins.type_data_cswap.r1, readDWord(state, dest, destC), 1, REG_DEST); break;
@@ -540,7 +541,7 @@ END_OP
 BEGIN_OP(data_xchg)
     uint8_t r1 = ins.type_data_xchg.r1;
     uint8_t r2 = ins.type_data_xchg.r2;
-    switch (state->fr.flags.size) {
+    switch (state->cr[CR_FLAGS].asFlags.size) {
         case SIZE_8BIT: {
                 Byte_t tmp = readByte(state, r1, REG_DEST);
                 writeByte(state, r1, readByte(state, r2, REG_SRC1), 1, REG_DEST);
@@ -577,7 +578,7 @@ BEGIN_OP(load_movzk)
     QWord_t value = ((QWord_t) ins.type_load_mov.imm) << shift;
     if (ins.type_load_mov.no_zero) {
         QWord_t val;
-        switch (state->fr.flags.size) {
+        switch (state->cr[CR_FLAGS].asFlags.size) {
             case SIZE_64BIT: val = readQWord(state, ins.type_load_mov.r1, REG_DEST); break;
             case SIZE_32BIT: val = readDWord(state, ins.type_load_mov.r1, REG_DEST); break;
             case SIZE_16BIT: val = readWord(state, ins.type_load_mov.r1, REG_DEST); break;
@@ -585,14 +586,14 @@ BEGIN_OP(load_movzk)
         }
         val &= mask;
         val |= value;
-        switch (state->fr.flags.size) {
+        switch (state->cr[CR_FLAGS].asFlags.size) {
             case SIZE_64BIT: writeQWord(state, ins.type_load_mov.r1, val, 1, REG_DEST); break;
             case SIZE_32BIT: writeDWord(state, ins.type_load_mov.r1, val, 1, REG_DEST); break;
             case SIZE_16BIT: writeWord(state, ins.type_load_mov.r1, val, 1, REG_DEST); break;
             case SIZE_8BIT: writeByte(state, ins.type_load_mov.r1, val, 1, REG_DEST); break;
         }
     } else {
-        switch (state->fr.flags.size) {
+        switch (state->cr[CR_FLAGS].asFlags.size) {
             case SIZE_64BIT: writeQWord(state, ins.type_load_mov.r1, value, 1, REG_DEST); break;
             case SIZE_32BIT: writeDWord(state, ins.type_load_mov.r1, value, 1, REG_DEST); break;
             case SIZE_16BIT: writeWord(state, ins.type_load_mov.r1, value, 1, REG_DEST); break;
@@ -615,19 +616,19 @@ END_OP
 BEGIN_OP(load_ls_off)
     QWord_t addr = PC_REL(ins.type_load_ls_off.imm);
     if (ins.type_load_ls_off.is_store) {
-        switch (state->fr.flags.size) {
-            case SIZE_8BIT:  memWriteByte((void*) addr, readByte(state, ins.type_load_ls_off.r1, REG_DEST)); break;
-            case SIZE_16BIT: memWriteWord((void*) addr, readWord(state, ins.type_load_ls_off.r1, REG_DEST)); break;
-            case SIZE_32BIT: memWriteDWord((void*) addr, readDWord(state, ins.type_load_ls_off.r1, REG_DEST)); break;
-            case SIZE_64BIT: memWriteQWord((void*) addr, readQWord(state, ins.type_load_ls_off.r1, REG_DEST)); break;
+        switch (state->cr[CR_FLAGS].asFlags.size) {
+            case SIZE_8BIT:  memWriteByte(state, (void*) addr, readByte(state, ins.type_load_ls_off.r1, REG_DEST)); break;
+            case SIZE_16BIT: memWriteWord(state, (void*) addr, readWord(state, ins.type_load_ls_off.r1, REG_DEST)); break;
+            case SIZE_32BIT: memWriteDWord(state, (void*) addr, readDWord(state, ins.type_load_ls_off.r1, REG_DEST)); break;
+            case SIZE_64BIT: memWriteQWord(state, (void*) addr, readQWord(state, ins.type_load_ls_off.r1, REG_DEST)); break;
         }
     } else {
         uint8_t reg = ins.type_load_ls_off.r1;
-        switch (state->fr.flags.size) {
-            case SIZE_8BIT:  writeByte(state, reg, memReadByte((void*) addr), 1, REG_DEST); break;
-            case SIZE_16BIT: writeWord(state, reg, memReadWord((void*) addr), 1, REG_DEST); break;
-            case SIZE_32BIT: writeDWord(state, reg, memReadDWord((void*) addr), 1, REG_DEST); break;
-            case SIZE_64BIT: writeQWord(state, reg, memReadQWord((void*) addr), 1, REG_DEST); break;
+        switch (state->cr[CR_FLAGS].asFlags.size) {
+            case SIZE_8BIT:  writeByte(state, reg, memReadByte(state, (void*) addr), 1, REG_DEST); break;
+            case SIZE_16BIT: writeWord(state, reg, memReadWord(state, (void*) addr), 1, REG_DEST); break;
+            case SIZE_32BIT: writeDWord(state, reg, memReadDWord(state, (void*) addr), 1, REG_DEST); break;
+            case SIZE_64BIT: writeQWord(state, reg, memReadQWord(state, (void*) addr), 1, REG_DEST); break;
         }
     }
 END_OP
@@ -655,38 +656,38 @@ END_OP
 BEGIN_OP(other_prefix)
     void exec_instr(hive_instruction_t ins, struct cpu_state* state);
     // save
-    uint8_t old_size = state->fr.flags.size;
-    uint8_t old_overrides = state->fr.flags.reg_state;
-    uint8_t old_crs = state->fr.flags.references_cr;
-    uint8_t nz = state->fr.dword & 0b11;
+    uint8_t old_size = state->cr[CR_FLAGS].asFlags.size;
+    uint8_t old_overrides = state->cr[CR_FLAGS].asFlags.reg_state;
+    uint8_t old_crs = state->cr[CR_FLAGS].asFlags.references_cr;
+    uint8_t nz = state->cr[CR_FLAGS].asDWord & 0b11;
 
     // update
-    state->fr.flags.size = ins.type_other_prefix.size;
-    state->fr.flags.reg_state = ins.type_other_prefix.reg_override;
-    state->fr.flags.references_cr = ins.type_other_prefix.references_cr;
+    state->cr[CR_FLAGS].asFlags.size = ins.type_other_prefix.size;
+    state->cr[CR_FLAGS].asFlags.reg_state = ins.type_other_prefix.reg_override;
+    state->cr[CR_FLAGS].asFlags.references_cr = ins.type_other_prefix.references_cr;
     state->r[REG_PC].asInstrPtr++;
 
-    if (state->fr.flags.size == SIZE_64BIT && state->fr.flags.reg_state != 0) {
-        state->fr.flags.size = old_size;
-        state->fr.flags.reg_state = old_overrides;
-        state->fr.flags.references_cr = old_crs;
+    if (state->cr[CR_FLAGS].asFlags.size == SIZE_64BIT && state->cr[CR_FLAGS].asFlags.reg_state != 0) {
+        state->cr[CR_FLAGS].asFlags.size = old_size;
+        state->cr[CR_FLAGS].asFlags.reg_state = old_overrides;
+        state->cr[CR_FLAGS].asFlags.references_cr = old_crs;
         raise(SIGILL);
     }
     
     // exec
-    exec_instr(memReadhive_instruction(state->r[REG_PC].asInstrPtr), state);
+    exec_instr(memReadhive_instruction(state, state->r[REG_PC].asInstrPtr), state);
     
     // restore
-    state->fr.flags.size = old_size;
-    state->fr.flags.reg_state = old_overrides;
-    state->fr.flags.references_cr = old_crs;
+    state->cr[CR_FLAGS].asFlags.size = old_size;
+    state->cr[CR_FLAGS].asFlags.reg_state = old_overrides;
+    state->cr[CR_FLAGS].asFlags.references_cr = old_crs;
     if (ins.type_other_prefix.reset_flags) {
-        state->fr.dword &= ~0b11;
-        state->fr.dword |= nz;
+        state->cr[CR_FLAGS].asDWord &= ~0b11;
+        state->cr[CR_FLAGS].asDWord |= nz;
     }
 END_OP
 BEGIN_OP(other_zeroupper)
-    switch (state->fr.flags.size) {
+    switch (state->cr[CR_FLAGS].asFlags.size) {
         case SIZE_8BIT: {
             Byte_t value = readByte(state, ins.type_other_zeroupper.r1, REG_DEST);
             state->r[ins.type_other_zeroupper.r1].asQWord = 0;
@@ -720,6 +721,9 @@ BEGIN_OP(branch)
     }
     if (ins.type_branch.link) {
         LINK();
+    }
+    if (target == state->r[31].asQWord) {
+        sched_yield();
     }
     BRANCH(target);
 END_OP
@@ -952,7 +956,7 @@ BEGIN_OP(vpu_ldr)
     } else {
         addr = (readQWord(state, ins.type_data_vpu_ls_imm.r1, REG_SRC1) + offset);
     }
-    state->v[ins.type_data_vpu_ls.v1] = memReadhive_vector_register((void*) addr);
+    state->v[ins.type_data_vpu_ls.v1] = memReadhive_vector_register(state, (void*) addr);
 END_OP
 BEGIN_OP(vpu_str)
     QWord_t addr;
@@ -968,7 +972,7 @@ BEGIN_OP(vpu_str)
     } else {
         addr = (readQWord(state, ins.type_data_vpu_ls_imm.r1, REG_SRC1) + offset);
     }
-    memWritehive_vector_register((void*) addr, state->v[ins.type_data_vpu_ls.v1]);
+    memWritehive_vector_register(state, (void*) addr, state->v[ins.type_data_vpu_ls.v1]);
 END_OP
 
 hive_executor_t vpu_execs[] = {
@@ -990,7 +994,7 @@ void coredump(struct cpu_state* state);
 char* dis(hive_instruction_t** ins, uint64_t addr);
 
 void exec_instr(hive_instruction_t ins, struct cpu_state* state) {
-    if (!check_condition(ins, state->fr)) return;
+    if (!check_condition(ins, state->cr[CR_FLAGS].asFlags)) return;
     switch (ins.generic.type) {
         case MODE_BRANCH: exec_branch(ins, state); break;
         case MODE_DATA:   exec_data(ins, state); break;
@@ -1003,9 +1007,9 @@ void exec_instr(hive_instruction_t ins, struct cpu_state* state) {
 int check_condition0(uint8_t ins, hive_flag_register_t fr) {
     switch (ins) {
         case FLAG_ALWAYS:   return 1;
-        case FLAG_EQ:       return fr.flags.zero;
-        case FLAG_LE:       return fr.flags.negative || fr.flags.zero;
-        case FLAG_LT:       return fr.flags.negative;
+        case FLAG_EQ:       return fr.zero;
+        case FLAG_LE:       return fr.negative || fr.zero;
+        case FLAG_LT:       return fr.negative;
     }
     return 0;
 }
@@ -1034,7 +1038,7 @@ int runstate(struct cpu_state* state) {
     }
     while (1) {
         for (current_thread = 0; current_thread < THREAD_COUNT; current_thread++) {
-            hive_instruction_t ins = memReadhive_instruction(state[current_thread].r[REG_PC].asInstrPtr);
+            hive_instruction_t ins = memReadhive_instruction(state, state[current_thread].r[REG_PC].asInstrPtr);
             exec_instr(ins, &(state[current_thread]));
             state[current_thread].r[REG_PC].asInstrPtr++;
             state[current_thread].cr[CR_CYCLES].asQWord++;
@@ -1048,11 +1052,11 @@ void interrupt_handler(int sig) {
 
 void exec(void* start) {
     for (uint16_t cpuid = 0; cpuid < CORE_COUNT * THREAD_COUNT; cpuid++) {
-        state[cpuid].fr.flags.size = SIZE_64BIT;
         state[cpuid].r[REG_PC].asPointer = start;
         state[cpuid].cr[CR_CPUID].asQWord = cpuid;
         state[cpuid].cr[CR_CORES].asQWord = CORE_COUNT;
         state[cpuid].cr[CR_THREADS].asQWord = THREAD_COUNT;
+        state[cpuid].cr[CR_FLAGS].asFlags.size = SIZE_64BIT;
     }
 
     pthread_t cores[CORE_COUNT] = {0};
@@ -1068,6 +1072,7 @@ void exec(void* start) {
             fprintf(stderr, "Could not create vcore #%hu: %s\n", cpuid, strerror(errno));
         }
     }
+    sched_yield();
     for (uint16_t cpuid = 0; cpuid < CORE_COUNT * THREAD_COUNT; cpuid += THREAD_COUNT) {
         int ret_val = 0;
         int ret = pthread_join(cores[cpuid / THREAD_COUNT], (void*) &ret_val);

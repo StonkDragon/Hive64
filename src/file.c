@@ -22,10 +22,14 @@ HiveFile read_hive_file(FILE* fp) {
         fread(&hf.sects.items[i].type, sizeof(hf.sects.items[i].type), 1, fp);
         if (hf.sects.items[i].len) {
             size_t s = pad_to_instr_size(hf.sects.items[i].len);
-            hf.sects.items[i].data = mmap(NULL, s, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, 0, 0);
-            if (hf.sects.items[i].data == MAP_FAILED) {
-                fprintf(stderr, "Failed to map memory: %s\n", strerror(errno));
-                exit(1);
+            if (hf.sects.items[i].type < SECT_TYPE_TEXT) {
+                hf.sects.items[i].data = malloc(s);
+            } else {
+                hf.sects.items[i].data = sys_mmap(NULL, s, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, 0, 0);
+                if (hf.sects.items[i].data == MAP_FAILED) {
+                    fprintf(stderr, "Failed to map memory: %s\n", strerror(errno));
+                    exit(1);
+                }
             }
             fread(hf.sects.items[i].data, sizeof(char), hf.sects.items[i].len, fp);
         }
@@ -389,7 +393,7 @@ void prepare(HiveFile_Array hf, bool try_relocate, Symbol_Array* all_syms) {
             for (size_t s = 0; s < hf.items[i].sects.count; s++) {
                 size_t sz = pad_to_instr_size(hf.items[i].sects.items[s].len);
                 if (hf.items[i].sects.items[s].type < SECT_TYPE_TEXT) {
-                    munmap(hf.items[i].sects.items[s].data, sz);
+                    free(hf.items[i].sects.items[s].data);
                     hf.items[i].sects.items[s].data = NULL;
                 } else {
                     if (hf.items[i].sects.items[s].type == SECT_TYPE_TEXT) {
