@@ -186,6 +186,22 @@ int isValidBegin(int c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || c == '$';
 }
 
+int isBinNumber(int c) {
+    return c == '0' || c == '1';
+}
+
+int isOctNumber(int c) {
+    return isBinNumber(c) || (c >= '2' && c <= '7');
+}
+
+int isNumber(int c) {
+    return isOctNumber(c) || c == '8' || c == '9';
+}
+
+int isHexNumber(int c) {
+    return (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') || isNumber(c);
+}
+
 int isValid(int c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '$' || c == '{' || c == '}' || c == '(' || c == ')';
 }
@@ -1923,8 +1939,8 @@ Token nextToken(void) {
                 ['r'] = Register64,
             };
             src++;
-            if (isnumber(*src)) {
-                while (isnumber(*src))
+            if (isNumber(*src)) {
+                while (isNumber(*src))
                     src++;
 
                 if (*src == 'l' || *src == 'h') {
@@ -1946,8 +1962,8 @@ Token nextToken(void) {
             src--;
         } else if (*s == 'v') {
             src++;
-            if (isnumber(*src)) {
-                while (isnumber(*src))
+            if (isNumber(*src)) {
+                while (isNumber(*src))
                     src++;
 
                 s[src - start] = 0;
@@ -1961,8 +1977,8 @@ Token nextToken(void) {
             src--;
         } else if (s[0] == 'c' && s[1] == 'r') {
             src += 2;
-            if (isnumber(*src)) {
-                while (isnumber(*src))
+            if (isNumber(*src)) {
+                while (isNumber(*src))
                     src++;
 
                 if (*src == 'l' || *src == 'h') {
@@ -2044,7 +2060,7 @@ Token nextToken(void) {
             .value = s,
             .type = Identifier
         };
-    } else if (isnumber(*src)) {
+    } else if (isNumber(*src)) {
     parseNum: (void) 0;
         char* s = strdup(src);
         char* start = src;
@@ -2053,7 +2069,7 @@ Token nextToken(void) {
         }
         if (strncmp(src, "0x", 2) == 0) {
             src += 2;
-            while (isxdigit(*src)) {
+            while (isHexNumber(*src)) {
                 src++;
             }
             s[src - start] = 0;
@@ -2065,7 +2081,7 @@ Token nextToken(void) {
             };
         } else if (strncmp(src, "0b", 2) == 0) {
             src += 2;
-            while (*src == '0' || *src == '1') {
+            while (isBinNumber(*src)) {
                 src++;
             }
             s[src - start] = 0;
@@ -2076,12 +2092,12 @@ Token nextToken(void) {
                 .type = Number
             };
         } else {
-            while (isnumber(*src)) {
+            while (isNumber(*src)) {
                 src++;
             }
             if (*src == '.') {
                 src++;
-                while (isnumber(*src)) {
+                while (isNumber(*src)) {
                     src++;
                 }
                 s[src - start] = 0;
@@ -2214,7 +2230,7 @@ Token nextToken(void) {
         };
     } else if (*src == '+') {
         src++;
-        if (isnumber(*src)) {
+        if (isNumber(*src)) {
             goto parseNum;
         }
         return (Token) {
@@ -2225,7 +2241,7 @@ Token nextToken(void) {
         };
     } else if (*src == '-') {
         src++;
-        if (isnumber(*src)) {
+        if (isNumber(*src)) {
             src--;
             goto parseNum;
         }
