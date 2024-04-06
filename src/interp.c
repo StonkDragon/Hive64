@@ -83,10 +83,33 @@ typedef void(*hive_executor_t)(hive_instruction_t, struct cpu_state*);
 
 #define BEGIN_OP(_op, ...)   void exec_ ## _op (hive_instruction_t ins, struct cpu_state* state) {
 #define END_OP               }
-uint64_t swap_bytes_64(uint64_t x) { return htonll(x); }
-uint32_t swap_bytes_32(uint32_t x) { return htonl(x); }
-uint16_t swap_bytes_16(uint16_t x) { return htons(x); }
-uint8_t swap_bytes_8(uint8_t x) { raise(SIGILL); return x; }
+
+uint64_t swap_bytes_64(uint64_t x) {
+    return (((x >> 0) & 0xFF) << 56) |
+           (((x >> 8) & 0xFF) << 48) |
+           (((x >> 16) & 0xFF) << 40) |
+           (((x >> 24) & 0xFF) << 32) |
+           (((x >> 32) & 0xFF) << 24) |
+           (((x >> 40) & 0xFF) << 16) |
+           (((x >> 48) & 0xFF) << 8) |
+           (((x >> 56) & 0xFF) << 0);
+}
+uint32_t swap_bytes_32(uint32_t x) {
+    return (((x >> 0) & 0xFF) << 24) |
+           (((x >> 8) & 0xFF) << 16) |
+           (((x >> 16) & 0xFF) << 8) |
+           (((x >> 24) & 0xFF) << 0);
+}
+uint16_t swap_bytes_16(uint16_t x) {
+    return (((x >> 0) & 0xFF) << 8) |
+           (((x >> 8) & 0xFF) << 0);
+}
+
+uint8_t swap_bytes_8(uint8_t x) {
+    raise(SIGILL);
+    return x;
+}
+
 #define swap_bytes(x) _Generic((x), int64_t: swap_bytes_64, uint64_t: swap_bytes_64, int32_t: swap_bytes_32, uint32_t: swap_bytes_32, int16_t: swap_bytes_16, uint16_t: swap_bytes_16, int8_t: swap_bytes_8, uint8_t: swap_bytes_8)((x))
 
 #define INTENT_WRITE 1
