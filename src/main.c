@@ -179,40 +179,27 @@ int main(int argc, char **argv) {
                 continue;
             }
 
-            Nob_String_Builder sym_sect_data = pack_symbol_table(syms);
-            Nob_String_Builder reloc_sect_data = pack_relocation_table(relocations);
-
-            Section sym_sect = {
-                .data = sym_sect_data.items,
-                .len = sym_sect_data.count,
-                .type = SECT_TYPE_SYMS
-            };
-
-            Section reloc_sect = {
-                .data = reloc_sect_data.items,
-                .len = reloc_sect_data.count,
-                .type = SECT_TYPE_RELOC
-            };
-
-            Section_Array sa = {0};
+            LoadCommand_Array sa = {0};
             for (size_t i = 0; i < code.count; i++) {
                 Section s = {
                     .data = code.items[i].data.items,
                     .len = code.items[i].data.count,
+                    .len_unpacked = code.items[i].data.count,
                     .type = code.items[i].type,
                 };
                 nob_da_append(&sa, s);
             } 
-            nob_da_append(&sa, sym_sect);
-            nob_da_append(&sa, reloc_sect);
 
-            HiveFile hf = {
-                .magic = HIVE_FILE_MAGIC,
-                .sects = sa
+            Hive64File hf = {
+                .magic = HIVE64_FILE_MAGIC,
+                .libraries = {0},
+                .load_commands = sa,
+                .relocations = relocations,
+                .symbols = syms,
             };
-            
+
             FILE* f = fopen(reformat(files.items[i], ".hive64", ".rcx"), "wb");
-            write_hive_file(hf, f);
+            write_h64_file(f, hf);
             fclose(f);
         }
         return 0;
@@ -250,59 +237,41 @@ int main(int argc, char **argv) {
             }
         }
 
-        Nob_String_Builder ld_sect_data = pack_ld_section(dlibs);
-        Section ld_sect = {
-            .data = ld_sect_data.items,
-            .len = ld_sect_data.count,
-            .type = SECT_TYPE_LD,
+        Hive64File file = {
+            .magic = HIVE64_FILE_MAGIC,
+            .libraries = dlibs,
         };
-        HiveFile dl = {
-            .magic = HIVE_FILE_MAGIC,
-            .sects = {0},
-            .name = "__DYLD__",
-        };
-        nob_da_append(&dl.sects, ld_sect);
         
-        FILE* fp = fopen("__DYLD__", "wb");
-        write_hive_file(dl, fp);
-        fclose(fp);
-        nob_da_append(&link_with, "__DYLD__");
-
-        HiveFile dummy = {
-            .magic = HIVE_FAT_FILE_MAGIC,
-            .sects = {0}
-        };
-
         for (size_t i = 0; i < link_with.count; i++) {
             FILE* fp = fopen(link_with.items[i], "rb");
-            Section s = {0};
-
-            size_t file_name_size = strlen(link_with.items[i]);
+            Hive64File_Array data = read_h64_file(fp, false);
             
-            fseek(fp, 0, SEEK_END);
-            size_t file_size = ftell(fp);
-            fseek(fp, 0, SEEK_SET);
-
-            s.len = file_size + file_name_size + sizeof(size_t);
-            s.data = malloc(s.len * sizeof(*s.data));
-
-            *(size_t*) s.data = file_name_size;
-            
-            strncpy(s.data + sizeof(size_t), link_with.items[i], file_name_size);
-            fread(s.data + file_name_size + sizeof(size_t), sizeof(*s.data), s.len, fp);
-            nob_da_append(&dummy.sects, s);
+            for (size_t f = 0; f < data.count; f++) {
+                for (size_t k = 0; k < data.items[f].relocations.count; k++) {
+                    data.items[f].relocations.items[k].source_section += file.load_commands.count;
+                    if (data.items[f].relocations.items[k].is_local) {
+                        data.items[f].relocations.items[k].data.local.target_section += file.load_commands.count;
+                    }
+                }
+                for (size_t k = 0; k < data.items[f].symbols.count; k++) {
+                    data.items[f].symbols.items[k].section += file.load_commands.count;
+                }
+                nob_da_append_many(&file.load_commands, data.items[f].load_commands.items, data.items[f].load_commands.count);
+                nob_da_append_many(&file.relocations, data.items[f].relocations.items, data.items[f].relocations.count);
+                nob_da_append_many(&file.symbols, data.items[f].symbols.items, data.items[f].symbols.count);
+                nob_da_append_many(&file.libraries, data.items[f].libraries.items, data.items[f].libraries.count);
+            }
 
             remove(link_with.items[i]);
         }
-
-        remove("__DYLD__");
-
+        
         FILE* f = fopen(outfile, "wb");
-        write_hive_file(dummy, f);
+        write_h64_file(f, file);
         fclose(f);
     } else if (is_run_cmd(exe_name) || strcmp(exe_name, "h64") == 0) {
-        HiveFile_Array hf = {0};
-        get_all_files(argv[1], &hf, true, true);
+        FILE* fp = fopen(argv[1], "rb");
+        Hive64File_Array hf = read_h64_file(fp, true);
+        fclose(fp);
         
         Symbol_Array all_syms = {0};
         prepare(hf, true, &all_syms);
@@ -315,16 +284,17 @@ int main(int argc, char **argv) {
         shell();
         return 0;
     } else if (is_dis_cmd(exe_name)) {
-        HiveFile_Array hf = {0};
-        get_all_files(argv[1], &hf, false, false);
+        FILE* fp = fopen(argv[1], "rb");
+        Hive64File_Array hf = read_h64_file(fp, false);
+        fclose(fp);
         
         Symbol_Array all_syms = {0};
         prepare(hf, false, &all_syms);
 
         for (size_t i = 0; i < hf.count; i++) {
-            if (hf.items[i].magic != HIVE_FAT_FILE_MAGIC && strcmp(hf.items[i].name, "__DYLD__")) {
-                printf("%s:\n", hf.items[i].name);
-                disassemble(get_section(hf.items[i], SECT_TYPE_TEXT), all_syms, create_relocation_section(get_section(hf.items[i], SECT_TYPE_RELOC)));
+            for (size_t j = 0; j < hf.items[i].load_commands.count; j++) {
+                if (hf.items[i].load_commands.items[j].type != SECT_TYPE_TEXT) continue;
+                disassemble(hf.items[i].load_commands.items[j], all_syms, hf.items[i].relocations);
             }
         }
         return 0;

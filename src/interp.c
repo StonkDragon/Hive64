@@ -85,6 +85,9 @@ typedef void(*hive_executor_t)(hive_instruction_t, struct cpu_state*);
 #define END_OP               }
 
 uint64_t swap_bytes_64(uint64_t x) {
+#if __has_builtin(__builtin_bswap64)
+return __builtin_bswap64(x);
+#else
     return (((x >> 0) & 0xFF) << 56) |
            (((x >> 8) & 0xFF) << 48) |
            (((x >> 16) & 0xFF) << 40) |
@@ -93,16 +96,25 @@ uint64_t swap_bytes_64(uint64_t x) {
            (((x >> 40) & 0xFF) << 16) |
            (((x >> 48) & 0xFF) << 8) |
            (((x >> 56) & 0xFF) << 0);
+#endif
 }
 uint32_t swap_bytes_32(uint32_t x) {
+#if __has_builtin(__builtin_bswap32)
+return __builtin_bswap32(x);
+#else
     return (((x >> 0) & 0xFF) << 24) |
            (((x >> 8) & 0xFF) << 16) |
            (((x >> 16) & 0xFF) << 8) |
            (((x >> 24) & 0xFF) << 0);
+#endif
 }
 uint16_t swap_bytes_16(uint16_t x) {
+#if __has_builtin(__builtin_bswap16)
+return __builtin_bswap16(x);
+#else
     return (((x >> 0) & 0xFF) << 8) |
            (((x >> 8) & 0xFF) << 0);
+#endif
 }
 
 uint8_t swap_bytes_8(uint8_t x) {
@@ -159,8 +171,10 @@ uint8_t is_control_register(struct cpu_state* state, uint8_t counter) {
 
 hive_register_t* getRegister(struct cpu_state* state, uint8_t reg, uint8_t counter, uint8_t intent) {
     if (is_control_register(state, counter)) {
-        if (reg >= 12 || state->cr[CR_FLAGS].asFlags.execution_mode != EM_HYPERVISOR) {
+        if (reg >= 12) {
             raise(SIGILL);
+        } else if (state->cr[CR_RUNLEVEL].asQWord != EM_HYPERVISOR) {
+            raise(SIGTRAP);
         }
         return &state->cr[reg];
     } else {
@@ -657,6 +671,9 @@ BEGIN_OP(load_ls_off)
 END_OP
 
 BEGIN_OP(other_cpuid)
+    if (state->cr[CR_RUNLEVEL].asQWord > EM_SUPERVISOR) {
+        raise(SIGTRAP);
+    }
     switch (state->r[0].asQWord) {
         case 0:
             state->r[0].asQWord = set_flags64(state, state->cr[CR_CPUID].asQWord);
@@ -669,10 +686,35 @@ BEGIN_OP(other_cpuid)
             break;
     }
 END_OP
+BEGIN_OP(other_sret)
+    if (state->cr[CR_RUNLEVEL].asQWord > EM_SUPERVISOR) {
+        raise(SIGTRAP);
+    }
+    state->r[REG_PC].asQWord = state->r[REG_LR].asQWord;
+    state->cr[CR_RUNLEVEL].asQWord = EM_USER;
+END_OP
+BEGIN_OP(other_hret)
+    if (state->cr[CR_RUNLEVEL].asQWord > EM_HYPERVISOR) {
+        raise(SIGTRAP);
+    }
+    state->r[REG_PC].asQWord = state->r[REG_LR].asQWord;
+    state->cr[CR_RUNLEVEL].asQWord = EM_SUPERVISOR;
+END_OP
+BEGIN_OP(other_iret)
+    if (state->cr[CR_RUNLEVEL].asQWord > EM_HYPERVISOR) {
+        raise(SIGTRAP);
+    }
+    state->r[REG_PC].asQWord = state->r[REG_SP].asQWordPtr[0] - sizeof(hive_instruction_t);
+    state->cr[CR_RUNLEVEL].asQWord = state->r[REG_SP].asQWordPtr[1];
+    state->r[REG_SP].asQWord += 16;
+END_OP
 
 BEGIN_OP(other_privileged)
     switch (ins.type_other_priv.priv_op) {
         case SUBOP_OTHER_cpuid:     exec_other_cpuid(ins, state); break;
+        case SUBOP_OTHER_sret:      exec_other_sret(ins, state); break;
+        case SUBOP_OTHER_hret:      exec_other_hret(ins, state); break;
+        case SUBOP_OTHER_iret:      exec_other_iret(ins, state); break;
         default:                    raise(SIGILL); break;
     }
 END_OP
@@ -1054,10 +1096,28 @@ __thread jmp_buf lidt;
 int runstate(struct cpu_state* state) {
     size_t current_thread = 0;
 
+    bool handling = false;
     int sig = setjmp(lidt);
     if (sig) {
-        fprintf(stderr, "Fault on vcore #%llu: %s\n", state[current_thread].cr[CR_CPUID].asQWord, strsignal(sig));
-        return sig;
+        if ((sig != SIGILL && sig != SIGBUS && sig != SIGSEGV && sig != SIGTRAP) || state[current_thread].cr[CR_IDT].asQWord == 0 || handling) {
+            fprintf(stderr, "Fault on vcore #%llu: %s\n", state[current_thread].cr[CR_CPUID].asQWord, strsignal(sig));
+            return sig;
+        }
+        uint8_t ints[] = {
+            [SIGILL] = INT_UD,
+            [SIGBUS] = INT_PF,
+            [SIGSEGV] = INT_GP,
+            [SIGTRAP] = INT_IP,
+        };
+        handling = true;
+        state[current_thread].r[REG_SP].asQWord -= 16;
+        state[current_thread].r[REG_SP].asQWordPtr[0] = state[current_thread].r[REG_PC].asQWord;
+        state[current_thread].r[REG_SP].asQWordPtr[1] = state[current_thread].cr[CR_RUNLEVEL].asQWord;
+        state[current_thread].r[REG_PC].asQWord = state[current_thread].cr[CR_IDT].asQWord;
+        state[current_thread].cr[CR_INT_ID].asQWord = ints[sig];
+        state[current_thread].cr[CR_RUNLEVEL].asQWord = EM_HYPERVISOR;
+        handling = false;
+        sig = 0;
     }
     while (1) {
         for (current_thread = 0; current_thread < THREAD_COUNT; current_thread++) {
@@ -1088,6 +1148,7 @@ void exec(void* start) {
     signal(SIGILL, interrupt_handler);
     signal(SIGSEGV, interrupt_handler);
     signal(SIGBUS, interrupt_handler);
+    signal(SIGTRAP, interrupt_handler);
 
     for (uint16_t cpuid = 0; cpuid < CORE_COUNT * THREAD_COUNT; cpuid += THREAD_COUNT) {
         int ret = pthread_create(&(cores[cpuid / THREAD_COUNT]), NULL, (void*) &runstate, &(state[cpuid]));

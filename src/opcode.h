@@ -90,3 +90,6 @@
 #define OP_OTHER_zeroupper      0b00010
 
 #define SUBOP_OTHER_cpuid       0b00000
+#define SUBOP_OTHER_sret        0b00001
+#define SUBOP_OTHER_hret        0b00010
+#define SUBOP_OTHER_iret        0b00011

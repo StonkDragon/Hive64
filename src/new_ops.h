@@ -12,6 +12,7 @@
 #include "preproc.h"
 
 #define HIVE_FILE_MAGIC 0xFEEDF00D
+#define HIVE64_FILE_MAGIC 0x1337C0DE
 #define HIVE_FAT_FILE_MAGIC 0xFEEDFACF
 
 typedef __uint128_t LWord_t;    // long word
@@ -289,22 +290,6 @@ typedef union {
         uint8_t op: 5;
         CONDITION_AND_TYPE;
     } PACKED type_other_priv;
-    struct {
-        uint8_t target_thread_reg: 5;
-        uint8_t target_reg: 5;
-        uint8_t value_reg: 5;
-        PAD(2);
-        uint8_t priv_op: 5;
-        uint8_t op: 5;
-        CONDITION_AND_TYPE;
-    } PACKED type_other_priv_transfer;
-    struct {
-        uint8_t r1: 5;
-        PAD(12);
-        uint8_t priv_op: 5;
-        uint8_t op: 5;
-        CONDITION_AND_TYPE;
-    } PACKED type_other_priv_xsl;
 } PACKED hive_instruction_t;
 
 #ifdef static_assert
@@ -329,7 +314,6 @@ typedef struct {
     uint8_t             size:2;
     uint8_t             reg_state:4;
     uint8_t             references_cr:4;
-    uint8_t             execution_mode:2;
     #define EM_HYPERVISOR 0
     #define EM_SUPERVISOR 1
     #define EM_USER 2
@@ -414,6 +398,12 @@ static_assert(sizeof(hive_flag_register_t) <= sizeof(QWord_t), "hive_flag_regist
 #define CR_THREADS 2
 #define CR_CPUID 3
 #define CR_FLAGS 4
+#define CR_IDT 5
+#define CR_INT_ID 6
+#define CR_RUNLEVEL 7
+
+#define CR_UTIL1 10
+#define CR_UTIL2 11
 
 #define SIZE_8BIT   0b00
 #define SIZE_16BIT  0b01
@@ -559,7 +549,9 @@ typedef struct {
 typedef struct {
     uint8_t type;
     size_t len;
+    size_t len_unpacked;
     char* data;
+    void* ld_at;
 } Section;
 
 typedef struct {
@@ -567,12 +559,6 @@ typedef struct {
     size_t count;
     size_t capacity;
 } Section_Array;
-
-typedef struct {
-    uint32_t magic;
-    const char* name;
-    Section_Array sects;
-} HiveFile;
 
 typedef struct {
     Nob_String_Builder data;
@@ -590,15 +576,39 @@ typedef struct {
     size_t capacity;
 } Instr_Array;
 
-#define SECT_TYPE_SYMS      0b00000001
-#define SECT_TYPE_RELOC     0b00000010
-#define SECT_TYPE_LD        0b00000100
+typedef Section LoadCommand;
 
-#define SECT_TYPE_TEXT      0b10000000
-#define SECT_TYPE_DATA      0b10000001
-#define SECT_TYPE_BSS       0b10000010
+typedef struct {
+    LoadCommand* items;
+    size_t count;
+    size_t capacity;
+} LoadCommand_Array;
 
-#define SECT_TYPE_NOEMIT    0b01111111
+typedef Nob_File_Paths Library_Array;
+
+typedef struct Hive64File {
+    uint32_t magic;
+    uint16_t v_maj;
+    uint16_t v_min;
+    uint32_t filetype;
+    Relocation_Array relocations;
+    LoadCommand_Array load_commands;
+    Symbol_Array symbols;
+    Library_Array libraries;
+} Hive64File;
+
+typedef struct {
+    Hive64File* items;
+    size_t count;
+    size_t capacity;
+} Hive64File_Array;
+
+#define SECT_TYPE_TEXT      0b00000001
+#define SECT_TYPE_DATA      0b00000010
+#define SECT_TYPE_BSS       0b00000100
+#define SECT_TYPE_ZERO      0b00001000
+
+#define SECT_TYPE_NOEMIT    0b11111111
 
 #define HIVE_PAGE_SHIFT 14
 #define HIVE_PAGE_SIZE (1ULL << HIVE_PAGE_SHIFT)
@@ -609,27 +619,12 @@ typedef struct {
 #define PAGE_FLAG_WRITE 0x02
 #define PAGE_FLAG_EXEC  0x04
 
-typedef struct {
-    HiveFile* items;
-    size_t count;
-    size_t capacity;
-} HiveFile_Array;
-
-HiveFile read_hive_file(FILE* fp);
-void get_all_files(const char* name, HiveFile_Array* current, bool must_be_fat, bool do_dyload);
-void write_hive_file(HiveFile hf, FILE* fp);
-Symbol_Array create_symbol_section(Section s);
-Relocation_Array create_relocation_section(Section s);
-Nob_File_Paths create_ld_section(Section s);
-Section get_section(HiveFile f, uint8_t sect_type);
-char* get_code_section_address(HiveFile f);
+Hive64File_Array read_h64_file(FILE* fp, bool load_dylibs);
+void write_h64_file(FILE* fp, Hive64File f);
 uint64_t find_symbol_address(Symbol_Array syms, char* name);
 Symbol find_symbol(Symbol_Array syms, char* name);
-Nob_String_Builder pack_symbol_table(Symbol_Array syms);
-Nob_String_Builder pack_ld_section(Nob_File_Paths dylibs);
-Nob_String_Builder pack_relocation_table(Relocation_Array relocs);
-void relocate(Section_Array sects, Relocation_Array relocs, Symbol_Array symbols);
-void prepare(HiveFile_Array hf, bool try_relocate, Symbol_Array* all_syms);
+void relocate(LoadCommand_Array sects, Relocation_Array relocs, Symbol_Array symbols);
+void prepare(Hive64File_Array hf, bool try_relocate, Symbol_Array* all_syms);
 int debug(int argc, char** argv);
 void exec(void* start);
 void disassemble(Section code_sect, Symbol_Array syms, Relocation_Array relocations);

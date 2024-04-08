@@ -815,6 +815,18 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 ins.generic.type = MODE_OTHER;
                 ins.type_other.op = OP_OTHER_priv_op;
                 ins.type_other_priv.op = SUBOP_OTHER_cpuid;
+            } else if (eq(mnemonic, "sret")) {
+                ins.generic.type = MODE_OTHER;
+                ins.type_other.op = OP_OTHER_priv_op;
+                ins.type_other_priv.op = SUBOP_OTHER_sret;
+            } else if (eq(mnemonic, "hret")) {
+                ins.generic.type = MODE_OTHER;
+                ins.type_other.op = OP_OTHER_priv_op;
+                ins.type_other_priv.op = SUBOP_OTHER_hret;
+            } else if (eq(mnemonic, "iret")) {
+                ins.generic.type = MODE_OTHER;
+                ins.type_other.op = OP_OTHER_priv_op;
+                ins.type_other_priv.op = SUBOP_OTHER_iret;
             } else if (eq(mnemonic, "add")) {
                 OP(add)
             } else if (eq(mnemonic, "sub")) {

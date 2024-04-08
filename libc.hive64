@@ -1,7 +1,7 @@
 .text
-
 .global _start
 _start:
+    lea cr5, handle_interrupt
     mov r0, cr3
 $loop:
     b.nz $loop
@@ -33,6 +33,40 @@ $loop:
 
     mov r0, r2
     b _exit
+
+handle_interrupt:
+    lea cr10, global_idt
+    shl cr6, 3
+    add cr10, cr6
+    br cr10
+
+int_ud:
+    psh r0
+    lea r0, int_ud_msg
+    bl _puts
+    pp r0 
+    iret
+
+int_pf:
+    psh r0
+    lea r0, int_pf_msg
+    bl _puts
+    pp r0
+    iret
+
+int_gp:
+    psh r0
+    lea r0, int_gp_msg
+    bl _puts
+    pp r0
+    iret
+
+int_ip:
+    psh r0
+    lea r0, int_ip_msg
+    bl _puts
+    pp r0
+    iret
 
 .global _exit
 _exit:
@@ -327,3 +361,15 @@ _memcpy:
 .data
 _puts$newline_str:
     .asciz "\n"
+
+global_idt:
+    .qword 0
+    .qword int_ud
+    .qword int_pf
+    .qword int_gp
+    .qword int_ip
+
+int_ud_msg: .asciz "Undefined opcode"
+int_pf_msg: .asciz "Page fault"
+int_gp_msg: .asciz "Segmentation Fault"
+int_ip_msg: .asciz "Privileged instruction"

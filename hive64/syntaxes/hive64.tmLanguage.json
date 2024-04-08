@@ -66,7 +66,7 @@
 		"generic_mnemonics": {
 			"patterns": [{
 				"name": "keyword.control",
-				"match": "\\b(nop|zeroupper|ret|ldr|str|mov(z|k)?|lea|svc|cpuid|(s|u)b(xt|dp)|psh|pp)\\b"
+				"match": "\\b(nop|zeroupper|[shi]?ret|ldr|str|mov(z|k)?|lea|svc|cpuid|(s|u)b(xt|dp)|psh|pp)\\b"
 			}]
 		},
 		"float_mnemonics": {

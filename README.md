@@ -248,14 +248,17 @@ Specifying any control register selector (`X`/`Y`/`Z`/`W`) for a register number
 |`ssqrt r1, r2`|            `ccc0101100[r1-][r2-]100011......`|`r1 = sqrt(r2)`|
 |`s2i r1, r2`|              `ccc0101110[r1-][r2-]100001......`|`r1 = single_to_integer(r2)`|
 |`i2s r1, r2`|              `ccc0101110[r1-][r2-]100011......`|`r1 = integer_to_single(r2)`|
-|`s2f r1, r2`|              `ccc0101110[r1-][r2-]100000......`|`r1 = single_to_double(r2)`|
-|`f2s r1, r2`|              `ccc0101110[r1-][r2-]100001......`|`r1 = double_to_single(r2)`|
+|`s2f r1, r2`|              `ccc0110000[r1-][r2-]100000......`|`r1 = single_to_double(r2)`|
+|`f2s r1, r2`|              `ccc0110000[r1-][r2-]100001......`|`r1 = double_to_single(r2)`|
 
 ### Utility
 |Mnemonic|Encoding|Description|
 |-|-|-|
 |`svc`|                     `ccc1010.........................`|Supervisor call|
 |`cpuid`|                   `ccc110000000000.................`|Returns information about the cpu (See [`cpuid`](#cpuid-instruction))|
+|`sret`|                    `ccc110000000001.................`|Supervisor return (only in supervisor mode)|
+|`hret`|                    `ccc110000000010.................`|Hypervisor return (only in hypervisor mode)|
+|`iret`|                    `ccc110000000011.................`|Return from interrupt (only in hypervisor mode)|
 
 ### Data transfer
 |Mnemonic|Encoding|Description|

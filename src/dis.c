@@ -382,6 +382,9 @@ char* dis_load(hive_instruction_t ins, uint64_t addr) {
 char* dis_other_priv(hive_instruction_t ins, uint64_t addr) {
     switch (ins.type_other_priv.priv_op) {
         case SUBOP_OTHER_cpuid: return strformat("cpuid%s", condition_to_string(ins));
+        case SUBOP_OTHER_hret:  return strformat("hret%s", condition_to_string(ins));
+        case SUBOP_OTHER_sret:  return strformat("sret%s", condition_to_string(ins));
+        case SUBOP_OTHER_iret:  return strformat("iret%s", condition_to_string(ins));
     }
     return NULL;
 }
