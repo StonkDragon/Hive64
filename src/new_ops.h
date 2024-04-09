@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <setjmp.h>
 
 #define PACKED _Pragma("clang diagnostic push") _Pragma("clang diagnostic ignored \"-Wattribute-packed-for-bitfield\"") __attribute__((packed)) _Pragma("clang diagnostic pop")
 
@@ -119,39 +120,6 @@ typedef union {
         CONDITION_AND_TYPE;
     } PACKED type_data_sext;
     struct {
-        int8_t imm;
-        uint8_t data_op: 4;
-        uint8_t r2: 5;
-        uint8_t r1: 5;
-        uint8_t update_ptr: 1;
-        uint8_t is_store: 1;
-        uint8_t use_immediate: 1;
-        PAD(2);
-        CONDITION_AND_TYPE;
-    } PACKED type_data_ls_imm;
-    struct {
-        uint8_t imm;
-        uint8_t data_op: 4;
-        uint8_t r2: 5;
-        uint8_t r1: 5;
-        uint8_t update_ptr: 1;
-        uint8_t is_store: 1;
-        uint8_t shift: 3;
-        CONDITION_AND_TYPE;
-    } PACKED type_data_ls_far;
-    struct {
-        uint8_t r3: 5;
-        PAD(3);
-        uint8_t data_op: 4;
-        uint8_t r2: 5;
-        uint8_t r1: 5;
-        uint8_t update_ptr: 1;
-        uint8_t is_store: 1;
-        uint8_t use_immediate: 1;
-        PAD(2);
-        CONDITION_AND_TYPE;
-    } PACKED type_data_ls_reg;
-    struct {
         uint8_t r3: 5;
         PAD(1);
         uint8_t is_single_op: 1;
@@ -249,6 +217,28 @@ typedef union {
         CONDITION_AND_TYPE;
     } PACKED type_load_signed;
     struct {
+        uint8_t r3: 5;
+        uint8_t shift: 3;
+        PAD(4);
+        uint8_t r2: 5;
+        uint8_t update_ptr: 1;
+        uint8_t use_imm: 1;
+        uint8_t is_store: 1;
+        uint8_t r1: 5;
+        uint8_t op: 2;
+        CONDITION_AND_TYPE;
+    } PACKED type_load_ls;
+    struct {
+        int16_t imm: 12;
+        uint8_t r2: 5;
+        uint8_t update_ptr: 1;
+        uint8_t use_imm: 1;
+        uint8_t is_store: 1;
+        uint8_t r1: 5;
+        uint8_t op: 2;
+        CONDITION_AND_TYPE;
+    } PACKED type_load_ls_imm;
+    struct {
         int32_t imm: 19;
         uint8_t is_store: 1;
         uint8_t r1: 5;
@@ -276,20 +266,21 @@ typedef union {
         CONDITION_AND_TYPE;
     } PACKED type_other_zeroupper;
     struct {
+        uint8_t r1: 5;
+        uint8_t cr2: 5;
+        PAD(12);
+        uint8_t op: 5;
+        CONDITION_AND_TYPE;
+    } PACKED type_other_mov_cr;
+    struct {
         uint8_t size: 2;
-        uint8_t reset_flags: 1;
         uint8_t reg_override: 4;
         uint8_t references_cr: 4;
+        uint8_t reset_flags: 1;
         PAD(11);
         uint8_t op: 5;
         CONDITION_AND_TYPE;
     } PACKED type_other_prefix;
-    struct {
-        PAD(17);
-        uint8_t priv_op: 5;
-        uint8_t op: 5;
-        CONDITION_AND_TYPE;
-    } PACKED type_other_priv;
 } PACKED hive_instruction_t;
 
 #ifdef static_assert
@@ -313,7 +304,6 @@ typedef struct {
     uint8_t             negative:1;
     uint8_t             size:2;
     uint8_t             reg_state:4;
-    uint8_t             references_cr:4;
     #define EM_HYPERVISOR 0
     #define EM_SUPERVISOR 1
     #define EM_USER 2
@@ -444,11 +434,11 @@ static_assert(sizeof(hive_flag_register_t) <= sizeof(QWord_t), "hive_flag_regist
 void* sys_mmap(void* addr, size_t sz, int prot, int map, int fd, long long off);
 
 #ifndef CORE_COUNT
-#define CORE_COUNT 6
+#define CORE_COUNT 1
 #endif
 
 #ifndef THREAD_COUNT
-#define THREAD_COUNT 3
+#define THREAD_COUNT 1
 #endif
 
 #define STACK_SIZE (1024 * 1024)
@@ -463,6 +453,7 @@ struct cpu_state {
     hive_register_t r[32];
     hive_vector_register_t v[16];
     hive_register_t cr[12];
+    void* idt;
 };
 
 struct cpu_transfer {
@@ -486,11 +477,17 @@ typedef enum _TokenType {
     Directive,
     LeftBracket,
     RightBracket,
+    LeftParen,
+    RightParen,
     Comma,
     Plus,
     Minus,
     Bang,
     ControlRegister,
+    MCRegister,
+    Percent,
+    Hash,
+    Column,
 } TokenType;
 
 typedef struct _Token {
@@ -619,6 +616,14 @@ typedef struct {
 #define PAGE_FLAG_WRITE 0x02
 #define PAGE_FLAG_EXEC  0x04
 
+#if __has_builtin(__builtin_expect)
+#define likely(x) __builtin_expect((x), 1)
+#define unlikely(x) __builtin_expect((x), 0)
+#else
+#define likely(x) (x)
+#define unlikely(x) (x)
+#endif
+
 Hive64File_Array read_h64_file(FILE* fp, bool load_dylibs);
 void write_h64_file(FILE* fp, Hive64File f);
 uint64_t find_symbol_address(Symbol_Array syms, char* name);
@@ -629,3 +634,10 @@ int debug(int argc, char** argv);
 void exec(void* start);
 void disassemble(Section code_sect, Symbol_Array syms, Relocation_Array relocations);
 SB_Array run_compile(const char* file_name, Symbol_Array* syms, Relocation_Array* relocations);
+
+int isValidBegin(int c);
+int isBinNumber(int c);
+int isOctNumber(int c);
+int isNumber(int c);
+int isHexNumber(int c);
+int isValid(int c);

@@ -1,8 +1,11 @@
 .text
 .global _start
 _start:
-    lea cr5, handle_interrupt
-    mov r0, cr3
+    lea r0, handle_interrupt
+    mov cr5, r0
+    mov r0, 0
+    cpuid
+    cmp r0, 0
 $loop:
     b.nz $loop
 
@@ -35,10 +38,11 @@ $loop:
     b _exit
 
 handle_interrupt:
-    lea cr10, global_idt
-    shl cr6, 3
-    add cr10, cr6
-    br cr10
+    mov r6, cr6
+    lea r7, global_idt
+    shl r6, 3
+    add r7, r6
+    br r7
 
 int_ud:
     psh r0
@@ -170,6 +174,7 @@ _strlen:
     movz r1, 0
     $loop:
         ldr b2, [r0, r1]
+        cmp b2, 0
         b.z $end
 
         add r1, r1, 1

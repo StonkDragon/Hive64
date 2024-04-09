@@ -72,8 +72,8 @@ char* salu_ops_nw[16] = {
     [OP_DATA_ALU_add] = "add",
     [OP_DATA_ALU_sub] = "cmp",
     [OP_DATA_ALU_mul] = "mul",
-    [OP_DATA_ALU_div] = "sdiv",
-    [OP_DATA_ALU_mod] = "smod",
+    [OP_DATA_ALU_div] = "divs",
+    [OP_DATA_ALU_mod] = "mods",
     [OP_DATA_ALU_and] = "tst",
     [OP_DATA_ALU_or] = "or",
     [OP_DATA_ALU_xor] = "xor",
@@ -90,8 +90,8 @@ char* salu_ops[16] = {
     [OP_DATA_ALU_add] = "add",
     [OP_DATA_ALU_sub] = "sub",
     [OP_DATA_ALU_mul] = "mul",
-    [OP_DATA_ALU_div] = "sdiv",
-    [OP_DATA_ALU_mod] = "smod",
+    [OP_DATA_ALU_div] = "divs",
+    [OP_DATA_ALU_mod] = "mods",
     [OP_DATA_ALU_and] = "and",
     [OP_DATA_ALU_or] = "or",
     [OP_DATA_ALU_xor] = "xor",
@@ -304,43 +304,15 @@ char* dis_data_bit(hive_instruction_t ins, uint64_t addr) {
     return s;
 }
 
-char* dis_data_ls(hive_instruction_t ins, uint64_t addr) {
-    char* s = ins.type_data_ls_reg.is_store ? "str" : "ldr";
-    char* last_arg = NULL;
-    if (ins.type_data_ls_reg.data_op == SUBOP_DATA_LS_FAR) {
-        last_arg = strformat("%d", ins.type_data_ls_far.imm << (ins.type_data_ls_far.shift + 1));
-    } else if (ins.type_data_ls_reg.use_immediate) {
-        if (ins.type_data_ls_imm.update_ptr && ins.type_data_ls_imm.r2 == REG_SP) {
-            if (ins.type_data_ls_imm.is_store && ins.type_data_ls_imm.imm == -16) {
-                return strformat("psh%s %s", condition_to_string(ins), register_to_string(ins.type_data_ls_imm.r1, REG_DEST));
-            } else if (!ins.type_data_ls_imm.is_store && ins.type_data_ls_imm.imm == 16) {
-                return strformat("pp%s %s", condition_to_string(ins), register_to_string(ins.type_data_ls_imm.r1, REG_DEST));
-            }
-        }
-        last_arg = strformat("%d", ins.type_data_ls_imm.imm);
-    } else {
-        last_arg = strformat("%s", register_to_string_ptr(ins.type_data_ls_reg.r3, REG_SRC2));
-    }
-
-    s = strformat("%s%s %s, [%s, %s]", s, condition_to_string(ins), register_to_string(ins.type_data_ls_imm.r1, REG_DEST), register_to_string_ptr(ins.type_data_ls_imm.r2, REG_SRC1), last_arg);
-
-    if (ins.type_data_ls_imm.update_ptr) {
-        s = strformat("%s!", s);
-    }
-    return s;
-}
-
 char* dis_data(hive_instruction_t ins, uint64_t addr) {
     char* s = NULL;
     switch (ins.type_data.data_op) {
-        case SUBOP_DATA_ALU_I:  case_fallthrough;
         case SUBOP_DATA_ALU_R:  case_fallthrough;
+        case SUBOP_DATA_ALU_I:  case_fallthrough;
         case SUBOP_DATA_SALU_R: case_fallthrough;
         case SUBOP_DATA_SALU_I: s = dis_data_alu(ins, addr); break;
         case SUBOP_DATA_BDEP:   case_fallthrough;
         case SUBOP_DATA_BEXT:   s = dis_data_bit(ins, addr); break;
-        case SUBOP_DATA_LS:     case_fallthrough;
-        case SUBOP_DATA_LS_FAR: s = dis_data_ls(ins, addr); break;
         case SUBOP_DATA_FPU:    s = dis_data_fpu(ins, addr); break;
         case SUBOP_DATA_VPU:    s = dis_data_vpu(ins, addr); break;
         case SUBOP_DATA_CSWAP:  s = strformat("cswp%s %s, %s, %s, %s", condition_to_string(ins), register_to_string(ins.type_data_cswap.r1, REG_DEST), register_to_string(ins.type_data_cswap.r2, REG_SRC1), register_to_string(ins.type_data_cswap.r3, REG_SRC2), condition_to_string0(ins.type_data_cswap.cond)); break;
@@ -354,6 +326,33 @@ char* dis_load_movzk(hive_instruction_t ins, uint64_t addr) {
     s = strformat("%s%s %s, 0x%x", s, condition_to_string(ins), register_to_string(ins.type_load_mov.r1, REG_DEST), ins.type_load_mov.imm);
     if (ins.type_load_mov.shift) {
         s = strformat("%s, shl %d", s, ins.type_load_mov.shift * 16);
+    }
+    return s;
+}
+
+char* dis_load_ls(hive_instruction_t ins, uint64_t addr) {
+    char* s = ins.type_load_ls.is_store ? "str" : "ldr";
+    char* last_arg = NULL;
+    if (ins.type_load_ls.use_imm) {
+        if (ins.type_load_ls_imm.update_ptr && ins.type_load_ls_imm.r2 == REG_SP) {
+            if (ins.type_load_ls_imm.is_store && ins.type_load_ls_imm.imm == -16) {
+                return strformat("psh%s %s", condition_to_string(ins), register_to_string(ins.type_load_ls_imm.r1, REG_DEST));
+            } else if (!ins.type_load_ls_imm.is_store && ins.type_load_ls_imm.imm == 16) {
+                return strformat("pp%s %s", condition_to_string(ins), register_to_string(ins.type_load_ls_imm.r1, REG_DEST));
+            }
+        }
+        last_arg = strformat("%d", ins.type_load_ls_imm.imm);
+    } else {
+        last_arg = strformat("%s", register_to_string_ptr(ins.type_load_ls.r3, REG_SRC2));
+        if (ins.type_load_ls.shift) {
+            last_arg = strformat("%s shl %d", last_arg, ins.type_load_ls.shift);
+        }
+    }
+
+    s = strformat("%s%s %s, [%s, %s]", s, condition_to_string(ins), register_to_string(ins.type_load_ls_imm.r1, REG_DEST), register_to_string_ptr(ins.type_load_ls_imm.r2, REG_SRC1), last_arg);
+
+    if (ins.type_load_ls_imm.update_ptr) {
+        s = strformat("%s!", s);
     }
     return s;
 }
@@ -373,26 +372,22 @@ char* dis_load(hive_instruction_t ins, uint64_t addr) {
     switch (ins.type_load.op) {
         case OP_LOAD_lea:    return strformat("lea%s %s, 0x%llx", condition_to_string(ins), register_to_string(ins.type_load_signed.r1, REG_DEST), addr + ins.type_load_signed.imm * sizeof(hive_instruction_t));
         case OP_LOAD_movzk:  return dis_load_movzk(ins, addr);
-        case OP_LOAD_svc:    return strformat("svc%s", condition_to_string(ins));
+        case OP_LOAD_ls:     return dis_load_ls(ins, addr);
         case OP_LOAD_ls_off: return dis_load_ls_off(ins, addr);
-    }
-    return NULL;
-}
-
-char* dis_other_priv(hive_instruction_t ins, uint64_t addr) {
-    switch (ins.type_other_priv.priv_op) {
-        case SUBOP_OTHER_cpuid: return strformat("cpuid%s", condition_to_string(ins));
-        case SUBOP_OTHER_hret:  return strformat("hret%s", condition_to_string(ins));
-        case SUBOP_OTHER_sret:  return strformat("sret%s", condition_to_string(ins));
-        case SUBOP_OTHER_iret:  return strformat("iret%s", condition_to_string(ins));
     }
     return NULL;
 }
 
 char* dis_other(hive_instruction_t ins, uint64_t addr) {
     switch (ins.type_other.op) {
-        case OP_OTHER_priv_op:  return dis_other_priv(ins, addr);
-        case OP_OTHER_zeroupper:return strformat("zeroupper%s %s", condition_to_string(ins), register_to_string(ins.type_other_zeroupper.r1, REG_DEST));
+        case OP_OTHER_cpuid:     return strformat("cpuid%s", condition_to_string(ins));
+        case OP_OTHER_zeroupper: return strformat("zeroupper%s %s", condition_to_string(ins), register_to_string(ins.type_other_zeroupper.r1, REG_DEST));
+        case OP_OTHER_hret:      return strformat("hret%s", condition_to_string(ins));
+        case OP_OTHER_sret:      return strformat("sret%s", condition_to_string(ins));
+        case OP_OTHER_iret:      return strformat("iret%s", condition_to_string(ins));
+        case OP_OTHER_svc:       return strformat("svc%s", condition_to_string(ins));
+        case OP_OTHER_storecr:   return strformat("mov%s cr%d, %s", condition_to_string(ins), ins.type_other_mov_cr.cr2, register_to_string(ins.type_other_mov_cr.r1, REG_SRC1));
+        case OP_OTHER_loadcr:    return strformat("mov%s %s, cr%d", condition_to_string(ins), register_to_string(ins.type_other_mov_cr.r1, REG_DEST), ins.type_other_mov_cr.cr2);
     }
     return NULL;
 }

@@ -135,6 +135,7 @@ Every condition except `always` and `never` can be specified in the assembler by
 - `SIGILL`: raised when an undefined instruction or an instruction which is undefined for the given parameters is executed
 - `SIGSEGV`: raised when an invalid memory address is read/written
 - `SIGBUS`: raised on an unaligned memory access
+- `SIGTRAP`: raised when a privileged instruction gets executed
 
 ### Branches
 |Mnemonic|Encoding|Description|
@@ -154,9 +155,9 @@ Every condition except `always` and `never` can be specified in the assembler by
 |`cmp r1, imm`|             `ccc0100011.....[r2-]0001[-imm8-]`|`r2 - imm` (only sets flags)|
 |`mul r1, r2, imm`|         `ccc0100100[r1-][r2-]0001[-imm8-]`|`r1 = r2 * imm`|
 |`div r1, r2, imm`|         `ccc0100110[r1-][r2-]0001[-imm8-]`|`r1 = r2 / imm`|
-|`sdiv r1, r2, imm`|        `ccc0100110[r1-][r2-]0011[-imm8-]`|`r1 = r2 / imm`|
+|`divs r1, r2, imm`|        `ccc0100110[r1-][r2-]0011[-imm8-]`|`r1 = r2 / imm`|
 |`mod r1, r2, imm`|         `ccc0101000[r1-][r2-]0001[-imm8-]`|`r1 = r2 % imm`|
-|`smod r1, r2, imm`|        `ccc0101000[r1-][r2-]0011[-imm8-]`|`r1 = r2 % imm`|
+|`mods r1, r2, imm`|        `ccc0101000[r1-][r2-]0011[-imm8-]`|`r1 = r2 % imm`|
 |`and r1, r2, imm`|         `ccc0101010[r1-][r2-]0001[-imm8-]`|`r1 = r2 & imm`|
 |`tst r1, imm`|             `ccc0101011.....[r2-]0001[-imm8-]`|`r2 & imm` (only sets flags)|
 |`or r1, r2, imm`|          `ccc0101100[r1-][r2-]0001[-imm8-]`|`r1 = r2 \| imm`|
@@ -176,9 +177,9 @@ Every condition except `always` and `never` can be specified in the assembler by
 |`cmp r1, r2`|              `ccc0100011.....[r2-]0000...[r3-]`|`r2 - r3` (only sets flags)|
 |`mul r1, r2, r3`|          `ccc0100100[r1-][r2-]0000...[r3-]`|`r1 = r2 * r3`|
 |`div r1, r2, r3`|          `ccc0100110[r1-][r2-]0000...[r3-]`|`r1 = r2 / r3`|
-|`sdiv r1, r2, r3`|         `ccc0100110[r1-][r2-]0010...[r3-]`|`r1 = r2 / r3`|
+|`divs r1, r2, r3`|         `ccc0100110[r1-][r2-]0010...[r3-]`|`r1 = r2 / r3`|
 |`mod r1, r2, r3`|          `ccc0101000[r1-][r2-]0000...[r3-]`|`r1 = r2 % r3`|
-|`smod r1, r2, r3`|         `ccc0101000[r1-][r2-]0010...[r3-]`|`r1 = r2 % r3`|
+|`mods r1, r2, r3`|         `ccc0101000[r1-][r2-]0010...[r3-]`|`r1 = r2 % r3`|
 |`and r1, r2, r3`|          `ccc0101010[r1-][r2-]0000...[r3-]`|`r1 = r2 & r3`|
 |`tst r1, r2`|              `ccc0101011.....[r2-]0000...[r3-]`|`r2 & r3` (only sets flags)|
 |`or r1, r2, r3`|           `ccc0101100[r1-][r2-]0000...[r3-]`|`r1 = r2 \| r3`|
@@ -198,16 +199,14 @@ Every condition except `always` and `never` can be specified in the assembler by
 |`extwq r1, r2`|            `ccc0111100[r1-][r2-]00......1101`|`r1 = extend_sign(r1, from: 16, to: 64)` (undefined when target size is smaller than source size)|
 |`extdq r1, r2`|            `ccc0111100[r1-][r2-]00......1110`|`r1 = extend_sign(r1, from: 32, to: 64)` (undefined when target size is smaller than source size)|
 |`swe r1, r2`|              `ccc0111110[r1-][r2-]000.........`|`r1 = swap_bytes(r2)` (undefined for byte registers)|
-|`zeroupper r1`|            `ccc1100010.................[r1-]`|`r1 = zero_upper(r2)` (undefined for quadword registers)|
 
 ### Prefix Instruction
-The prefix instruction always look like this: `0111100001...........ZYXWCBADFsz`
+The prefix instruction always look like this: `0111100001...............CBADFsz`
 A capital letter indicates the default value of the bit is `0`.
 A lowercase letter indicates the default value of the bit is `1`.
 - `sz`: Size override. One of `00` (byte), `01` (word), `10` (doubleword), or `11` (quadword)
 - `F`: When set, `zero` and `negative` flags won't update
 - `D`, `A`, `B`, `C`: Whether the destination/source 1/source 2/source 3 corresponds to the high register parts.
-- `W`, `X`, `Y`, `Z`: Whether the destination/source 1/source 2/source 3 references a control register.
 
 The prefix instruction is optional and changes the next instructions behaviour (for example changing the amount of bytes loaded in a `ldr` instruction)
 Specifying any register part override (`A`/`B`/`C`/`D`) and leaving `sz` set to `11` is undefined.
@@ -229,7 +228,9 @@ Specifying any control register selector (`X`/`Y`/`Z`/`W`) for a register number
 |`fmod r1, r2, r3`|         `ccc0101000[r1-][r2-]100000.[r3-]`|`r1 = r2 % r3`|
 |`fmodi r1, r2, r3`|        `ccc0101000[r1-][r2-]100010.[r3-]`|`r1 = r2 % r3`|
 |`fsin r1, r2`|             `ccc0101010[r1-][r2-]100000......`|`r1 = sin(r2)`|
-|`fsqrt r1, r2`|            `ccc0101100[r1-][r2-]100010......`|`r1 = sqrt(r2)`|
+|`fsini r1, r2`|            `ccc0101010[r1-][r2-]100010......`|`r1 = sin(integer_to_double(r2))`|
+|`fsqrt r1, r2`|            `ccc0101100[r1-][r2-]100000......`|`r1 = sqrt(r2)`|
+|`fsqrti r1, r2`|           `ccc0101100[r1-][r2-]100010......`|`r1 = sqrt(integer_to_double(r2))`|
 |`f2i r1, r2`|              `ccc0101110[r1-][r2-]100000......`|`r1 = double_to_integer(r2)`|
 |`i2f r1, r2`|              `ccc0101110[r1-][r2-]100010......`|`r1 = integer_to_double(r2)`|
 |`sadd r1, r2, r3`|         `ccc0100000[r1-][r2-]100001.[r3-]`|`r1 = r2 + r3`|
@@ -254,137 +255,136 @@ Specifying any control register selector (`X`/`Y`/`Z`/`W`) for a register number
 ### Utility
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`svc`|                     `ccc1010.........................`|Supervisor call|
-|`cpuid`|                   `ccc110000000000.................`|Returns information about the cpu (See [`cpuid`](#cpuid-instruction))|
-|`sret`|                    `ccc110000000001.................`|Supervisor return (only in supervisor mode)|
-|`hret`|                    `ccc110000000010.................`|Hypervisor return (only in hypervisor mode)|
-|`iret`|                    `ccc110000000011.................`|Return from interrupt (only in hypervisor mode)|
+|`cpuid`|                   `ccc1100000......................`|Returns information about the cpu (See [`cpuid`](#cpuid-instruction))|
+|`zeroupper r1`|            `ccc1100010.................[r1-]`|`r1 = zero_upper(r2)` (undefined for quadword registers)|
+|`sret`|                    `ccc1100011......................`|Supervisor return (only in supervisor mode)|
+|`hret`|                    `ccc1100100......................`|Hypervisor return (only in hypervisor mode)|
+|`iret`|                    `ccc1100101......................`|Return from interrupt (only in hypervisor mode)|
+|`svc`|                     `ccc1100110......................`|Supervisor call|
+|`mov cr1, r2`|             `ccc1100111............[cr1][r1-]`|Load control register with value (only in hypervisor mode)|
+|`mov r1, cr2`|             `ccc1101000............[cr1][r1-]`|Get value of control register (only in hypervisor mode)|
 
 ### Data transfer
 |Mnemonic|Encoding|Description|
 |-|-|-|
 |`mov r1, r2`|              `ccc0110000[r1-][r2-]000100000000`|`r1 = r2`|
-|`lea r1, offset`|          `ccc1000[r1-][-------imm20------]`|`r1 = pc + offset`|
-|`movz r1, imm`|            `ccc1001[r1-].000[-----imm16----]`|`r1 = imm`|
-|`movz r1, imm, shl 16`|    `ccc1001[r1-].001[-----imm16----]`|`r1 = imm << 16`|
-|`movz r1, imm, shl 32`|    `ccc1001[r1-].010[-----imm16----]`|`r1 = imm << 32`|
-|`movz r1, imm, shl 48`|    `ccc1001[r1-].011[-----imm16----]`|`r1 = imm << 48`|
-|`movk r1, imm`|            `ccc1001[r1-].100[-----imm16----]`|`r1 \|= imm`|
-|`movk r1, imm, shl 16`|    `ccc1001[r1-].101[-----imm16----]`|`r1 \|= imm << 16`|
-|`movk r1, imm, shl 32`|    `ccc1001[r1-].110[-----imm16----]`|`r1 \|= imm << 32`|
-|`movk r1, imm, shl 48`|    `ccc1001[r1-].111[-----imm16----]`|`r1 \|= imm << 48`|
-|`ldr r1, [r2, imm]`|       `ccc01..100[r1-][r2-]0110[-imm8-]`|`r1 = *(r2 + imm)`|
-|`ldr r1, [r2, imm]!`|      `ccc01..101[r1-][r2-]0110[-imm8-]`|`r1 = *(r2); r2 += imm`|
-|`str r1, [r2, imm]`|       `ccc01..110[r1-][r2-]0110[-imm8-]`|`*(r2 + imm) = r1`|
-|`str r1, [r2, imm]!`|      `ccc01..111[r1-][r2-]0110[-imm8-]`|`r2 += imm; r1 = *(r2)`|
-|`ldr r1, [r2, imm]`|       `ccc01shl00[r1-][r2-]0111[-imm8-]`|`r1 = *(r2 + imm << (shl + 1))`|
-|`ldr r1, [r2, imm]!`|      `ccc01shl01[r1-][r2-]0111[-imm8-]`|`r1 = *(r2); r2 += imm << (shl + 1)`|
-|`str r1, [r2, imm]`|       `ccc01shl10[r1-][r2-]0111[-imm8-]`|`*(r2 + imm << (shl + 1)) = r1`|
-|`str r1, [r2, imm]!`|      `ccc01shl11[r1-][r2-]0111[-imm8-]`|`r2 += imm << (shl + 1); r1 = *(r2)`|
-|`ldr r1, [r2, r3]`|        `ccc01..000[r1-][r2-]0110...[r3-]`|`r1 = *(r2 + r3)`|
-|`ldr r1, [r2, r3]!`|       `ccc01..001[r1-][r2-]0110...[r3-]`|`r1 = *(r2); r2 += r3`|
-|`str r1, [r2, r3]`|        `ccc01..010[r1-][r2-]0110...[r3-]`|`*(r2 + r3) = r1`|
-|`str r1, [r2, r3]!`|       `ccc01..011[r1-][r2-]0110...[r3-]`|`r2 += r3; r1 = *(r2)`|
+|`lea r1, offset`|          `ccc1000[r1-][------imm20-------]`|`r1 = pc + offset`|
+|`movz r1, imm`|            `ccc1001[r1-].000[----imm16-----]`|`r1 = imm`|
+|`movz r1, imm, shl 16`|    `ccc1001[r1-].001[----imm16-----]`|`r1 = imm << 16`|
+|`movz r1, imm, shl 32`|    `ccc1001[r1-].010[----imm16-----]`|`r1 = imm << 32`|
+|`movz r1, imm, shl 48`|    `ccc1001[r1-].011[----imm16-----]`|`r1 = imm << 48`|
+|`movk r1, imm`|            `ccc1001[r1-].100[----imm16-----]`|`r1 \|= imm`|
+|`movk r1, imm, shl 16`|    `ccc1001[r1-].101[----imm16-----]`|`r1 \|= imm << 16`|
+|`movk r1, imm, shl 32`|    `ccc1001[r1-].110[----imm16-----]`|`r1 \|= imm << 32`|
+|`movk r1, imm, shl 48`|    `ccc1001[r1-].111[----imm16-----]`|`r1 \|= imm << 48`|
+|`ldr r1, [r2, r3]`|        `ccc1010[r1-]000[r2-]....shl[r3-]`|`r1 = *(r2 + r3 << shl)`|
+|`ldr r1, [r2, r3]!`|       `ccc1010[r1-]001[r2-]....shl[r3-]`|`r1 = *(r2); r2 += r3 << shl`|
+|`ldr r1, [r2, imm]`|       `ccc1010[r1-]010[r2-][--imm12---]`|`r1 = *(r2 + imm)`|
+|`ldr r1, [r2, imm]!`|      `ccc1010[r1-]011[r2-][--imm12---]`|`r1 = *(r2); r2 += imm`|
+|`str r1, [r2, r3]`|        `ccc1010[r1-]100[r2-]....shl[r3-]`|`*(r2 + r3 << shl) = r1`|
+|`str r1, [r2, r3]!`|       `ccc1010[r1-]101[r2-]....shl[r3-]`|`r2 += r3 << shl; r1 = *(r2)`|
+|`str r1, [r2, imm]`|       `ccc1010[r1-]110[r2-][--imm12---]`|`*(r2 + imm) = r1`|
+|`str r1, [r2, imm]!`|      `ccc1010[r1-]111[r2-][--imm12---]`|`r2 += imm; r1 = *(r2)`|
 |`ldr r1, [offset]`|        `ccc1011[r1-]0[------imm19------]`|`r1 = *offset`|
 |`str r1, [offset]`|        `ccc1011[r1-]1[------imm19------]`|`*offset = r1`|
 |`ubxt r1, r2, a, b`|       `ccc01[chi][r1-][r2-]01000l[strt]`|`r1 = extract_bits(r2, start: a, count: b)`|
 |`sbxt r1, r2, a, b`|       `ccc01[chi][r1-][r2-]01001l[strt]`|`r1 = extend_sign(extract_bits(r2, start: a, count: b), from: b, to: 64)`|
 |`ubdp r1, r2, a, b`|       `ccc01[chi][r1-][r2-]01010l[strt]`|`r1 = deposit_bits(r1, r2, start: a, count: b)`|
 |`sbdp r1, r2, a, b`|       `ccc01[chi][r1-][r2-]01011l[strt]`|`r1 = deposit_bits(r1, r2, start: a, count: b)`|
-|`xchg r1, r2`|             `ccc01.....[r1-][r2-]1010........`|`tmp = r1; r1 = r2; r2 = tmp`|
-|`cswap r1, r2, r3, cond`|  `ccc01.....[r1-][r2-]1010cnd[r3-]`|`if (check_condition(cnd)) { r1 = r2 } else { r1 = r3 }`|
+|`cswap r1, r2, r3, cond`|  `ccc01.....[r1-][r2-]1000cnd[r3-]`|`if (check_condition(cnd)) { r1 = r2 } else { r1 = r3 }`|
+|`xchg r1, r2`|             `ccc01.....[r1-][r2-]1001........`|`tmp = r1; r1 = r2; r2 = tmp`|
 
 ### Vector Operations
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`vbadd v1, v2, v3`|        `ccc010000001[v2][v1]1001....[v3]`|`v1 = v2 + v3`|
-|`voadd v1, v2, v3`|        `ccc010000000[v2][v1]1001....[v3]`|`v1 = v2 + v3`|
-|`vwadd v1, v2, v3`|        `ccc010000010[v2][v1]1001....[v3]`|`v1 = v2 + v3`|
-|`vdadd v1, v2, v3`|        `ccc010000011[v2][v1]1001....[v3]`|`v1 = v2 + v3`|
-|`vqadd v1, v2, v3`|        `ccc010000100[v2][v1]1001....[v3]`|`v1 = v2 + v3`|
-|`vladd v1, v2, v3`|        `ccc010000101[v2][v1]1001....[v3]`|`v1 = v2 + v3`|
-|`vsadd v1, v2, v3`|        `ccc010000110[v2][v1]1001....[v3]`|`v1 = v2 + v3`|
-|`vfadd v1, v2, v3`|        `ccc010000111[v2][v1]1001....[v3]`|`v1 = v2 + v3`|
-|`vosub v1, v2, v3`|        `ccc010001000[v2][v1]1001....[v3]`|`v1 = v2 - v3`|
-|`vbsub v1, v2, v3`|        `ccc010001001[v2][v1]1001....[v3]`|`v1 = v2 - v3`|
-|`vwsub v1, v2, v3`|        `ccc010001010[v2][v1]1001....[v3]`|`v1 = v2 - v3`|
-|`vdsub v1, v2, v3`|        `ccc010001011[v2][v1]1001....[v3]`|`v1 = v2 - v3`|
-|`vqsub v1, v2, v3`|        `ccc010001100[v2][v1]1001....[v3]`|`v1 = v2 - v3`|
-|`vlsub v1, v2, v3`|        `ccc010001101[v2][v1]1001....[v3]`|`v1 = v2 - v3`|
-|`vssub v1, v2, v3`|        `ccc010001110[v2][v1]1001....[v3]`|`v1 = v2 - v3`|
-|`vfsub v1, v2, v3`|        `ccc010001111[v2][v1]1001....[v3]`|`v1 = v2 - v3`|
-|`vomul v1, v2, v3`|        `ccc010010000[v2][v1]1001....[v3]`|`v1 = v2 * v3`|
-|`vbmul v1, v2, v3`|        `ccc010010001[v2][v1]1001....[v3]`|`v1 = v2 * v3`|
-|`vwmul v1, v2, v3`|        `ccc010010010[v2][v1]1001....[v3]`|`v1 = v2 * v3`|
-|`vdmul v1, v2, v3`|        `ccc010010011[v2][v1]1001....[v3]`|`v1 = v2 * v3`|
-|`vqmul v1, v2, v3`|        `ccc010010100[v2][v1]1001....[v3]`|`v1 = v2 * v3`|
-|`vlmul v1, v2, v3`|        `ccc010010101[v2][v1]1001....[v3]`|`v1 = v2 * v3`|
-|`vsmul v1, v2, v3`|        `ccc010010110[v2][v1]1001....[v3]`|`v1 = v2 * v3`|
-|`vfmul v1, v2, v3`|        `ccc010010111[v2][v1]1001....[v3]`|`v1 = v2 * v3`|
-|`vodiv v1, v2, v3`|        `ccc010011000[v2][v1]1001....[v3]`|`v1 = v2 / v3`|
-|`vbdiv v1, v2, v3`|        `ccc010011001[v2][v1]1001....[v3]`|`v1 = v2 / v3`|
-|`vwdiv v1, v2, v3`|        `ccc010011010[v2][v1]1001....[v3]`|`v1 = v2 / v3`|
-|`vddiv v1, v2, v3`|        `ccc010011011[v2][v1]1001....[v3]`|`v1 = v2 / v3`|
-|`vqdiv v1, v2, v3`|        `ccc010011100[v2][v1]1001....[v3]`|`v1 = v2 / v3`|
-|`vldiv v1, v2, v3`|        `ccc010011101[v2][v1]1001....[v3]`|`v1 = v2 / v3`|
-|`vsdiv v1, v2, v3`|        `ccc010011110[v2][v1]1001....[v3]`|`v1 = v2 / v3`|
-|`vfdiv v1, v2, v3`|        `ccc010011111[v2][v1]1001....[v3]`|`v1 = v2 / v3`|
-|`voaddsub v1, v2, v3`|     `ccc010100000[v2][v1]1001....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vbaddsub v1, v2, v3`|     `ccc010100001[v2][v1]1001....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vwaddsub v1, v2, v3`|     `ccc010100010[v2][v1]1001....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vdaddsub v1, v2, v3`|     `ccc010100011[v2][v1]1001....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vqaddsub v1, v2, v3`|     `ccc010100100[v2][v1]1001....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vladdsub v1, v2, v3`|     `ccc010100101[v2][v1]1001....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vsaddsub v1, v2, v3`|     `ccc010100110[v2][v1]1001....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vfaddsub v1, v2, v3`|     `ccc010100111[v2][v1]1001....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vomadd v1, v2, v3`|       `ccc010101000[v2][v1]1001....[v3]`|`v1 = dot(v2, v3)`|
-|`vbmadd v1, v2, v3`|       `ccc010101001[v2][v1]1001....[v3]`|`v1 = dot(v2, v3)`|
-|`vwmadd v1, v2, v3`|       `ccc010101010[v2][v1]1001....[v3]`|`v1 = dot(v2, v3)`|
-|`vdmadd v1, v2, v3`|       `ccc010101011[v2][v1]1001....[v3]`|`v1 = dot(v2, v3)`|
-|`vqmadd v1, v2, v3`|       `ccc010101100[v2][v1]1001....[v3]`|`v1 = dot(v2, v3)`|
-|`vlmadd v1, v2, v3`|       `ccc010101101[v2][v1]1001....[v3]`|`v1 = dot(v2, v3)`|
-|`vsmadd v1, v2, v3`|       `ccc010101110[v2][v1]1001....[v3]`|`v1 = dot(v2, v3)`|
-|`vfmadd v1, v2, v3`|       `ccc010101111[v2][v1]1001....[v3]`|`v1 = dot(v2, v3)`|
-|`vomov v1, r2, at`|        `ccc010110000..hi[v1]1001slo[r2-]`|`v1[at] = r2`|
-|`vbmov v1, r2, at`|        `ccc010110001..hi[v1]1001slo[r2-]`|`v1[at] = r2`|
-|`vwmov v1, r2, at`|        `ccc010110010..hi[v1]1001slo[r2-]`|`v1[at] = r2`|
-|`vdmov v1, r2, at`|        `ccc010110011..hi[v1]1001slo[r2-]`|`v1[at] = r2`|
-|`vqmov v1, r2, at`|        `ccc010110100..hi[v1]1001slo[r2-]`|`v1[at] = r2`|
-|`vlmov v1, r2, at`|        `ccc010110101..hi[v1]1001slo[r2-]`|`v1[at] = r2`|
-|`vsmov v1, r2, at`|        `ccc010110110..hi[v1]1001slo[r2-]`|`v1[at] = r2`|
-|`vfmov v1, r2, at`|        `ccc010110111..hi[v1]1001slo[r2-]`|`v1[at] = r2`|
-|`vomov v1, v2`|            `ccc010111000[v2][v1]1001........`|`v1 = v2`|
-|`vbmov v1, v2`|            `ccc010111001[v2][v1]1001........`|`v1 = v2`|
-|`vwmov v1, v2`|            `ccc010111010[v2][v1]1001........`|`v1 = v2`|
-|`vdmov v1, v2`|            `ccc010111011[v2][v1]1001........`|`v1 = v2`|
-|`vqmov v1, v2`|            `ccc010111100[v2][v1]1001........`|`v1 = v2`|
-|`vlmov v1, v2`|            `ccc010111101[v2][v1]1001........`|`v1 = v2`|
-|`vsmov v1, v2`|            `ccc010111110[v2][v1]1001........`|`v1 = v2`|
-|`vfmov v1, v2`|            `ccc010111111[v2][v1]1001........`|`v1 = v2`|
-|`voconvT v1, v2`|          `ccc011000000[v2][v1]1001.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vbconvT v1, v2`|          `ccc011000001[v2][v1]1001.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vwconvT v1, v2`|          `ccc011000010[v2][v1]1001.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vdconvT v1, v2`|          `ccc011000011[v2][v1]1001.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vqconvT v1, v2`|          `ccc011000100[v2][v1]1001.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vlconvT v1, v2`|          `ccc011000101[v2][v1]1001.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vsconvT v1, v2`|          `ccc011000110[v2][v1]1001.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vfconvT v1, v2`|          `ccc011000111[v2][v1]1001.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`volen r1, v2`|            `ccc011001000....[v1]1001...[r1-]`|`r1 = first_zero(v1)`|
-|`vblen r1, v2`|            `ccc011001001....[v1]1001...[r1-]`|`r1 = first_zero(v1)`|
-|`vwlen r1, v2`|            `ccc011001010....[v1]1001...[r1-]`|`r1 = first_zero(v1)`|
-|`vdlen r1, v2`|            `ccc011001011....[v1]1001...[r1-]`|`r1 = first_zero(v1)`|
-|`vqlen r1, v2`|            `ccc011001100....[v1]1001...[r1-]`|`r1 = first_zero(v1)`|
-|`vllen r1, v2`|            `ccc011001101....[v1]1001...[r1-]`|`r1 = first_zero(v1)`|
-|`vslen r1, v2`|            `ccc011001110....[v1]1001...[r1-]`|`r1 = first_zero(v1)`|
-|`vflen r1, v2`|            `ccc011001111....[v1]1001...[r1-]`|`r1 = first_zero(v1)`|
-|`vldr v1, [r2, imm]`|      `ccc01101010[r1-][v1]1001[-imm8-]`|`v1 = *(r2 + imm)`|
-|`vldr v1, [r2, imm]!`|     `ccc01101011[r1-][v1]1001[-imm8-]`|`v1 = *(r2); r2 += imm`|
-|`vstr v1, [r2, imm]`|      `ccc01101110[r1-][v1]1001[-imm8-]`|`*(r2 + imm) = v1`|
-|`vstr v1, [r2, imm]!`|     `ccc01101111[r1-][v1]1001[-imm8-]`|`r2 += imm; v1 = *(r2)`|
-|`vldr v1, [r2, r3]`|       `ccc01101000[r1-][v1]1001...[r2-]`|`v1 = *(r2 + r3)`|
-|`vldr v1, [r2, r3]!`|      `ccc01101001[r1-][v1]1001...[r2-]`|`v1 = *(r2); r2 += r3`|
-|`vstr v1, [r2, r3]`|       `ccc01101100[r1-][v1]1001...[r2-]`|`*(r2 + r3) + v1`|
-|`vstr v1, [r2, r3]!`|      `ccc01101101[r1-][v1]1001...[r2-]`|`r2 += r3; v1 = *(r2)`|
+|`vbadd v1, v2, v3`|        `ccc010000001[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
+|`voadd v1, v2, v3`|        `ccc010000000[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
+|`vwadd v1, v2, v3`|        `ccc010000010[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
+|`vdadd v1, v2, v3`|        `ccc010000011[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
+|`vqadd v1, v2, v3`|        `ccc010000100[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
+|`vladd v1, v2, v3`|        `ccc010000101[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
+|`vsadd v1, v2, v3`|        `ccc010000110[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
+|`vfadd v1, v2, v3`|        `ccc010000111[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
+|`vosub v1, v2, v3`|        `ccc010001000[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
+|`vbsub v1, v2, v3`|        `ccc010001001[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
+|`vwsub v1, v2, v3`|        `ccc010001010[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
+|`vdsub v1, v2, v3`|        `ccc010001011[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
+|`vqsub v1, v2, v3`|        `ccc010001100[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
+|`vlsub v1, v2, v3`|        `ccc010001101[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
+|`vssub v1, v2, v3`|        `ccc010001110[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
+|`vfsub v1, v2, v3`|        `ccc010001111[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
+|`vomul v1, v2, v3`|        `ccc010010000[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
+|`vbmul v1, v2, v3`|        `ccc010010001[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
+|`vwmul v1, v2, v3`|        `ccc010010010[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
+|`vdmul v1, v2, v3`|        `ccc010010011[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
+|`vqmul v1, v2, v3`|        `ccc010010100[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
+|`vlmul v1, v2, v3`|        `ccc010010101[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
+|`vsmul v1, v2, v3`|        `ccc010010110[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
+|`vfmul v1, v2, v3`|        `ccc010010111[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
+|`vodiv v1, v2, v3`|        `ccc010011000[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
+|`vbdiv v1, v2, v3`|        `ccc010011001[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
+|`vwdiv v1, v2, v3`|        `ccc010011010[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
+|`vddiv v1, v2, v3`|        `ccc010011011[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
+|`vqdiv v1, v2, v3`|        `ccc010011100[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
+|`vldiv v1, v2, v3`|        `ccc010011101[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
+|`vsdiv v1, v2, v3`|        `ccc010011110[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
+|`vfdiv v1, v2, v3`|        `ccc010011111[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
+|`voaddsub v1, v2, v3`|     `ccc010100000[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vbaddsub v1, v2, v3`|     `ccc010100001[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vwaddsub v1, v2, v3`|     `ccc010100010[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vdaddsub v1, v2, v3`|     `ccc010100011[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vqaddsub v1, v2, v3`|     `ccc010100100[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vladdsub v1, v2, v3`|     `ccc010100101[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vsaddsub v1, v2, v3`|     `ccc010100110[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vfaddsub v1, v2, v3`|     `ccc010100111[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vomadd v1, v2, v3`|       `ccc010101000[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
+|`vbmadd v1, v2, v3`|       `ccc010101001[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
+|`vwmadd v1, v2, v3`|       `ccc010101010[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
+|`vdmadd v1, v2, v3`|       `ccc010101011[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
+|`vqmadd v1, v2, v3`|       `ccc010101100[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
+|`vlmadd v1, v2, v3`|       `ccc010101101[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
+|`vsmadd v1, v2, v3`|       `ccc010101110[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
+|`vfmadd v1, v2, v3`|       `ccc010101111[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
+|`vomov v1, r2, at`|        `ccc010110000..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
+|`vbmov v1, r2, at`|        `ccc010110001..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
+|`vwmov v1, r2, at`|        `ccc010110010..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
+|`vdmov v1, r2, at`|        `ccc010110011..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
+|`vqmov v1, r2, at`|        `ccc010110100..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
+|`vlmov v1, r2, at`|        `ccc010110101..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
+|`vsmov v1, r2, at`|        `ccc010110110..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
+|`vfmov v1, r2, at`|        `ccc010110111..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
+|`vomov v1, v2`|            `ccc010111000[v2][v1]0111........`|`v1 = v2`|
+|`vbmov v1, v2`|            `ccc010111001[v2][v1]0111........`|`v1 = v2`|
+|`vwmov v1, v2`|            `ccc010111010[v2][v1]0111........`|`v1 = v2`|
+|`vdmov v1, v2`|            `ccc010111011[v2][v1]0111........`|`v1 = v2`|
+|`vqmov v1, v2`|            `ccc010111100[v2][v1]0111........`|`v1 = v2`|
+|`vlmov v1, v2`|            `ccc010111101[v2][v1]0111........`|`v1 = v2`|
+|`vsmov v1, v2`|            `ccc010111110[v2][v1]0111........`|`v1 = v2`|
+|`vfmov v1, v2`|            `ccc010111111[v2][v1]0111........`|`v1 = v2`|
+|`voconvT v1, v2`|          `ccc011000000[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vbconvT v1, v2`|          `ccc011000001[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vwconvT v1, v2`|          `ccc011000010[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vdconvT v1, v2`|          `ccc011000011[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vqconvT v1, v2`|          `ccc011000100[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vlconvT v1, v2`|          `ccc011000101[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vsconvT v1, v2`|          `ccc011000110[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vfconvT v1, v2`|          `ccc011000111[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`volen r1, v2`|            `ccc011001000....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
+|`vblen r1, v2`|            `ccc011001001....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
+|`vwlen r1, v2`|            `ccc011001010....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
+|`vdlen r1, v2`|            `ccc011001011....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
+|`vqlen r1, v2`|            `ccc011001100....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
+|`vllen r1, v2`|            `ccc011001101....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
+|`vslen r1, v2`|            `ccc011001110....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
+|`vflen r1, v2`|            `ccc011001111....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
+|`vldr v1, [r2, imm]`|      `ccc01101010[r1-][v1]0111[-imm8-]`|`v1 = *(r2 + imm)`|
+|`vldr v1, [r2, imm]!`|     `ccc01101011[r1-][v1]0111[-imm8-]`|`v1 = *(r2); r2 += imm`|
+|`vstr v1, [r2, imm]`|      `ccc01101110[r1-][v1]0111[-imm8-]`|`*(r2 + imm) = v1`|
+|`vstr v1, [r2, imm]!`|     `ccc01101111[r1-][v1]0111[-imm8-]`|`r2 += imm; v1 = *(r2)`|
+|`vldr v1, [r2, r3]`|       `ccc01101000[r1-][v1]0111...[r2-]`|`v1 = *(r2 + r3)`|
+|`vldr v1, [r2, r3]!`|      `ccc01101001[r1-][v1]0111...[r2-]`|`v1 = *(r2); r2 += r3`|
+|`vstr v1, [r2, r3]`|       `ccc01101100[r1-][v1]0111...[r2-]`|`*(r2 + r3) + v1`|
+|`vstr v1, [r2, r3]!`|      `ccc01101101[r1-][v1]0111...[r2-]`|`r2 += r3; v1 = *(r2)`|
 
 #### Builtin functions
 ##### `extend_sign(register, from, to)`

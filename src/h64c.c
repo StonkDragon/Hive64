@@ -325,16 +325,15 @@ uint8_t parse_reg_(char* s, uint8_t c, char* file, int line, char* value, ...) {
             nob_da_append(&errors, strformat("%s:%d: Unknown control register: %s\n", file, line, value));
         }
         prefix.generic.condition = COND_ALWAYS;
-        va_list ap;
-        va_start(ap, value);
-        for (uint8_t i = 0; i < c; i++) {
-            uint32_t x = va_arg(ap, uint32_t);
-            prefix.type_other_prefix.references_cr |= IS_HIGH(x);
-            if (suf[0] == 'h') {
+        if (suf[0] == 'h') {
+            va_list ap;
+            va_start(ap, value);
+            for (uint8_t i = 0; i < c; i++) {
+                uint32_t x = va_arg(ap, uint32_t);
                 prefix.type_other_prefix.reg_override |= IS_HIGH(x);
             }
+            va_end(ap);
         }
-        va_end(ap);
         return val;
     } else if (eq(s, "lr")) {
         return REG_LR;
@@ -431,219 +430,6 @@ TokenType register_types[] = {
         } \
     } else if (register_type != tokens.items[i].type) { \
         EXPECT(Eof, _diag, __VA_ARGS__);  \
-    }
-
-#define LDR() \
-    inc(); \
-    EXPECT_REG("Expected %d-bit register, got %s", register_size); \
-    uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST); \
-    inc(); \
-    EXPECT(Comma, "Expected comma, got %s"); \
-    inc(); \
-    EXPECT(LeftBracket, "Expected '[', got %s"); \
-    inc(); \
-    if (tokens.items[i].type == Identifier) { \
-        ins.generic.type = MODE_LOAD; \
-        ins.type_load_ls_off.op = OP_LOAD_ls_off; \
-        ins.type_load_ls_off.r1 = r1; \
-        char* str = tokens.items[i].value; \
-        str = unquote(str); \
-        if (last_global_symbol && str[0] == '$') { \
-            str = strformat("%s%s", last_global_symbol, str); \
-        } \
-        Relocation off = { \
-            .data.name = str, \
-            .source_offset = current_section.count, \
-            .source_section = sects.count, \
-            .type = sym_ls_off \
-        };  \
-        nob_da_append(relocations, off); \
-        inc(); \
-        EXPECT(RightBracket, "Expected ']', got %s"); \
-    } else { \
-        EXPECT(Register64, "Expected 64-bit register or identifier, got %s"); \
-        uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1); \
-        inc(); \
-        ins.generic.type = MODE_DATA; \
-        ins.type_data_ls_imm.data_op = SUBOP_DATA_LS; \
-        if (tokens.items[i].type == RightBracket) { \
-            ins.type_data_ls_imm.is_store = 0; \
-            ins.type_data_ls_imm.r1 = r1; \
-            ins.type_data_ls_imm.r2 = r2; \
-            ins.type_data_ls_imm.imm = 0; \
-            ins.type_data_ls_imm.use_immediate = 1; \
-            if (tokens.items[i + 1].type == Bang) { \
-                inc(); \
-                ins.type_data_ls_imm.update_ptr = 1; \
-            } \
-        } else if (tokens.items[i].type == Comma) { \
-            inc(); \
-            if (tokens.items[i].type == Register64) { \
-                ins.type_data_ls_reg.is_store = 0; \
-                ins.type_data_ls_reg.r1 = r1; \
-                ins.type_data_ls_reg.r2 = r2; \
-                ins.type_data_ls_reg.r3 = parse_reg(tokens.items[i].value, REG_SRC2); \
-            } else if (tokens.items[i].type == Number) { \
-                ins.type_data_ls_imm.is_store = 0; \
-                ins.type_data_ls_imm.r1 = r1; \
-                ins.type_data_ls_imm.r2 = r2; \
-                int16_t num = parse16(tokens.items[i].value); \
-                if (num < 128 && num >= -128) { \
-                    ins.type_data_ls_imm.use_immediate = 1; \
-                    ins.type_data_ls_imm.imm = num; \
-                } else if (num >= 0) { \
-                    uint16_t x = *(uint16_t*) &num; \
-                    ins.type_data_ls_far.data_op = SUBOP_DATA_LS_FAR; \
-                    uint8_t shift = 0; \
-                    if (x % 256 == 0) { \
-                        ins.type_data_ls_far.imm = (x >> 8); \
-                        shift = 7; \
-                    } else if (x % 128 == 0 && x < POW2(15)) { \
-                        ins.type_data_ls_far.imm = (x >> 7); \
-                        shift = 6; \
-                    } else if (x % 64 == 0 && x < POW2(14)) { \
-                        ins.type_data_ls_far.imm = (x >> 6); \
-                        shift = 5; \
-                    } else if (x % 32 == 0 && x < POW2(13)) { \
-                        ins.type_data_ls_far.imm = (x >> 5); \
-                        shift = 4; \
-                    } else if (x % 16 == 0 && x < POW2(12)) { \
-                        ins.type_data_ls_far.imm = (x >> 4); \
-                        shift = 3; \
-                    } else if (x % 8 == 0 && x < POW2(11)) { \
-                        ins.type_data_ls_far.imm = (x >> 3); \
-                        shift = 2; \
-                    } else if (x % 4 == 0 && x < POW2(10)) { \
-                        ins.type_data_ls_far.imm = (x >> 2); \
-                        shift = 1; \
-                    } else if (x % 2 == 0 && x < POW2(9)) { \
-                        ins.type_data_ls_far.imm = (x >> 1); \
-                    } else { \
-                        EXPECT(Eof, "Number out of range: %s"); \
-                    } \
-                    ins.type_data_ls_far.shift = shift; \
-                } else { \
-                    EXPECT(Eof, "Number out of range: %s"); \
-                } \
-            } else { \
-                EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size); \
-            } \
-            inc(); \
-            EXPECT(RightBracket, "Expected ']', got %s"); \
-            if (tokens.items[i + 1].type == Bang) { \
-                inc(); \
-                ins.type_data_ls_imm.update_ptr = 1; \
-            } \
-        } else { \
-            EXPECT(Eof, "Expected comma or ']', got %s"); \
-        } \
-    }
-
-#define STR()  \
-    inc(); \
-    EXPECT_REG("Expected %d-bit register, got %s", register_size); \
-    uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST); \
-    inc(); \
-    EXPECT(Comma, "Expected comma, got %s"); \
-    inc(); \
-    EXPECT(LeftBracket, "Expected '[', got %s"); \
-    inc(); \
-    if (tokens.items[i].type == Identifier) { \
-        ins.generic.type = MODE_LOAD; \
-        ins.type_load_ls_off.op = OP_LOAD_ls_off; \
-        ins.type_load_ls_off.is_store = 1; \
-        ins.type_load_ls_off.r1 = r1; \
-        char* str = tokens.items[i].value; \
-        str = unquote(str); \
-        if (last_global_symbol && str[0] == '$') { \
-            str = strformat("%s%s", last_global_symbol, str); \
-        } \
-        Relocation off = { \
-            .data.name = str, \
-            .source_offset = current_section.count, \
-            .source_section = sects.count, \
-            .type = sym_ls_off \
-        };  \
-        nob_da_append(relocations, off); \
-        inc(); \
-        EXPECT(RightBracket, "Expected ']', got %s"); \
-    } else { \
-        EXPECT(Register64, "Expected 64-bit register or identifier, got %s"); \
-        uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1); \
-        inc(); \
-        ins.generic.type = MODE_DATA; \
-        ins.type_data_ls_imm.data_op = SUBOP_DATA_LS; \
-        if (tokens.items[i].type == RightBracket) { \
-            ins.type_data_ls_imm.is_store = 1; \
-            ins.type_data_ls_imm.r1 = r1; \
-            ins.type_data_ls_imm.r2 = r2; \
-            ins.type_data_ls_imm.imm = 0; \
-            ins.type_data_ls_imm.use_immediate = 1; \
-            if (tokens.items[i + 1].type == Bang) { \
-                inc(); \
-                ins.type_data_ls_imm.update_ptr = 1; \
-            } \
-        } else if (tokens.items[i].type == Comma) { \
-            inc(); \
-            if (tokens.items[i].type == Register64) { \
-                ins.type_data_ls_reg.is_store = 1; \
-                ins.type_data_ls_reg.r1 = r1; \
-                ins.type_data_ls_reg.r2 = r2; \
-                ins.type_data_ls_reg.r3 = parse_reg(tokens.items[i].value, REG_SRC2); \
-            } else if (tokens.items[i].type == Number) { \
-                ins.type_data_ls_imm.is_store = 1; \
-                ins.type_data_ls_imm.r1 = r1; \
-                ins.type_data_ls_imm.r2 = r2; \
-                int16_t num = parse16(tokens.items[i].value); \
-                if (num < 128 && num >= -128) { \
-                    ins.type_data_ls_imm.use_immediate = 1; \
-                    ins.type_data_ls_imm.imm = num; \
-                } else if (num >= 0) { \
-                    uint16_t x = *(uint16_t*) &num; \
-                    ins.type_data_ls_far.data_op = SUBOP_DATA_LS_FAR; \
-                    uint8_t shift = 0; \
-                    if (x % 2 == 0 && x < POW2(9)) { \
-                        ins.type_data_ls_far.imm = (x >> 1); \
-                    } else if (x % 4 == 0 && x < POW2(10)) { \
-                        ins.type_data_ls_far.imm = (x >> 2); \
-                        shift = 1; \
-                    } else if (x % 8 == 0 && x < POW2(11)) { \
-                        ins.type_data_ls_far.imm = (x >> 3); \
-                        shift = 2; \
-                    } else if (x % 16 == 0 && x < POW2(12)) { \
-                        ins.type_data_ls_far.imm = (x >> 4); \
-                        shift = 3; \
-                    } else if (x % 32 == 0 && x < POW2(13)) { \
-                        ins.type_data_ls_far.imm = (x >> 5); \
-                        shift = 4; \
-                    } else if (x % 64 == 0 && x < POW2(14)) { \
-                        ins.type_data_ls_far.imm = (x >> 6); \
-                        shift = 5; \
-                    } else if (x % 128 == 0 && x < POW2(15)) { \
-                        ins.type_data_ls_far.imm = (x >> 7); \
-                        shift = 6; \
-                    } else if (x % 256 == 0) { \
-                        ins.type_data_ls_far.imm = (x >> 8); \
-                        shift = 7; \
-                    } else { \
-                        EXPECT(Eof, "Number out of range: %s"); \
-                    } \
-                    ins.type_data_ls_far.shift = shift; \
-                } else { \
-                    EXPECT(Eof, "Number out of range: %s"); \
-                } \
-            } else { \
-                EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size); \
-            } \
-            inc(); \
-            EXPECT(RightBracket, "Expected ']', got %s"); \
-            if (tokens.items[i + 1].type == Bang) { \
-                inc(); \
-                ins.type_data_ls_imm.update_ptr = 1; \
-            } \
-        } else { \
-            EXPECT(Eof, "Expected comma or ']', got %s"); \
-        } \
     }
 
 #define OP(_what) \
@@ -809,24 +595,20 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 uint8_t reg = parse_reg(tokens.items[i].value, REG_DEST);
                 ins.type_branch_register.r1 = reg;
             } else if (eq(mnemonic, "svc")) {
-                ins.generic.type = MODE_LOAD;
-                ins.type_load.op = OP_LOAD_svc;
+                ins.generic.type = MODE_OTHER;
+                ins.type_other.op = OP_OTHER_svc;
             } else if (eq(mnemonic, "cpuid")) {
                 ins.generic.type = MODE_OTHER;
-                ins.type_other.op = OP_OTHER_priv_op;
-                ins.type_other_priv.op = SUBOP_OTHER_cpuid;
+                ins.type_other.op = OP_OTHER_cpuid;
             } else if (eq(mnemonic, "sret")) {
                 ins.generic.type = MODE_OTHER;
-                ins.type_other.op = OP_OTHER_priv_op;
-                ins.type_other_priv.op = SUBOP_OTHER_sret;
+                ins.type_other.op = OP_OTHER_sret;
             } else if (eq(mnemonic, "hret")) {
                 ins.generic.type = MODE_OTHER;
-                ins.type_other.op = OP_OTHER_priv_op;
-                ins.type_other_priv.op = SUBOP_OTHER_hret;
+                ins.type_other.op = OP_OTHER_hret;
             } else if (eq(mnemonic, "iret")) {
                 ins.generic.type = MODE_OTHER;
-                ins.type_other.op = OP_OTHER_priv_op;
-                ins.type_other_priv.op = SUBOP_OTHER_iret;
+                ins.type_other.op = OP_OTHER_iret;
             } else if (eq(mnemonic, "add")) {
                 OP(add)
             } else if (eq(mnemonic, "sub")) {
@@ -835,13 +617,13 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 OP(mul)
             } else if (eq(mnemonic, "div")) {
                 OP(div)
-            } else if (eq(mnemonic, "sdiv")) {
-                OP(sdiv)
+            } else if (eq(mnemonic, "divs")) {
+                OP(div)
                 ins.type_data_alui.salu = 1;
             } else if (eq(mnemonic, "mod")) {
                 OP(mod)
-            } else if (eq(mnemonic, "smod")) {
-                OP(smod)
+            } else if (eq(mnemonic, "mods")) {
+                OP(mod)
                 ins.type_data_alui.salu = 1;
             } else if (eq(mnemonic, "and")) {
                 OP(and)
@@ -951,23 +733,177 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 EXPECT(Identifier, "Expected identifier, got %s");
                 ins.type_data_cswap.cond = parse_condition(tokens.items[i].value);
             } else if (eq(mnemonic, "ldr")) {
-                LDR()
+                inc();
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
+                inc();
+                EXPECT(Comma, "Expected comma, got %s");
+                inc();
+                EXPECT(LeftBracket, "Expected '[', got %s");
+                inc();
+                if (tokens.items[i].type == Identifier) {
+                    ins.generic.type = MODE_LOAD;
+                    ins.type_load_ls_off.op = OP_LOAD_ls_off;
+                    ins.type_load_ls_off.r1 = r1;
+                    char* str = tokens.items[i].value;
+                    str = unquote(str);
+                    if (last_global_symbol && str[0] == '$') {
+                        str = strformat("%s%s", last_global_symbol, str);
+                    }
+                    Relocation off = {
+                        .data.name = str,
+                        .source_offset = current_section.count,
+                        .source_section = sects.count,
+                        .type = sym_ls_off
+                    }; 
+                    nob_da_append(relocations, off);
+                    inc();
+                    EXPECT(RightBracket, "Expected ']', got %s");
+                } else {
+                    EXPECT(Register64, "Expected 64-bit register or identifier, got %s");
+                    uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
+                    inc();
+                    ins.generic.type = MODE_LOAD;
+                    ins.type_load_ls_imm.op = OP_LOAD_ls;
+                    ins.type_load_ls_imm.is_store = 0;
+                    ins.type_load_ls_imm.r1 = r1;
+                    ins.type_load_ls_imm.r2 = r2;
+                    if (tokens.items[i].type == RightBracket) {
+                        ins.type_load_ls_imm.imm = 0;
+                        ins.type_load_ls_imm.use_imm = 1;
+                        if (tokens.items[i + 1].type == Bang) {
+                            inc();
+                            ins.type_load_ls_imm.update_ptr = 1;
+                        }
+                    } else if (tokens.items[i].type == Comma) {
+                        inc();
+                        if (tokens.items[i].type == Register64) {
+                            ins.type_load_ls.r3 = parse_reg(tokens.items[i].value, REG_SRC2);
+                            if (tokens.items[i + 1].type == Identifier && eq(tokens.items[i + 1].value, "shl")) {
+                                inc();
+                                inc();
+                                EXPECT(Number, "Expected number, got %s");
+                                uint8_t shift = parse8(tokens.items[i].value);
+                                if (shift >= POW2(3)) {
+                                    EXPECT(Eof, "Shift out of range: %s");
+                                }
+                                ins.type_load_ls.shift = shift;
+                            }
+                        } else if (tokens.items[i].type == Number) {
+                            int16_t num = parse16(tokens.items[i].value);
+                            if (num < POW2(11) && num >= -POW2(11)) {
+                                ins.type_load_ls_imm.use_imm = 1;
+                                ins.type_load_ls_imm.imm = num;
+                            } else {
+                                EXPECT(Eof, "Number out of range: %s");
+                            }
+                        } else {
+                            EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size);
+                        }
+                        inc();
+                        EXPECT(RightBracket, "Expected ']', got %s");
+                        if (tokens.items[i + 1].type == Bang) {
+                            inc();
+                            ins.type_load_ls_imm.update_ptr = 1;
+                        }
+                    } else {
+                        EXPECT(Eof, "Expected comma or ']', got %s");
+                    }
+                }
             } else if (eq(mnemonic, "str")) {
-                STR()
+                inc();
+                EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
+                inc();
+                EXPECT(Comma, "Expected comma, got %s");
+                inc();
+                EXPECT(LeftBracket, "Expected '[', got %s");
+                inc();
+                if (tokens.items[i].type == Identifier) {
+                    ins.generic.type = MODE_LOAD;
+                    ins.type_load_ls_off.op = OP_LOAD_ls_off;
+                    ins.type_load_ls_off.is_store = 1;
+                    ins.type_load_ls_off.r1 = r1;
+                    char* str = tokens.items[i].value;
+                    str = unquote(str);
+                    if (last_global_symbol && str[0] == '$') {
+                        str = strformat("%s%s", last_global_symbol, str);
+                    }
+                    Relocation off = {
+                        .data.name = str,
+                        .source_offset = current_section.count,
+                        .source_section = sects.count,
+                        .type = sym_ls_off
+                    }; 
+                    nob_da_append(relocations, off);
+                    inc();
+                    EXPECT(RightBracket, "Expected ']', got %s");
+                } else {
+                    EXPECT(Register64, "Expected 64-bit register or identifier, got %s");
+                    uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
+                    inc();
+                    ins.generic.type = MODE_LOAD;
+                    ins.type_load_ls_imm.op = OP_LOAD_ls;
+                    ins.type_load_ls_imm.is_store = 1;
+                    ins.type_load_ls_imm.r1 = r1;
+                    ins.type_load_ls_imm.r2 = r2;
+                    if (tokens.items[i].type == RightBracket) {
+                        ins.type_load_ls_imm.imm = 0;
+                        ins.type_load_ls_imm.use_imm = 1;
+                        if (tokens.items[i + 1].type == Bang) {
+                            inc();
+                            ins.type_load_ls_imm.update_ptr = 1;
+                        }
+                    } else if (tokens.items[i].type == Comma) {
+                        inc();
+                        if (tokens.items[i].type == Register64) {
+                            ins.type_load_ls.r3 = parse_reg(tokens.items[i].value, REG_SRC2);
+                            if (tokens.items[i + 1].type == Identifier && eq(tokens.items[i + 1].value, "shl")) {
+                                inc();
+                                inc();
+                                EXPECT(Number, "Expected number, got %s");
+                                uint8_t shift = parse8(tokens.items[i].value);
+                                if (shift >= POW2(3)) {
+                                    EXPECT(Eof, "Shift out of range: %s");
+                                }
+                                ins.type_load_ls.shift = shift;
+                            }
+                        } else if (tokens.items[i].type == Number) {
+                            int16_t num = parse16(tokens.items[i].value);
+                            if (num < POW2(11) && num >= -POW2(11)) {
+                                ins.type_load_ls_imm.use_imm = 1;
+                                ins.type_load_ls_imm.imm = num;
+                            } else {
+                                EXPECT(Eof, "Number out of range: %s");
+                            }
+                        } else {
+                            EXPECT(Eof, "Expected 64-bit register or number, got %s");
+                        }
+                        inc();
+                        EXPECT(RightBracket, "Expected ']', got %s");
+                        if (tokens.items[i + 1].type == Bang) {
+                            inc();
+                            ins.type_load_ls_imm.update_ptr = 1;
+                        }
+                    } else {
+                        EXPECT(Eof, "Expected comma or ']', got %s");
+                    }
+                }
             } else if (eq(mnemonic, "psh")) {
-                ins.generic.type = MODE_DATA;
                 inc();
                 if (tokens.items[i].type >= Register8 && tokens.items[i].type <= Register64) {
                     EXPECT_REG("Expected %d-bit register or vector register, got %s", register_size);
                     uint8_t reg = parse_reg(tokens.items[i].value, REG_DEST);
-                    ins.type_data_ls_imm.data_op = SUBOP_DATA_LS;
-                    ins.type_data_ls_imm.is_store = 1;
-                    ins.type_data_ls_imm.r1 = reg;
-                    ins.type_data_ls_imm.r2 = REG_SP;
-                    ins.type_data_ls_imm.imm = -16;
-                    ins.type_data_ls_imm.update_ptr = 1;
-                    ins.type_data_ls_imm.use_immediate = 1;
+                    ins.generic.type = MODE_LOAD;
+                    ins.type_load_ls_imm.op = OP_LOAD_ls;
+                    ins.type_load_ls_imm.is_store = 1;
+                    ins.type_load_ls_imm.r1 = reg;
+                    ins.type_load_ls_imm.r2 = REG_SP;
+                    ins.type_load_ls_imm.imm = -16;
+                    ins.type_load_ls_imm.update_ptr = 1;
+                    ins.type_load_ls_imm.use_imm = 1;
                 } else if (tokens.items[i].type == VecRegister) {
+                    ins.generic.type = MODE_DATA;
                     ins.type_data_vpu_ls_imm.data_op = SUBOP_DATA_VPU;
                     uint8_t reg = parse_vreg(tokens.items[i].value);
                     ins.type_data_vpu_ls_imm.r1 = REG_SP;
@@ -980,19 +916,20 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     EXPECT_REG("Expected %d-bit register or vector register, got %s", register_size);
                 }
             } else if (eq(mnemonic, "pp")) {
-                ins.generic.type = MODE_DATA;
                 inc();
                 if (tokens.items[i].type >= Register8 && tokens.items[i].type <= Register64) {
                     EXPECT_REG("Expected %d-bit register or vector register, got %s", register_size);
                     uint8_t reg = parse_reg(tokens.items[i].value, REG_DEST);
-                    ins.type_data_ls_imm.data_op = SUBOP_DATA_LS;
-                    ins.type_data_ls_imm.is_store = 0;
-                    ins.type_data_ls_imm.r1 = reg;
-                    ins.type_data_ls_imm.r2 = REG_SP;
-                    ins.type_data_ls_imm.imm = 16;
-                    ins.type_data_ls_imm.update_ptr = 1;
-                    ins.type_data_ls_imm.use_immediate = 1;
+                    ins.generic.type = MODE_LOAD;
+                    ins.type_load_ls_imm.op = OP_LOAD_ls;
+                    ins.type_load_ls_imm.is_store = 0;
+                    ins.type_load_ls_imm.r1 = reg;
+                    ins.type_load_ls_imm.r2 = REG_SP;
+                    ins.type_load_ls_imm.imm = 16;
+                    ins.type_load_ls_imm.update_ptr = 1;
+                    ins.type_load_ls_imm.use_imm = 1;
                 } else if (tokens.items[i].type == VecRegister) {
+                    ins.generic.type = MODE_DATA;
                     ins.type_data_vpu_ls_imm.data_op = SUBOP_DATA_VPU;
                     uint8_t reg = parse_vreg(tokens.items[i].value);
                     ins.type_data_vpu_ls_imm.r1 = REG_SP;
@@ -1048,42 +985,61 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 ins.type_load_mov.imm = num;
             } else if (eq(mnemonic, "mov")) {
                 inc();
-                EXPECT_REG("Expected %d-bit register, got %s", register_size);
-                uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
-                inc();
-                EXPECT(Comma, "Expected comma, got %s");
-                inc();
-                if (tokens.items[i].type == register_type) {
-                    uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
-                    ins.generic.type = MODE_DATA;
-                    ins.type_data.data_op = SUBOP_DATA_ALU_I;
-                    ins.type_data_alui.op = OP_DATA_ALU_shl;
-                    ins.type_data_alui.r1 = r1;
-                    ins.type_data_alui.r2 = r2;
-                    ins.type_data_alui.imm = 0;
-                } else if (tokens.items[i].type == Number) {
-                    uint64_t imm = parse64(tokens.items[i].value);
-                    ins.generic.type = MODE_LOAD;
-                    ins.type_load_mov.op = OP_LOAD_movzk;
-                    ins.type_load_mov.no_zero = 0;
-                    ins.type_load_mov.r1 = r1;
-                    if ((imm & (0xFFFFULL << 0)) == imm) {
-                        ins.type_load_mov.shift = 0;
-                        ins.type_load_mov.imm = (imm >> 0) & 0xFFFF;
-                    } else if ((imm & (0xFFFFULL << 16)) == imm) {
-                        ins.type_load_mov.shift = 1;
-                        ins.type_load_mov.imm = (imm >> 16) & 0xFFFF;
-                    } else if ((imm & (0xFFFFULL << 32)) == imm) {
-                        ins.type_load_mov.shift = 2;
-                        ins.type_load_mov.imm = (imm >> 32) & 0xFFFF;
-                    } else if ((imm & (0xFFFFULL << 48)) == imm) {
-                        ins.type_load_mov.shift = 3;
-                        ins.type_load_mov.imm = (imm >> 48) & 0xFFFF;
-                    } else {
-                        EXPECT(Eof, "Number out of range for mov: %s");
-                    }
+                if (tokens.items[i].type == ControlRegister) {
+                    uint8_t cr1 = parse_reg(tokens.items[i].value, REG_DEST);
+                    inc();
+                    EXPECT(Comma, "Expected comma, got %s");
+                    inc();
+                    EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                    uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
+                    ins.generic.type = MODE_OTHER;
+                    ins.type_other_mov_cr.op = OP_OTHER_storecr;
+                    ins.type_other_mov_cr.r1 = r1;
+                    ins.type_other_mov_cr.cr2 = cr1;
                 } else {
-                    EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size);
+                    EXPECT_REG("Expected %d-bit register, got %s", register_size);
+                    uint8_t r1 = parse_reg(tokens.items[i].value, REG_DEST);
+                    inc();
+                    EXPECT(Comma, "Expected comma, got %s");
+                    inc();
+                    if (tokens.items[i].type == register_type) {
+                        uint8_t r2 = parse_reg(tokens.items[i].value, REG_SRC1);
+                        ins.generic.type = MODE_DATA;
+                        ins.type_data.data_op = SUBOP_DATA_ALU_I;
+                        ins.type_data_alui.op = OP_DATA_ALU_shl;
+                        ins.type_data_alui.r1 = r1;
+                        ins.type_data_alui.r2 = r2;
+                        ins.type_data_alui.imm = 0;
+                    } else if (tokens.items[i].type == ControlRegister) {
+                        uint8_t cr2 = parse_reg(tokens.items[i].value, REG_SRC1);
+                        ins.generic.type = MODE_OTHER;
+                        ins.type_other_mov_cr.op = OP_OTHER_loadcr;
+                        ins.type_other_mov_cr.r1 = r1;
+                        ins.type_other_mov_cr.cr2 = cr2;
+                    } else if (tokens.items[i].type == Number) {
+                        uint64_t imm = parse64(tokens.items[i].value);
+                        ins.generic.type = MODE_LOAD;
+                        ins.type_load_mov.op = OP_LOAD_movzk;
+                        ins.type_load_mov.no_zero = 0;
+                        ins.type_load_mov.r1 = r1;
+                        if ((imm & (0xFFFFULL << 0)) == imm) {
+                            ins.type_load_mov.shift = 0;
+                            ins.type_load_mov.imm = (imm >> 0) & 0xFFFF;
+                        } else if ((imm & (0xFFFFULL << 16)) == imm) {
+                            ins.type_load_mov.shift = 1;
+                            ins.type_load_mov.imm = (imm >> 16) & 0xFFFF;
+                        } else if ((imm & (0xFFFFULL << 32)) == imm) {
+                            ins.type_load_mov.shift = 2;
+                            ins.type_load_mov.imm = (imm >> 32) & 0xFFFF;
+                        } else if ((imm & (0xFFFFULL << 48)) == imm) {
+                            ins.type_load_mov.shift = 3;
+                            ins.type_load_mov.imm = (imm >> 48) & 0xFFFF;
+                        } else {
+                            EXPECT(Eof, "Number out of range for mov: %s");
+                        }
+                    } else {
+                        EXPECT(Eof, "Expected %d-bit register or number, got %s", register_size);
+                    }
                 }
             } else if (eq(mnemonic, "inc") || eq(mnemonic, "dec")) {
                 uint8_t inc = eq(mnemonic, "inc");
@@ -2002,7 +1958,7 @@ Token nextToken(void) {
                     .file = file,
                     .line = line,
                     .value = s,
-                    .type = Register64
+                    .type = ControlRegister
                 };
 
             }
