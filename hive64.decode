@@ -1,150 +1,155 @@
 # QEMU instruction decode file
 
-branch                  cond:3 00 00 rel:s25
-branch_link             cond:3 00 01 rel:s25
-branch_reg              cond:3 00 10 r1:5 --------------------
-branch_reg_link         cond:3 00 11 r1:5 --------------------
+branch                  --- 00 00 rel:s25
+branch_link             --- 00 01 rel:s25
+branch_reg              --- 00 10 r1:5 --------------------
+branch_reg_link         --- 00 11 r1:5 --------------------
 
-add_reg                 cond:3 01 00000 r1:5 r2:5 0000 --- r3:5
-sub_reg                 cond:3 01 00010 r1:5 r2:5 0000 --- r3:5
-cmp_reg                 cond:3 01 00011 r1:5 r2:5 0000 --- r3:5
-mul_reg                 cond:3 01 00100 r1:5 r2:5 0000 --- r3:5
-div_reg                 cond:3 01 00110 r1:5 r2:5 0000 --- r3:5
-mod_reg                 cond:3 01 01000 r1:5 r2:5 0000 --- r3:5
-divs_reg                cond:3 01 00110 r1:5 r2:5 0010 --- r3:5
-mods_reg                cond:3 01 01000 r1:5 r2:5 0010 --- r3:5
-and_reg                 cond:3 01 01010 r1:5 r2:5 0000 --- r3:5
-tst_reg                 cond:3 01 01011 r1:5 r2:5 0000 --- r3:5
-or_reg                  cond:3 01 01100 r1:5 r2:5 0000 --- r3:5
-xor_reg                 cond:3 01 01110 r1:5 r2:5 0000 --- r3:5
-shl_reg                 cond:3 01 10000 r1:5 r2:5 0000 --- r3:5
-shr_reg                 cond:3 01 10010 r1:5 r2:5 0000 --- r3:5
-sar_reg                 cond:3 01 10010 r1:5 r2:5 0010 --- r3:5
-rol_reg                 cond:3 01 10100 r1:5 r2:5 0000 --- r3:5
-ror_reg                 cond:3 01 10110 r1:5 r2:5 0000 --- r3:5
+add_reg                 --- 01 00000 r1:5 r2:5 0000 --- r3:5
+sub_reg                 --- 01 00010 r1:5 r2:5 0000 --- r3:5
+cmp_reg                 --- 01 00011 r1:5 r2:5 0000 --- r3:5
+mul_reg                 --- 01 00100 r1:5 r2:5 0000 --- r3:5
+div_reg                 --- 01 00110 r1:5 r2:5 0000 --- r3:5
+mod_reg                 --- 01 01000 r1:5 r2:5 0000 --- r3:5
+divs_reg                --- 01 00110 r1:5 r2:5 0010 --- r3:5
+mods_reg                --- 01 01000 r1:5 r2:5 0010 --- r3:5
+and_reg                 --- 01 01010 r1:5 r2:5 0000 --- r3:5
+tst_reg                 --- 01 01011 r1:5 r2:5 0000 --- r3:5
+or_reg                  --- 01 01100 r1:5 r2:5 0000 --- r3:5
+xor_reg                 --- 01 01110 r1:5 r2:5 0000 --- r3:5
+shl_reg                 --- 01 10000 r1:5 r2:5 0000 --- r3:5
+shr_reg                 --- 01 10010 r1:5 r2:5 0000 --- r3:5
+sar_reg                 --- 01 10010 r1:5 r2:5 0010 --- r3:5
+rol_reg                 --- 01 10100 r1:5 r2:5 0000 --- r3:5
+ror_reg                 --- 01 10110 r1:5 r2:5 0000 --- r3:5
 
-add_imm                 cond:3 01 00000 r1:5 r2:5 0001 imm8:8
-sub_imm                 cond:3 01 00010 r1:5 r2:5 0001 imm8:8
-cmp_imm                 cond:3 01 00011 r1:5 r2:5 0001 imm8:8
-mul_imm                 cond:3 01 00100 r1:5 r2:5 0001 imm8:8
-div_imm                 cond:3 01 00110 r1:5 r2:5 0001 imm8:8
-mod_imm                 cond:3 01 01000 r1:5 r2:5 0001 imm8:8
-divs_imm                cond:3 01 00110 r1:5 r2:5 0011 imm8:8
-mods_imm                cond:3 01 01000 r1:5 r2:5 0011 imm8:8
-and_imm                 cond:3 01 01010 r1:5 r2:5 0001 imm8:8
-tst_imm                 cond:3 01 01011 r1:5 r2:5 0001 imm8:8
-or_imm                  cond:3 01 01100 r1:5 r2:5 0001 imm8:8
-xor_imm                 cond:3 01 01110 r1:5 r2:5 0001 imm8:8
+add_imm                 --- 01 00000 r1:5 r2:5 0001 imm8:8
+sub_imm                 --- 01 00010 r1:5 r2:5 0001 imm8:8
+cmp_imm                 --- 01 00011 r1:5 r2:5 0001 imm8:8
+mul_imm                 --- 01 00100 r1:5 r2:5 0001 imm8:8
+div_imm                 --- 01 00110 r1:5 r2:5 0001 imm8:8
+mod_imm                 --- 01 01000 r1:5 r2:5 0001 imm8:8
+divs_imm                --- 01 00110 r1:5 r2:5 0011 imm8:8
+mods_imm                --- 01 01000 r1:5 r2:5 0011 imm8:8
+and_imm                 --- 01 01010 r1:5 r2:5 0001 imm8:8
+tst_imm                 --- 01 01011 r1:5 r2:5 0001 imm8:8
+or_imm                  --- 01 01100 r1:5 r2:5 0001 imm8:8
+xor_imm                 --- 01 01110 r1:5 r2:5 0001 imm8:8
 {
   {
-    ret                 cond:3 01 100001111111101000100000000
-    mov                 cond:3 01 10000 r1:5 r2:5 000100000000
+    ret                 --- 01 100001111111101000100000000
+    mov                 --- 01 10000 r1:5 r2:5 000100000000
   }
-  shl_imm               cond:3 01 10000 r1:5 r2:5 0001 imm8:8
+  shl_imm               --- 01 10000 r1:5 r2:5 0001 imm8:8
 }
-shr_imm                 cond:3 01 10010 r1:5 r2:5 0001 imm8:8
-sar_imm                 cond:3 01 10010 r1:5 r2:5 0011 imm8:8
-rol_imm                 cond:3 01 10100 r1:5 r2:5 0001 imm8:8
-ror_imm                 cond:3 01 10110 r1:5 r2:5 0001 imm8:8
+shr_imm                 --- 01 10010 r1:5 r2:5 0001 imm8:8
+sar_imm                 --- 01 10010 r1:5 r2:5 0011 imm8:8
+rol_imm                 --- 01 10100 r1:5 r2:5 0001 imm8:8
+ror_imm                 --- 01 10110 r1:5 r2:5 0001 imm8:8
 
-neg                     cond:3 01 11000 r1:5 r2:5 000 ---------
-not                     cond:3 01 11010 r1:5 r2:5 000 ---------
-extend                  cond:3 01 11100 r1:5 r2:5 00 ------ to:2 from:2
-swe                     cond:3 01 11110 r1:5 r2:5 000 ---------
+neg                     --- 01 11000 r1:5 r2:5 000 ---------
+not                     --- 01 11010 r1:5 r2:5 000 ---------
+extend                  --- 01 11100 r1:5 r2:5 00 ------ to:2 from:2
+swe                     --- 01 11110 r1:5 r2:5 000 ---------
+
+cswap                   --- 01 ----- r1:5 r2:5 1000 cond:3 r3:5
+xchg                    --- 01 ----- r1:5 r2:5 1001 --------
 
 prefix                  0111100001 --------------- reg_override:4 discard_flags:1 sz:2
 
-fadd                    cond:3 01 00000 r1:5 r2:5 100000 - r3:5
-faddi                   cond:3 01 00000 r1:5 r2:5 100010 - r3:5
-fsub                    cond:3 01 00010 r1:5 r2:5 100000 - r3:5
-fsubi                   cond:3 01 00010 r1:5 r2:5 100010 - r3:5
-fcmp                    cond:3 01 00011 ----- r2:5 100000 - r3:5
-fcmpi                   cond:3 01 00011 ----- r2:5 100010 - r3:5
-fmul                    cond:3 01 00100 r1:5 r2:5 100000 - r3:5
-fmuli                   cond:3 01 00100 r1:5 r2:5 100010 - r3:5
-fdiv                    cond:3 01 00110 r1:5 r2:5 100000 - r3:5
-fdivi                   cond:3 01 00110 r1:5 r2:5 100010 - r3:5
-fmod                    cond:3 01 01000 r1:5 r2:5 100000 - r3:5
-fmodi                   cond:3 01 01000 r1:5 r2:5 100010 - r3:5
-f2i                     cond:3 01 01010 r1:5 r2:5 100000 - -----
-i2f                     cond:3 01 01010 r1:5 r2:5 100010 - -----
-fsin                    cond:3 01 01100 r1:5 r2:5 100000 - -----
-fsini                   cond:3 01 01100 r1:5 r2:5 100010 - -----
-fsqrt                   cond:3 01 01110 r1:5 r2:5 100000 - -----
-fsqrti                  cond:3 01 01110 r1:5 r2:5 100010 - -----
-sadd                    cond:3 01 00000 r1:5 r2:5 100001 - r3:5
-saddi                   cond:3 01 00000 r1:5 r2:5 100011 - r3:5
-ssub                    cond:3 01 00010 r1:5 r2:5 100001 - r3:5
-ssubi                   cond:3 01 00010 r1:5 r2:5 100011 - r3:5
-scmp                    cond:3 01 00011 ----- r2:5 100001 - r3:5
-scmpi                   cond:3 01 00011 ----- r2:5 100011 - r3:5
-smul                    cond:3 01 00100 r1:5 r2:5 100001 - r3:5
-smuli                   cond:3 01 00100 r1:5 r2:5 100011 - r3:5
-sdiv                    cond:3 01 00110 r1:5 r2:5 100001 - r3:5
-sdivi                   cond:3 01 00110 r1:5 r2:5 100011 - r3:5
-smod                    cond:3 01 01000 r1:5 r2:5 100001 - r3:5
-smodi                   cond:3 01 01000 r1:5 r2:5 100011 - r3:5
-s2i                     cond:3 01 01010 r1:5 r2:5 100001 - -----
-i2s                     cond:3 01 01010 r1:5 r2:5 100011 - -----
-ssin                    cond:3 01 01100 r1:5 r2:5 100001 - -----
-ssini                   cond:3 01 01100 r1:5 r2:5 100011 - -----
-ssqrt                   cond:3 01 01110 r1:5 r2:5 100001 - -----
-ssqrti                  cond:3 01 01110 r1:5 r2:5 100011 - -----
-s2f                     cond:3 01 10000 r1:5 r2:5 100000 - -----
-f2s                     cond:3 01 10000 r1:5 r2:5 100001 - -----
+fadd                    --- 01 00000 r1:5 r2:5 011000 - r3:5
+faddi                   --- 01 00000 r1:5 r2:5 011010 - r3:5
+fsub                    --- 01 00010 r1:5 r2:5 011000 - r3:5
+fsubi                   --- 01 00010 r1:5 r2:5 011010 - r3:5
+fcmp                    --- 01 00011 ----- r2:5 011000 - r3:5
+fcmpi                   --- 01 00011 ----- r2:5 011010 - r3:5
+fmul                    --- 01 00100 r1:5 r2:5 011000 - r3:5
+fmuli                   --- 01 00100 r1:5 r2:5 011010 - r3:5
+fdiv                    --- 01 00110 r1:5 r2:5 011000 - r3:5
+fdivi                   --- 01 00110 r1:5 r2:5 011010 - r3:5
+fmod                    --- 01 01000 r1:5 r2:5 011000 - r3:5
+fmodi                   --- 01 01000 r1:5 r2:5 011010 - r3:5
+f2i                     --- 01 01010 r1:5 r2:5 011000 - -----
+i2f                     --- 01 01010 r1:5 r2:5 011010 - -----
+fsin                    --- 01 01100 r1:5 r2:5 011000 - -----
+fsini                   --- 01 01100 r1:5 r2:5 011010 - -----
+fsqrt                   --- 01 01110 r1:5 r2:5 011000 - -----
+fsqrti                  --- 01 01110 r1:5 r2:5 011010 - -----
+sadd                    --- 01 00000 r1:5 r2:5 011001 - r3:5
+saddi                   --- 01 00000 r1:5 r2:5 011011 - r3:5
+ssub                    --- 01 00010 r1:5 r2:5 011001 - r3:5
+ssubi                   --- 01 00010 r1:5 r2:5 011011 - r3:5
+scmp                    --- 01 00011 ----- r2:5 011001 - r3:5
+scmpi                   --- 01 00011 ----- r2:5 011011 - r3:5
+smul                    --- 01 00100 r1:5 r2:5 011001 - r3:5
+smuli                   --- 01 00100 r1:5 r2:5 011011 - r3:5
+sdiv                    --- 01 00110 r1:5 r2:5 011001 - r3:5
+sdivi                   --- 01 00110 r1:5 r2:5 011011 - r3:5
+smod                    --- 01 01000 r1:5 r2:5 011001 - r3:5
+smodi                   --- 01 01000 r1:5 r2:5 011011 - r3:5
+s2i                     --- 01 01010 r1:5 r2:5 011001 - -----
+i2s                     --- 01 01010 r1:5 r2:5 011011 - -----
+ssin                    --- 01 01100 r1:5 r2:5 011001 - -----
+ssini                   --- 01 01100 r1:5 r2:5 011011 - -----
+ssqrt                   --- 01 01110 r1:5 r2:5 011001 - -----
+ssqrti                  --- 01 01110 r1:5 r2:5 011011 - -----
+s2f                     --- 01 10000 r1:5 r2:5 011000 - -----
+f2s                     --- 01 10000 r1:5 r2:5 011001 - -----
 
-cpuid                   cond:3 11 00000 ----------------------
-zeroupper               cond:3 11 00010 ----------------- r1:5
-sret                    cond:3 11 00011 ----------------------
-hret                    cond:3 11 00100 ----------------------
-iret                    cond:3 11 00101 ----------------------
-svc                     cond:3 11 00110 ----------------------
-mov_cr_r                cond:3 11 00111 ------------ cr1:5 r1:5
-mov_r_cr                cond:3 11 01000 ------------ cr1:5 r1:5
+cpuid                   --- 11 00000 ----------------------
+zeroupper               --- 11 00010 ----------------- r1:5
+sret                    --- 11 00011 ----------------------
+hret                    --- 11 00100 ----------------------
+iret                    --- 11 00101 ----------------------
+svc                     --- 11 00110 ----------------------
+mov_cr_r                --- 11 00111 ------------ cr1:5 r1:5
+mov_r_cr                --- 11 01000 ------------ cr1:5 r1:5
+hexit                   --- 11 01001 ----------------------
+sexit                   --- 11 01010 ----------------------
 
-lea                     cond:3 10 00 r1:5 rel:s20
-movz_0                  cond:3 10 01 r1:5 - 0 00 imm:16
-movz_16                 cond:3 10 01 r1:5 - 0 01 imm:16
-movz_32                 cond:3 10 01 r1:5 - 0 10 imm:16
-movz_48                 cond:3 10 01 r1:5 - 0 11 imm:16
-movk_0                  cond:3 10 01 r1:5 - 1 00 imm:16
-movk_16                 cond:3 10 01 r1:5 - 1 01 imm:16
-movk_32                 cond:3 10 01 r1:5 - 1 10 imm:16
-movk_48                 cond:3 10 01 r1:5 - 1 11 imm:16
+lea                     --- 10 00 r1:5 rel:s20
+movz_0                  --- 10 01 r1:5 - 0 00 imm:16
+movz_16                 --- 10 01 r1:5 - 0 01 imm:16
+movz_32                 --- 10 01 r1:5 - 0 10 imm:16
+movz_48                 --- 10 01 r1:5 - 0 11 imm:16
+movk_0                  --- 10 01 r1:5 - 1 00 imm:16
+movk_16                 --- 10 01 r1:5 - 1 01 imm:16
+movk_32                 --- 10 01 r1:5 - 1 10 imm:16
+movk_48                 --- 10 01 r1:5 - 1 11 imm:16
 
-ldr_reg                 cond:3 10 10 r1:5 0 0 0 r2:5 ---- shift:3 r3:5
-ldr_reg_update          cond:3 10 10 r1:5 0 0 1 r2:5 ---- shift:3 r3:5
-ldr_imm                 cond:3 10 10 r1:5 0 1 0 r2:5 imm:s12
-ldr_imm_update          cond:3 10 10 r1:5 0 1 1 r2:5 imm:s12
-str_reg                 cond:3 10 10 r1:5 1 0 0 r2:5 ---- shift:3 r3:5
-str_reg_update          cond:3 10 10 r1:5 1 0 1 r2:5 ---- shift:3 r3:5
-str_imm                 cond:3 10 10 r1:5 1 1 0 r2:5 imm:s12
-str_imm_update          cond:3 10 10 r1:5 1 1 1 r2:5 imm:s12
-ldr_pc_rel              cond:3 10 11 r1:5 0 rel:s19
-str_pc_rel              cond:3 10 11 r1:5 1 rel:s19
+ldr_reg                 --- 10 10 r1:5 0 0 0 r2:5 ---- shift:3 r3:5
+ldr_reg_update          --- 10 10 r1:5 0 0 1 r2:5 ---- shift:3 r3:5
+ldr_imm                 --- 10 10 r1:5 0 1 0 r2:5 imm:s12
+ldr_imm_update          --- 10 10 r1:5 0 1 1 r2:5 imm:s12
+str_reg                 --- 10 10 r1:5 1 0 0 r2:5 ---- shift:3 r3:5
+str_reg_update          --- 10 10 r1:5 1 0 1 r2:5 ---- shift:3 r3:5
+str_imm                 --- 10 10 r1:5 1 1 0 r2:5 imm:s12
+str_imm_update          --- 10 10 r1:5 1 1 1 r2:5 imm:s12
+ldr_pc_rel              --- 10 11 r1:5 0 rel:s19
+str_pc_rel              --- 10 11 r1:5 1 rel:s19
 
 %bit_op_count 22:5 6:1
-ubxt                    cond:3 01 ..... r1:5 r2:5 0100 0 . start:6 count=%bit_op_count
-sbxt                    cond:3 01 ..... r1:5 r2:5 0100 1 . start:6 count=%bit_op_count
-ubdp                    cond:3 01 ..... r1:5 r2:5 0101 0 . start:6 count=%bit_op_count
-sbdp                    cond:3 01 ..... r1:5 r2:5 0101 1 . start:6 count=%bit_op_count
+ubxt                    --- 01 ..... r1:5 r2:5 0100 0 . start:6 count=%bit_op_count
+sbxt                    --- 01 ..... r1:5 r2:5 0100 1 . start:6 count=%bit_op_count
+ubdp                    --- 01 ..... r1:5 r2:5 0101 0 . start:6 count=%bit_op_count
+sbdp                    --- 01 ..... r1:5 r2:5 0101 1 . start:6 count=%bit_op_count
 
 %vmov_reg_slot 16:2 5:3
-vadd                    cond:3 01 0000 type:3 v1:4 v2:4 0111 ---- v3:4
-vsub                    cond:3 01 0001 type:3 v1:4 v2:4 0111 ---- v3:4
-vmul                    cond:3 01 0010 type:3 v1:4 v2:4 0111 ---- v3:4
-vdiv                    cond:3 01 0011 type:3 v1:4 v2:4 0111 ---- v3:4
-vaddsub                 cond:3 01 0100 type:3 v1:4 v2:4 0111 ---- v3:4
-vmadd                   cond:3 01 0101 type:3 v1:4 v2:4 0111 ---- v3:4
-vmov_reg                cond:3 01 0110 type:3 -- .. v1:4 0111 ... r2:5 slot=%vmov_reg_slot
-vmov                    cond:3 01 0111 type:3 v1:4 v2:4 0111 --------
-vconv                   cond:3 01 1000 type:3 v1:4 v2:4 0111 ----- target:3
-vlen                    cond:3 01 1001 type:3 ---- v1:4 0111 --- r1:5
-vldr_imm                cond:3 01 1010 1 0 r1:5 v1:4 0111 imm:s8
-vldr_imm_update         cond:3 01 1010 1 1 r1:5 v1:4 0111 imm:s8
-vstr_imm                cond:3 01 1011 1 0 r1:5 v1:4 0111 imm:s8
-vstr_imm_update         cond:3 01 1011 1 1 r1:5 v1:4 0111 imm:s8
-vldr_reg                cond:3 01 1010 0 0 r1:5 v1:4 0111 --- r2:5
-vldr_reg_update         cond:3 01 1010 0 1 r1:5 v1:4 0111 --- r2:5
-vstr_reg                cond:3 01 1011 0 0 r1:5 v1:4 0111 --- r2:5
-vstr_reg_update         cond:3 01 1011 0 1 r1:5 v1:4 0111 --- r2:5
+vadd                    --- 01 0000 type:3 v1:4 v2:4 0111 ---- v3:4
+vsub                    --- 01 0001 type:3 v1:4 v2:4 0111 ---- v3:4
+vmul                    --- 01 0010 type:3 v1:4 v2:4 0111 ---- v3:4
+vdiv                    --- 01 0011 type:3 v1:4 v2:4 0111 ---- v3:4
+vaddsub                 --- 01 0100 type:3 v1:4 v2:4 0111 ---- v3:4
+vmadd                   --- 01 0101 type:3 v1:4 v2:4 0111 ---- v3:4
+vmov_reg                --- 01 0110 type:3 -- .. v1:4 0111 ... r2:5 slot=%vmov_reg_slot
+vmov                    --- 01 0111 type:3 v1:4 v2:4 0111 --------
+vconv                   --- 01 1000 type:3 v1:4 v2:4 0111 ----- target:3
+vlen                    --- 01 1001 type:3 ---- v1:4 0111 --- r1:5
+vldr_imm                --- 01 1010 1 0 r1:5 v1:4 0111 imm:s8
+vldr_imm_update         --- 01 1010 1 1 r1:5 v1:4 0111 imm:s8
+vstr_imm                --- 01 1011 1 0 r1:5 v1:4 0111 imm:s8
+vstr_imm_update         --- 01 1011 1 1 r1:5 v1:4 0111 imm:s8
+vldr_reg                --- 01 1010 0 0 r1:5 v1:4 0111 --- r2:5
+vldr_reg_update         --- 01 1010 0 1 r1:5 v1:4 0111 --- r2:5
+vstr_reg                --- 01 1011 0 0 r1:5 v1:4 0111 --- r2:5
+vstr_reg_update         --- 01 1011 0 1 r1:5 v1:4 0111 --- r2:5

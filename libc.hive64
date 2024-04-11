@@ -1,11 +1,12 @@
 .text
 .global _start
 _start:
-    lea r0, handle_interrupt
+    lea r0, global_idt
     mov cr5, r0
     mov r0, 0
     cpuid
     cmp r0, 0
+    hexit # go into supervisor mode
 $loop:
     b.nz $loop
 
@@ -25,6 +26,7 @@ $loop:
     xor r2, r2
     xor r3, r3
 
+    sexit # go into user mode
     bl _main
     mov r2, r0
 
@@ -37,40 +39,29 @@ $loop:
     mov r0, r2
     b _exit
 
-handle_interrupt:
-    mov r6, cr6
-    lea r7, global_idt
-    shl r6, 3
-    add r7, r6
-    br r7
-
 int_ud:
-    psh r0
     lea r0, int_ud_msg
     bl _puts
-    pp r0 
-    iret
+    mov r0, 1
+    b _exit
 
 int_pf:
-    psh r0
     lea r0, int_pf_msg
     bl _puts
-    pp r0
-    iret
+    mov r0, 2
+    b _exit
 
 int_gp:
-    psh r0
     lea r0, int_gp_msg
     bl _puts
-    pp r0
-    iret
+    mov r0, 3
+    b _exit
 
 int_ip:
-    psh r0
     lea r0, int_ip_msg
     bl _puts
-    pp r0
-    iret
+    mov r0, 4
+    b _exit
 
 .global _exit
 _exit:

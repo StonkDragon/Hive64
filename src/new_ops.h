@@ -304,9 +304,6 @@ typedef struct {
     uint8_t             negative:1;
     uint8_t             size:2;
     uint8_t             reg_state:4;
-    #define EM_HYPERVISOR 0
-    #define EM_SUPERVISOR 1
-    #define EM_USER 2
 } PACKED hive_flag_register_t;
 
 typedef union hive_register_t {
@@ -389,11 +386,11 @@ static_assert(sizeof(hive_flag_register_t) <= sizeof(QWord_t), "hive_flag_regist
 #define CR_CPUID 3
 #define CR_FLAGS 4
 #define CR_IDT 5
-#define CR_INT_ID 6
-#define CR_RUNLEVEL 7
+#define CR_RUNLEVEL 6
 
-#define CR_UTIL1 10
-#define CR_UTIL2 11
+#define EM_HYPERVISOR 0
+#define EM_SUPERVISOR 1
+#define EM_USER 2
 
 #define SIZE_8BIT   0b00
 #define SIZE_16BIT  0b01
@@ -402,7 +399,7 @@ static_assert(sizeof(hive_flag_register_t) <= sizeof(QWord_t), "hive_flag_regist
 
 #define INT_UD 0x01 // Undefined opcode
 #define INT_PF 0x02 // Page fault
-#define INT_GP 0x02 // General protection
+#define INT_GP 0x03 // General protection
 #define INT_IP 0x04 // Insufficient privileges
 
 #define FLAG_NOT    0b100
@@ -432,14 +429,6 @@ static_assert(sizeof(hive_flag_register_t) <= sizeof(QWord_t), "hive_flag_regist
 #define SVC_fstat           8
 
 void* sys_mmap(void* addr, size_t sz, int prot, int map, int fd, long long off);
-
-#ifndef CORE_COUNT
-#define CORE_COUNT 1
-#endif
-
-#ifndef THREAD_COUNT
-#define THREAD_COUNT 1
-#endif
 
 #define STACK_SIZE (1024 * 1024)
 

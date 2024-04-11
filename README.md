@@ -24,9 +24,9 @@ Hive64 has 32 general purpose/scalar registers.
 All scalar registers have quadword size.
 These registers can hold both integers and floating point numbers.
 Of the 32 registers 3 are reserved for special use:
-- `r29`: The link register
-- `r30`: The stack pointer
-- `r31`: The program counter
+- `r29`/`lr`: The link register
+- `r30`/`sp`: The stack pointer
+- `r31`/`pc`: The program counter
 
 ### Register Mnemonics
 - `bX`: A byte-sized register where `X` is the register number
@@ -78,29 +78,86 @@ Vector instruction mnemonics differentiate between the element type by a prefix.
 |`vf`|double precision float|
 |`vo`|first quadword|
 
-## Calling convention
-The first 8 arguments are passed in registers `r0` - `r7`.
-Further arguments are passed on the stack.
-If a struct bigger than 64 bytes is passed as an argument, the register corresponding to that argument (for example `r0`) must contain a pointer to a temporary object on the stack.
-The return value is in `r0`.
-When returning a struct bigger than 64 bits, further registers may be used in order `r1` -> `r7`.
-If a struct bigger than 64 bytes is returned, then `r0` will contain a pointer to a caller-allocated temporary storage location on the stack for the returned struct, and arguments start at `r1`.
-All registers used by a function that aren't intended to return a value must be saved and restored by the function.
-
 ## Control registers
 Hive64 has 12 control registers.
 Control registers are quadword sized.
-It is only possible to read from a control register.
+Control registers can only be directly read and written, and not used in other instructions.
+Use `mov crX, rX` to write to a control register.
+Use `mov rX, crX` to read from a control register.
+
 - `cr0`: Amount of instructions executed. Updated after instructions
 - `cr1`: Amount of cores
 - `cr2`: Amount of threads per core
 - `cr3`: Core id
+- `cr4`: [Flags register](#flag-register)
+- `cr5`: [Interrupt descriptor table](#interrupts)
+- `cr6`: [Current privilege level](#privileges)
 
 All other control registers have unspecified values and may be used in the future.
 
 The `cpuid` instruction reads these registers.
 
+### Flag register
+The flag register contains the current processor flags (zero, negative), current operand size, and register part state.
+The zero and negative flags get updated by all arithmetic and floating point operations, immediate value loads, and register to register transfers (except `lr` to `pc` transfers).
+
+### Interrupts
+Some operations can cause interrupts to occur, such as:
+- writing to an invalid address (causes `SIGSEGV`)
+- writing to/reading from an unaligned address (causes `SIGBUS`)
+- trying to decode and execute an illegal instruction (causes `SIGILL`)
+- trying to execute a privileged instruction with insufficient privileges (causes `SIGTRAP`)
+
+### Privileges
+Hive64 has 3 privilege levels.
+
+#### Hypervisor Mode
+- In charge of CPU management
+- "First responder" to CPU interrupts
+- The processor starts up in this mode
+- Prepares the processor for an OS to boot up
+- Unrestricted access to the hardware
+
+#### Supervisor Mode
+- Runs the kernel of the OS
+- Near unrestricted access to the hardware
+
+#### User Mode
+- Least privileged mode
+- Runs user programs
+
+## Calling convention
+The first 8 arguments are passed in registers `r0` - `r15`.
+Further arguments are passed on the stack.
+If a struct bigger than 128 bytes is passed as an argument, the register corresponding to that argument (for example `r0`) must contain a pointer to a temporary object on the stack.
+The return value is in `r0`.
+When returning a struct bigger than 64 bits, further registers may be used in order `r1` -> `r15`.
+If a struct bigger than 128 bytes is returned, then `r0` will contain a pointer to a caller-allocated temporary storage location on the stack for the returned struct, and arguments start at `r1`.
+All registers used by a function that aren't intended to return a value must be saved and restored by the function.
+
 ## Instructions
+In Hive64 all instructions are conditional, meaning they only execute when a certain flag is set or not set.
+Conditions:
+|Condition|Flags|Bit value|Assembler symbol (where `<instr>` is the mnemonic)|
+|-|-|-|-|
+|Equal|Zero flag set|`000`|`<instr>.eq`/`<instr>.z`|
+|Less than or equal|Zero or negative flag set|`001`|`<instr>.le`|
+|Less than|Negative flag set|`010`|`<instr>.lt`/`<instr>.mi`|
+|Always|Any flag state|`011`|No symbol|
+
+Inverses:
+|Condition|Flags|Bit value|Assembler symbol (where `<instr>` is the mnemonic)|
+|-|-|-|-|
+|Not equal|Zero flag not set|`100`|`<instr>.ne`/`<instr>.nz`|
+|Greater than|Zero and negative flag not set|`101`|`<instr>.gt`|
+|Greater than or equal|Negative flag not set|`110`|`<instr>.ge`/`<instr>.pl`|
+|Never|Any flag state|`111`|No symbol|
+
+The 'Always' condition means the instruction always executes.
+The 'Never' condition means the instruction never executes.
+
+The instruction condition is checked before the instruction is fully decoded, meaning some illegal instructions with a 'Never' condition won't throw a `SIGILL` [exception](#exceptions).
+
 Instructions always have a length that is a multiple of 4 bytes.
 
 ### Instruction encoding description
@@ -108,17 +165,6 @@ Instructions always have a length that is a multiple of 4 bytes.
 - `.`: this bit is ignored by the instruction
 - `ccc`: specifies under which condition the instruction should execute
 - `[rX-]`: scalar registers
-
-|Condition|Bit value|
-|-|-|
-|`eq`|`000`|
-|`le`|`001`|
-|`lt`|`010`|
-|`always`|`011`|
-|`ne`|`100`|
-|`gt`|`101`|
-|`ge`|`110`|
-|`never`|`111`|
 
 Every condition except `always` and `never` can be specified in the assembler by putting `.` followed by the condition after the instruction mnemonic.
 
@@ -215,42 +261,42 @@ Specifying any control register selector (`X`/`Y`/`Z`/`W`) for a register number
 ### Floating point Arithmetic
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`fadd r1, r2, r3`|         `ccc0100000[r1-][r2-]100000.[r3-]`|`r1 = r2 + r3`|
-|`faddi r1, r2, r3`|        `ccc0100000[r1-][r2-]100010.[r3-]`|`r1 = r2 + r3`|
-|`fsub r1, r2, r3`|         `ccc0100010[r1-][r2-]100000.[r3-]`|`r1 = r2 - r3`|
-|`fsubi r1, r2, r3`|        `ccc0100010[r1-][r2-]100010.[r3-]`|`r1 = r2 - r3`|
-|`fcmp r2, r3`|             `ccc0100011.....[r2-]100000.[r3-]`|`r2 - r3` (only sets flags)|
-|`fcmpi r2, r3`|            `ccc0100011.....[r2-]100010.[r3-]`|`r2 - r3` (only sets flags)|
-|`fmul r1, r2, r3`|         `ccc0100100[r1-][r2-]100000.[r3-]`|`r1 = r2 * r3`|
-|`fmuli r1, r2, r3`|        `ccc0100100[r1-][r2-]100010.[r3-]`|`r1 = r2 * r3`|
-|`fdiv r1, r2, r3`|         `ccc0100110[r1-][r2-]100000.[r3-]`|`r1 = r2 / r3`|
-|`fdivi r1, r2, r3`|        `ccc0100110[r1-][r2-]100010.[r3-]`|`r1 = r2 / r3`|
-|`fmod r1, r2, r3`|         `ccc0101000[r1-][r2-]100000.[r3-]`|`r1 = r2 % r3`|
-|`fmodi r1, r2, r3`|        `ccc0101000[r1-][r2-]100010.[r3-]`|`r1 = r2 % r3`|
-|`fsin r1, r2`|             `ccc0101010[r1-][r2-]100000......`|`r1 = sin(r2)`|
-|`fsini r1, r2`|            `ccc0101010[r1-][r2-]100010......`|`r1 = sin(integer_to_double(r2))`|
-|`fsqrt r1, r2`|            `ccc0101100[r1-][r2-]100000......`|`r1 = sqrt(r2)`|
-|`fsqrti r1, r2`|           `ccc0101100[r1-][r2-]100010......`|`r1 = sqrt(integer_to_double(r2))`|
-|`f2i r1, r2`|              `ccc0101110[r1-][r2-]100000......`|`r1 = double_to_integer(r2)`|
-|`i2f r1, r2`|              `ccc0101110[r1-][r2-]100010......`|`r1 = integer_to_double(r2)`|
-|`sadd r1, r2, r3`|         `ccc0100000[r1-][r2-]100001.[r3-]`|`r1 = r2 + r3`|
-|`saddi r1, r2, r3`|        `ccc0100000[r1-][r2-]100011.[r3-]`|`r1 = r2 + r3`|
-|`ssub r1, r2, r3`|         `ccc0100010[r1-][r2-]100001.[r3-]`|`r1 = r2 - r3`|
-|`ssubi r1, r2, r3`|        `ccc0100010[r1-][r2-]100011.[r3-]`|`r1 = r2 - r3`|
-|`scmp r2, r3`|             `ccc0100011.....[r2-]100001.[r3-]`|`r2 - r3` (only sets flags)|
-|`scmpi r2, r3`|            `ccc0100011.....[r2-]100011.[r3-]`|`r2 - r3` (only sets flags)|
-|`smul r1, r2, r3`|         `ccc0100100[r1-][r2-]100001.[r3-]`|`r1 = r2 * r3`|
-|`smuli r1, r2, r3`|        `ccc0100100[r1-][r2-]100011.[r3-]`|`r1 = r2 * r3`|
-|`sdiv r1, r2, r3`|         `ccc0100110[r1-][r2-]100001.[r3-]`|`r1 = r2 / r3`|
-|`sdivi r1, r2, r3`|        `ccc0100110[r1-][r2-]100011.[r3-]`|`r1 = r2 / r3`|
-|`smod r1, r2, r3`|         `ccc0101000[r1-][r2-]100001.[r3-]`|`r1 = r2 % r3`|
-|`smodi r1, r2, r3`|        `ccc0101000[r1-][r2-]100011.[r3-]`|`r1 = r2 % r3`|
-|`ssin r1, r2`|             `ccc0101010[r1-][r2-]100001......`|`r1 = sin(r2)`|
-|`ssqrt r1, r2`|            `ccc0101100[r1-][r2-]100011......`|`r1 = sqrt(r2)`|
-|`s2i r1, r2`|              `ccc0101110[r1-][r2-]100001......`|`r1 = single_to_integer(r2)`|
-|`i2s r1, r2`|              `ccc0101110[r1-][r2-]100011......`|`r1 = integer_to_single(r2)`|
-|`s2f r1, r2`|              `ccc0110000[r1-][r2-]100000......`|`r1 = single_to_double(r2)`|
-|`f2s r1, r2`|              `ccc0110000[r1-][r2-]100001......`|`r1 = double_to_single(r2)`|
+|`fadd r1, r2, r3`|         `ccc0100000[r1-][r2-]011000.[r3-]`|`r1 = r2 + r3`|
+|`faddi r1, r2, r3`|        `ccc0100000[r1-][r2-]011010.[r3-]`|`r1 = r2 + r3`|
+|`fsub r1, r2, r3`|         `ccc0100010[r1-][r2-]011000.[r3-]`|`r1 = r2 - r3`|
+|`fsubi r1, r2, r3`|        `ccc0100010[r1-][r2-]011010.[r3-]`|`r1 = r2 - r3`|
+|`fcmp r2, r3`|             `ccc0100011.....[r2-]011000.[r3-]`|`r2 - r3` (only sets flags)|
+|`fcmpi r2, r3`|            `ccc0100011.....[r2-]011010.[r3-]`|`r2 - r3` (only sets flags)|
+|`fmul r1, r2, r3`|         `ccc0100100[r1-][r2-]011000.[r3-]`|`r1 = r2 * r3`|
+|`fmuli r1, r2, r3`|        `ccc0100100[r1-][r2-]011010.[r3-]`|`r1 = r2 * r3`|
+|`fdiv r1, r2, r3`|         `ccc0100110[r1-][r2-]011000.[r3-]`|`r1 = r2 / r3`|
+|`fdivi r1, r2, r3`|        `ccc0100110[r1-][r2-]011010.[r3-]`|`r1 = r2 / r3`|
+|`fmod r1, r2, r3`|         `ccc0101000[r1-][r2-]011000.[r3-]`|`r1 = r2 % r3`|
+|`fmodi r1, r2, r3`|        `ccc0101000[r1-][r2-]011010.[r3-]`|`r1 = r2 % r3`|
+|`fsin r1, r2`|             `ccc0101010[r1-][r2-]011000......`|`r1 = sin(r2)`|
+|`fsini r1, r2`|            `ccc0101010[r1-][r2-]011010......`|`r1 = sin(integer_to_double(r2))`|
+|`fsqrt r1, r2`|            `ccc0101100[r1-][r2-]011000......`|`r1 = sqrt(r2)`|
+|`fsqrti r1, r2`|           `ccc0101100[r1-][r2-]011010......`|`r1 = sqrt(integer_to_double(r2))`|
+|`f2i r1, r2`|              `ccc0101110[r1-][r2-]011000......`|`r1 = double_to_integer(r2)`|
+|`i2f r1, r2`|              `ccc0101110[r1-][r2-]011010......`|`r1 = integer_to_double(r2)`|
+|`sadd r1, r2, r3`|         `ccc0100000[r1-][r2-]011001.[r3-]`|`r1 = r2 + r3`|
+|`saddi r1, r2, r3`|        `ccc0100000[r1-][r2-]011011.[r3-]`|`r1 = r2 + r3`|
+|`ssub r1, r2, r3`|         `ccc0100010[r1-][r2-]011001.[r3-]`|`r1 = r2 - r3`|
+|`ssubi r1, r2, r3`|        `ccc0100010[r1-][r2-]011011.[r3-]`|`r1 = r2 - r3`|
+|`scmp r2, r3`|             `ccc0100011.....[r2-]011001.[r3-]`|`r2 - r3` (only sets flags)|
+|`scmpi r2, r3`|            `ccc0100011.....[r2-]011011.[r3-]`|`r2 - r3` (only sets flags)|
+|`smul r1, r2, r3`|         `ccc0100100[r1-][r2-]011001.[r3-]`|`r1 = r2 * r3`|
+|`smuli r1, r2, r3`|        `ccc0100100[r1-][r2-]011011.[r3-]`|`r1 = r2 * r3`|
+|`sdiv r1, r2, r3`|         `ccc0100110[r1-][r2-]011001.[r3-]`|`r1 = r2 / r3`|
+|`sdivi r1, r2, r3`|        `ccc0100110[r1-][r2-]011011.[r3-]`|`r1 = r2 / r3`|
+|`smod r1, r2, r3`|         `ccc0101000[r1-][r2-]011001.[r3-]`|`r1 = r2 % r3`|
+|`smodi r1, r2, r3`|        `ccc0101000[r1-][r2-]011011.[r3-]`|`r1 = r2 % r3`|
+|`ssin r1, r2`|             `ccc0101010[r1-][r2-]011001......`|`r1 = sin(r2)`|
+|`ssqrt r1, r2`|            `ccc0101100[r1-][r2-]011011......`|`r1 = sqrt(r2)`|
+|`s2i r1, r2`|              `ccc0101110[r1-][r2-]011001......`|`r1 = single_to_integer(r2)`|
+|`i2s r1, r2`|              `ccc0101110[r1-][r2-]011011......`|`r1 = integer_to_single(r2)`|
+|`s2f r1, r2`|              `ccc0110000[r1-][r2-]011000......`|`r1 = single_to_double(r2)`|
+|`f2s r1, r2`|              `ccc0110000[r1-][r2-]011001......`|`r1 = double_to_single(r2)`|
 
 ### Utility
 |Mnemonic|Encoding|Description|
@@ -263,6 +309,8 @@ Specifying any control register selector (`X`/`Y`/`Z`/`W`) for a register number
 |`svc`|                     `ccc1100110......................`|Supervisor call|
 |`mov cr1, r2`|             `ccc1100111............[cr1][r1-]`|Load control register with value (only in hypervisor mode)|
 |`mov r1, cr2`|             `ccc1101000............[cr1][r1-]`|Get value of control register (only in hypervisor mode)|
+|`hexit`|                   `ccc1101001......................`|Exit hypervisor mode (only in hypervisor mode)|
+|`sexit`|                   `ccc1101010......................`|Exit supervisor mode (only in supervisor mode)|
 
 ### Data transfer
 |Mnemonic|Encoding|Description|

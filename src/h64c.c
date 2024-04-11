@@ -609,6 +609,12 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             } else if (eq(mnemonic, "iret")) {
                 ins.generic.type = MODE_OTHER;
                 ins.type_other.op = OP_OTHER_iret;
+            } else if (eq(mnemonic, "hexit")) {
+                ins.generic.type = MODE_OTHER;
+                ins.type_other.op = OP_OTHER_hexit;
+            } else if (eq(mnemonic, "sexit")) {
+                ins.generic.type = MODE_OTHER;
+                ins.type_other.op = OP_OTHER_sexit;
             } else if (eq(mnemonic, "add")) {
                 OP(add)
             } else if (eq(mnemonic, "sub")) {

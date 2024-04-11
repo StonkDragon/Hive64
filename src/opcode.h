@@ -73,3 +73,5 @@
 #define OP_OTHER_svc            0b00110
 #define OP_OTHER_storecr        0b00111
 #define OP_OTHER_loadcr         0b01000
+#define OP_OTHER_hexit          0b01001
+#define OP_OTHER_sexit          0b01010

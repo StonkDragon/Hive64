@@ -388,6 +388,8 @@ char* dis_other(hive_instruction_t ins, uint64_t addr) {
         case OP_OTHER_svc:       return strformat("svc%s", condition_to_string(ins));
         case OP_OTHER_storecr:   return strformat("mov%s cr%d, %s", condition_to_string(ins), ins.type_other_mov_cr.cr2, register_to_string(ins.type_other_mov_cr.r1, REG_SRC1));
         case OP_OTHER_loadcr:    return strformat("mov%s %s, cr%d", condition_to_string(ins), register_to_string(ins.type_other_mov_cr.r1, REG_DEST), ins.type_other_mov_cr.cr2);
+        case OP_OTHER_hexit:     return strformat("hexit%s", condition_to_string(ins));
+        case OP_OTHER_sexit:     return strformat("sexit%s", condition_to_string(ins));
     }
     return NULL;
 }
