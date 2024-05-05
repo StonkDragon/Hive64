@@ -22,16 +22,14 @@ char* condition_to_string(hive_instruction_t ins) {
 }
 
 static uint8_t register_override = 0;
-static uint8_t cr_override = 0;
 static uint8_t size = SIZE_64BIT;
 
 char* register_to_string_ptr(uint8_t reg, uint8_t counter) {
     uint8_t high = ((register_override & (1 << counter)) != 0);
-    uint8_t control = ((cr_override & (1 << counter)) != 0);
     if (reg == REG_LR) return "lr";
     if (reg == REG_SP) return "sp";
     if (reg == REG_PC) return "pc";
-    char* s = strformat("%s%d", control ? "cr" : "r" , reg);
+    char* s = strformat("r%d" , reg);
     if (high) {
         s = strformat("%sh", s);
     }
@@ -40,8 +38,6 @@ char* register_to_string_ptr(uint8_t reg, uint8_t counter) {
 
 char* register_to_string(uint8_t reg, uint8_t counter) {
     uint8_t high = ((register_override & (1 << counter)) != 0);
-    uint8_t control = ((cr_override & (1 << counter)) != 0);
-    if (control) return register_to_string_ptr(reg, counter);
     if (reg == REG_LR) return "lr";
     if (reg == REG_SP) return "sp";
     if (reg == REG_PC) return "pc";
@@ -247,9 +243,9 @@ char* dis_data_vpu(hive_instruction_t ins, uint64_t addr) {
             }
         }
         if (ins.type_data_vpu.op == OP_DATA_VPU_ldr) {
-            s = strformat("vldr");
+            s = strformat("vldr%s", condition_to_string(ins));
         } else {
-            s = strformat("vstr");
+            s = strformat("vstr%s", condition_to_string(ins));
         }
         s = strformat("%s v%d, [%s", s, ins.type_data_vpu_ls.v1, register_to_string(ins.type_data_vpu_ls.r1, REG_DEST));
         if (ins.type_data_vpu_ls.use_imm) {
@@ -277,6 +273,10 @@ char* dis_data_vpu(hive_instruction_t ins, uint64_t addr) {
         [OP_DATA_VPU_mov_vec] = "mov",
         [OP_DATA_VPU_conv] = "conv",
         [OP_DATA_VPU_len] = "len",
+        [OP_DATA_VPU_and] = "and",
+        [OP_DATA_VPU_or] = "or",
+        [OP_DATA_VPU_xor] = "xor",
+        [OP_DATA_VPU_cmp] = "cmp",
     };
     switch (ins.type_data_vpu.op) {
         case OP_DATA_VPU_add: case_fallthrough;
@@ -284,11 +284,59 @@ char* dis_data_vpu(hive_instruction_t ins, uint64_t addr) {
         case OP_DATA_VPU_mul: case_fallthrough;
         case OP_DATA_VPU_div: case_fallthrough;
         case OP_DATA_VPU_addsub: case_fallthrough;
-        case OP_DATA_VPU_madd: return strformat("%s%s v%d, v%d, v%d", s, opc[ins.type_data_vpu.op], ins.type_data_vpu.v1, ins.type_data_vpu.v2, ins.type_data_vpu.v3);
-        case OP_DATA_VPU_mov: return strformat("%s v%d, %s, %d", s, ins.type_data_vpu_mov.v1, register_to_string(ins.type_data_vpu_mov.r2, REG_SRC1), (ins.type_data_vpu_mov.slot_hi << 3) | ins.type_data_vpu_mov.slot_lo);
-        case OP_DATA_VPU_mov_vec: return strformat("%s v%d, v%d", s, ins.type_data_vpu.v1, ins.type_data_vpu.v2);
-        case OP_DATA_VPU_conv: return strformat("%s%c v%d, v%d", s, modes[ins.type_data_vpu_conv.target_mode], ins.type_data_vpu_conv.v1, ins.type_data_vpu_conv.v2);
-        case OP_DATA_VPU_len:  return strformat("%s %s, v%d", s, register_to_string(ins.type_data_vpu_len.r1, REG_DEST), ins.type_data_vpu_len.v1);
+        case OP_DATA_VPU_and: case_fallthrough;
+        case OP_DATA_VPU_or: case_fallthrough;
+        case OP_DATA_VPU_xor: case_fallthrough;
+        case OP_DATA_VPU_madd: return strformat("%s%s%s v%d, v%d, v%d", s, opc[ins.type_data_vpu.op], condition_to_string(ins), ins.type_data_vpu.v1, ins.type_data_vpu.v2, ins.type_data_vpu.v3);
+        case OP_DATA_VPU_mov: return strformat("%smov%s v%d, %s, %d", s, condition_to_string(ins), ins.type_data_vpu_mov.v1, register_to_string(ins.type_data_vpu_mov.r2, REG_SRC1), (ins.type_data_vpu_mov.slot_hi << 3) | ins.type_data_vpu_mov.slot_lo);
+        case OP_DATA_VPU_mov_vec: return strformat("%smov%s v%d, v%d", s, condition_to_string(ins), ins.type_data_vpu.v1, ins.type_data_vpu.v2);
+        case OP_DATA_VPU_conv: return strformat("%sconv%c%s v%d, v%d", s, modes[ins.type_data_vpu_conv.target_mode], condition_to_string(ins), ins.type_data_vpu_conv.v1, ins.type_data_vpu_conv.v2);
+        case OP_DATA_VPU_len:  return strformat("%slen%s %s, v%d", s, condition_to_string(ins), register_to_string(ins.type_data_vpu_len.r1, REG_DEST), ins.type_data_vpu_len.v1);
+        case OP_DATA_VPU_cmp: return strformat("%scmp%s %s v%d, v%d", s, condition_to_string(ins), condition_to_string0(ins.type_data_vpu_cmp.cond), ins.type_data_vpu.v1, ins.type_data_vpu.v2);
+    }
+    return NULL;
+}
+char* dis_data_vpu2(hive_instruction_t ins, uint64_t addr) {
+    uint8_t modes[] = {
+        [0] = 'o',
+        [1] = 'b',
+        [2] = 'w',
+        [3] = 'd',
+        [4] = 'q',
+        [5] = 'l',
+        [6] = 's',
+        [7] = 'f',
+    };
+    uint8_t max_slots[] = {
+        [0] = 1,
+        [1] = 32,
+        [2] = 16,
+        [3] = 8,
+        [4] = 4,
+        [5] = 2,
+        [6] = 8,
+        [7] = 4,
+    };
+    char* s = strformat("v%c", modes[ins.type_data_vpu.mode]);
+    char* opc[] = {
+        [OP_DATA_VPU_minmax] = "minmax",
+        [OP_DATA_VPU_abs] = "abs",
+        [OP_DATA_VPU_shl] = "shl",
+        [OP_DATA_VPU_shr] = "shr",
+        [OP_DATA_VPU_sqrt] = "sqrt",
+        [OP_DATA_VPU_mod] = "mod",
+        [OP_DATA_VPU_movall] = "movall",
+        [OP_DATA_VPU_tst] = "tst",
+    };
+    switch (ins.type_data_vpu.op) {
+        case OP_DATA_VPU_tst: return strformat("%stst%s %s v%d, v%d", s, condition_to_string(ins), condition_to_string0(ins.type_data_vpu_cmp.cond), ins.type_data_vpu_cmp.v1, ins.type_data_vpu_cmp.v2);
+        case OP_DATA_VPU_minmax: return strformat("%sminmax%s v%d, v%d", s, condition_to_string(ins), ins.type_data_vpu.v1, ins.type_data_vpu.v2);
+        case OP_DATA_VPU_abs: return strformat("%sabs%s v%d, v%d", s, condition_to_string(ins), ins.type_data_vpu_conv.v1, ins.type_data_vpu_conv.v2);
+        case OP_DATA_VPU_shl: case_fallthrough;
+        case OP_DATA_VPU_shr: case_fallthrough;
+        case OP_DATA_VPU_mod: return strformat("%s%s%s v%d, v%d, v%d", s, opc[ins.type_data_vpu.op], condition_to_string(ins), ins.type_data_vpu.v1, ins.type_data_vpu.v2, ins.type_data_vpu.v3);
+        case OP_DATA_VPU_sqrt: return strformat("%ssqrt%s v%d, v%d", s, condition_to_string(ins), ins.type_data_vpu.v1, ins.type_data_vpu.v2);
+        case OP_DATA_VPU_movall: return strformat("%smovall%s %s, v%d", s, condition_to_string(ins), register_to_string(ins.type_data_vpu_len.r1, REG_DEST), ins.type_data_vpu_len.v1);
     }
     return NULL;
 }
@@ -314,9 +362,10 @@ char* dis_data(hive_instruction_t ins, uint64_t addr) {
         case SUBOP_DATA_BDEP:   case_fallthrough;
         case SUBOP_DATA_BEXT:   s = dis_data_bit(ins, addr); break;
         case SUBOP_DATA_FPU:    s = dis_data_fpu(ins, addr); break;
-        case SUBOP_DATA_VPU:    s = dis_data_vpu(ins, addr); break;
         case SUBOP_DATA_CSWAP:  s = strformat("cswp%s %s, %s, %s, %s", condition_to_string(ins), register_to_string(ins.type_data_cswap.r1, REG_DEST), register_to_string(ins.type_data_cswap.r2, REG_SRC1), register_to_string(ins.type_data_cswap.r3, REG_SRC2), condition_to_string0(ins.type_data_cswap.cond)); break;
         case SUBOP_DATA_XCHG:   s = strformat("xchg%s %s, %s", condition_to_string(ins), register_to_string(ins.type_data_xchg.r1, REG_DEST), register_to_string(ins.type_data_xchg.r2, REG_SRC1)); break;
+        case SUBOP_DATA_VPU:    s = dis_data_vpu(ins, addr); break;
+        case SUBOP_DATA_VPU2:   s = dis_data_vpu2(ins, addr); break;
     }
     return s;
 }
@@ -396,18 +445,17 @@ char* dis_other(hive_instruction_t ins, uint64_t addr) {
 
 char* dis(hive_instruction_t** insp, uint64_t addr) {
     char* instr = NULL;
-    hive_instruction_t ins = *((*insp)++);
+    hive_instruction_t ins = **insp;
     if (ins.generic.condition == COND_NEVER) {
         instr = strformat("nop");
     } else {
         if (ins.generic.type == MODE_OTHER && ins.type_other_prefix.op == OP_OTHER_prefix) {
             register_override = ins.type_other_prefix.reg_override;
-            cr_override = ins.type_other_prefix.references_cr;
             size = ins.type_other_prefix.size;
+            (*insp)++;
             char* s = dis(insp, *(uint64_t*) insp);
             size = SIZE_64BIT;
             register_override = 0;
-            cr_override = 0;
             return s;
         }
         switch (ins.generic.type) {

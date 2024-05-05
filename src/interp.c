@@ -11,6 +11,7 @@
 
 int check_condition(hive_instruction_t ins, hive_flag_register_t fr);
 
+#define set_flagsLWord(state, res) set_flags128((state), (res))
 #define set_flagsQWord(state, res) set_flags64((state), (res))
 #define set_flagsDWord(state, res) set_flags32((state), (res))
 #define set_flagsWord(state, res) set_flags16((state), (res))
@@ -24,6 +25,11 @@ int check_condition(hive_instruction_t ins, hive_flag_register_t fr);
     // ne, nz   -> !zero
     // always   -> 1
     // never    -> 0
+static inline SLWord_t set_flags128(struct cpu_state* ctx, SLWord_t res) {
+    ctx->cr[CR_FLAGS].asFlags.zero = (res == 0);
+    ctx->cr[CR_FLAGS].asFlags.negative = (res < 0);
+    return res;
+}
 static inline SQWord_t set_flags64(struct cpu_state* ctx, SQWord_t res) {
     ctx->cr[CR_FLAGS].asFlags.zero = (res == 0);
     ctx->cr[CR_FLAGS].asFlags.negative = (res < 0);
@@ -56,6 +62,7 @@ static inline Float32_t set_flagsf32(struct cpu_state* ctx, Float32_t res) {
 }
 
 #define set_flags(state, res) _Generic((res), \
+    SLWord_t: set_flags128, LWord_t: set_flags128, \
     uint64_t: set_flags64, int64_t: set_flags64, \
     uint32_t: set_flags32, int32_t: set_flags32, \
     uint16_t: set_flags16, int16_t: set_flags16, \
@@ -63,8 +70,10 @@ static inline Float32_t set_flagsf32(struct cpu_state* ctx, Float32_t res) {
     float: set_flagsf32, double: set_flagsf64 \
 )((ctx), (res))
 
-#define PC_REL(what)                (ctx->r[REG_PC].asQWord + ((what) << 2))
-#define PC_REL32(what)              (ctx->r[REG_PC].asDWord + ((what) << 2))
+#define REL(what, to)               (ctx->r[(to)].asQWord + ((what) << 2))
+#define REL32(what, to)             (ctx->r[(to)].asDWord + ((what) << 2))
+#define PC_REL(what)                REL(what, REG_PC)
+#define PC_REL32(what)              REL32(what, REG_PC)
 #define BRANCH(to)                  (ctx->r[REG_PC].asQWord = (QWord_t) ((to) - sizeof(DWord_t)))
 #define BRANCH_RELATIVE(offset)     BRANCH(PC_REL(offset))
 #define LINK()                      (ctx->r[REG_LR].asQWord = ctx->r[REG_PC].asQWord)
@@ -186,15 +195,32 @@ SQWord_t readSQWord(struct cpu_state* ctx, uint8_t reg, uint8_t counter) {
     return ctx->r[reg].asSQWord;
 }
 
-QWord_t readRegister(struct cpu_state* ctx, uint8_t reg, uint8_t counter) {
+QWord_t readUnsigned(struct cpu_state* ctx, uint8_t reg, uint8_t counter) {
     switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: return readByte(ctx, reg, counter);
+        case SIZE_8BIT:  return readByte(ctx, reg, counter);
         case SIZE_16BIT: return readWord(ctx, reg, counter);
         case SIZE_32BIT: return readDWord(ctx, reg, counter);
         case SIZE_64BIT: return readQWord(ctx, reg, counter);
     }
-    fprintf(stderr, "readRegister() fell through\n");
+#if __has_builtin(__builtin_unreachable)
+    __builtin_unreachable();
+#else
     abort();
+#endif
+}
+
+SQWord_t readSigned(struct cpu_state* ctx, uint8_t reg, uint8_t counter) {
+    switch (ctx->cr[CR_FLAGS].asFlags.size) {
+        case SIZE_8BIT:  return readSByte(ctx, reg, counter);
+        case SIZE_16BIT: return readSWord(ctx, reg, counter);
+        case SIZE_32BIT: return readSDWord(ctx, reg, counter);
+        case SIZE_64BIT: return readSQWord(ctx, reg, counter);
+    }
+#if __has_builtin(__builtin_unreachable)
+    __builtin_unreachable();
+#else
+    abort();
+#endif
 }
 
 reg_writer(Byte)
@@ -216,12 +242,26 @@ void writeSQWord(struct cpu_state* ctx, uint8_t reg, SQWord_t val, uint8_t count
     ctx->r[reg].asSQWord = val;
 }
 
-void registerWrite(struct cpu_state* ctx, uint8_t reg, QWord_t val, uint8_t counter) {
+void writeUnsigned(struct cpu_state* ctx, uint8_t reg, QWord_t val, uint8_t counter) {
     switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, reg, val, counter); return;
+        case SIZE_8BIT:  writeByte(ctx, reg, val, counter); return;
         case SIZE_16BIT: writeWord(ctx, reg, val, counter); return;
         case SIZE_32BIT: writeDWord(ctx, reg, val, counter); return;
         case SIZE_64BIT: writeQWord(ctx, reg, val, counter); return;
+    }
+#if __has_builtin(__builtin_unreachable)
+    __builtin_unreachable();
+#else
+    abort();
+#endif
+}
+
+void writeSigned(struct cpu_state* ctx, uint8_t reg, SQWord_t val, uint8_t counter) {
+    switch (ctx->cr[CR_FLAGS].asFlags.size) {
+        case SIZE_8BIT:  writeSByte(ctx, reg, val, counter); return;
+        case SIZE_16BIT: writeSWord(ctx, reg, val, counter); return;
+        case SIZE_32BIT: writeSDWord(ctx, reg, val, counter); return;
+        case SIZE_64BIT: writeSQWord(ctx, reg, val, counter); return;
     }
 #if __has_builtin(__builtin_unreachable)
     __builtin_unreachable();
@@ -246,8 +286,11 @@ void memWrite ## _type (struct cpu_state* ctx, void* addr, _type ## _t val) { \
 }
 
 bool authenticate_ptr(struct cpu_state* ctx, void* addr, size_t read_size) {
-    bool aligned = ((uint64_t) addr % read_size) == 0;
-    return aligned;
+    if (read_size > 4) {
+        return ((uint64_t) addr % 4) == 0;
+    } else {
+        return ((uint64_t) addr % read_size) == 0;
+    }
 }
 
 mem_reader(Byte)
@@ -311,6 +354,7 @@ static inline int32_t sextract32(uint32_t value, int start, int length) {
 #include "decode.h"
 
 int check_condition0(uint8_t ins, hive_flag_register_t fr);
+int check_condition1(uint8_t cond, hive_flag_register_t fr);
 
 static bool trans_branch(DisasContext *ctx, arg_branch *a) {
     BRANCH_RELATIVE(a->rel);
@@ -497,7 +541,7 @@ static bool trans_xor_imm(DisasContext *ctx, arg_xor_imm *a) {
     return true;
 }
 static bool trans_ret(DisasContext *ctx, arg_ret *a) {
-    ctx->r[REG_PC] = ctx->r[REG_LR];
+    ctx->r[REG_PC].asQWord = set_flags(ctx, ctx->r[REG_LR].asQWord);
     return true;
 }
 static bool trans_mov(DisasContext *ctx, arg_mov *a) {
@@ -548,7 +592,6 @@ static bool trans_not(DisasContext *ctx, arg_not *a) {
     return true;
 }
 static bool trans_extend(DisasContext *ctx, arg_extend *a) {
-
     if (a->to <= a->from) {
         return false;
     }
@@ -623,31 +666,17 @@ static bool trans_xchg(DisasContext *ctx, arg_xchg *a) {
     return true;
 }
 static bool trans_prefix(DisasContext *ctx, arg_prefix *a) {
-    uint8_t old_size = ctx->cr[CR_FLAGS].asFlags.size;
-    uint8_t old_overrides = ctx->cr[CR_FLAGS].asFlags.reg_state;
-    uint8_t n = ctx->cr[CR_FLAGS].asFlags.negative;
-    uint8_t z = ctx->cr[CR_FLAGS].asFlags.zero;
-
-    // update
+    // override size, register state, and relative override
     ctx->cr[CR_FLAGS].asFlags.size = a->sz;
     ctx->cr[CR_FLAGS].asFlags.reg_state = a->reg_override;
-
-    if (ctx->cr[CR_FLAGS].asFlags.size == SIZE_64BIT && ctx->cr[CR_FLAGS].asFlags.reg_state != 0) {
-        ctx->cr[CR_FLAGS].asFlags.reg_state = old_overrides;
-        raise(SIGILL);
-    }
     
     // exec
     ctx->r[REG_PC].asInstrPtr++;
-    exec_instr(ctx, *ctx->r[REG_PC].asDWordPtr);
+    exec_instr(ctx, memReadDWord(ctx, ctx->r[REG_PC].asDWordPtr));
     
-    // restore
-    ctx->cr[CR_FLAGS].asFlags.size = old_size;
-    ctx->cr[CR_FLAGS].asFlags.reg_state = old_overrides;
-    if (a->discard_flags) {
-        ctx->cr[CR_FLAGS].asFlags.negative = n;
-        ctx->cr[CR_FLAGS].asFlags.zero = z;
-    }
+    // restore default state
+    ctx->cr[CR_FLAGS].asFlags.size = SIZE_64BIT;
+    ctx->cr[CR_FLAGS].asFlags.reg_state = 0;
     return true;
 }
 static bool trans_fadd(DisasContext *ctx, arg_fadd *a) {
@@ -875,6 +904,7 @@ static bool trans_svc(DisasContext *ctx, arg_svc *a) {
     return true;
 }
 static bool trans_mov_cr_r(DisasContext *ctx, arg_mov_cr_r *a) {
+    check_permissions(ctx, EM_HYPERVISOR);
     ctx->cr[a->cr1] = ctx->r[a->r1];
     return true;
 }
@@ -1099,6 +1129,27 @@ static bool trans_sbdp(DisasContext *ctx, arg_sbdp *a) {
     return true;
 }
 
+#define VABS(_val) _Generic((_val), \
+    Byte_t: vabs8, SByte_t: vabs8, \
+    Word_t: vabs16, SWord_t: vabs16, \
+    DWord_t: vabs32, SDWord_t: vabs32, \
+    QWord_t: vabs64, SQWord_t: vabs64, \
+    LWord_t: vabs128, SLWord_t: vabs128, \
+    Float32_t: vabsf32, Float64_t: vabsf64 \
+)((_val))
+
+#define VABSFUNC(_ty, _sz) static inline _ty vabs ## _sz(_ty x) { \
+    if (x < 0) return -x; \
+    return x; \
+}
+
+VABSFUNC(SByte_t, 8)
+VABSFUNC(SWord_t, 16)
+VABSFUNC(SDWord_t, 32)
+VABSFUNC(SQWord_t, 64)
+VABSFUNC(SLWord_t, 128)
+VABSFUNC(Float32_t, f32)
+VABSFUNC(Float64_t, f64)
 
 #define vop_(_type, _what) for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
     ctx->v[a->v1].as ## _type[i] = ctx->v[a->v2].as ## _type[i] _what ctx->v[a->v3].as ## _type[i]; \
@@ -1107,13 +1158,84 @@ static bool trans_sbdp(DisasContext *ctx, arg_sbdp *a) {
     ctx->v[a->v1].as ## _type[i] = ctx->v[a->v2].as ## _type[i] + ctx->v[a->v3].as ## _type[i]; \
     ctx->v[a->v1].as ## _type[i + 1] = ctx->v[a->v2].as ## _type[i + 1] - ctx->v[a->v3].as ## _type[i + 1]; \
 }
-#define vop_madd_(_type) for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
-    ctx->v[a->v1].as ## _type[i] = ctx->v[a->v2].as ## _type[i] * ctx->v[a->v3].as ## _type[i]; \
-} \
-for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
-    ctx->v[a->v1].as ## _type[0] += ctx->v[a->v1].as ## _type[i]; \
+#define vop_madd_(_type) { \
+    for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
+        ctx->v[a->v1].as ## _type[i] = ctx->v[a->v2].as ## _type[i] * ctx->v[a->v3].as ## _type[i]; \
+    } \
+    QWord_t counter = 0; \
+    for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
+        counter += ctx->v[a->v1].as ## _type[i]; \
+    } \
+    ctx->v[a->v1].as ## _type[0] = counter; \
+}
+#define vop_movall_(_type, _sc) { \
+    _sc ## _t val = read ## _sc(ctx, a->r2, REG_SRC1); \
+    for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
+        ctx->v[a->v1].as ## _type[i] = val; \
+    } \
+}
+#define vop_minmax_(_type) { \
+    typeof(ctx->v[0].as ## _type[0]) min; \
+    typeof(ctx->v[0].as ## _type[0]) max; \
+    if (a->check_sign) { \
+        for (size_t i = 0; i < sizeof(ctx->v[0].asS ## _type) / sizeof(ctx->v[0].asS ## _type[0]); i++) { \
+            if (ctx->v[a->v2].asS ## _type[i] < min) { \
+                min = ctx->v[a->v2].asS ## _type[i]; \
+            } \
+            if (ctx->v[a->v2].asS ## _type[i] > max) { \
+                max = ctx->v[a->v2].asS ## _type[i]; \
+            } \
+        } \
+    } else { \
+        for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
+            if (ctx->v[a->v2].as ## _type[i] < min) { \
+                min = ctx->v[a->v2].as ## _type[i]; \
+            } \
+            if (ctx->v[a->v2].as ## _type[i] > max) { \
+                max = ctx->v[a->v2].as ## _type[i]; \
+            } \
+        } \
+    } \
+    ctx->v[a->v1].as ## _type[0] = min; \
+    ctx->v[a->v1].as ## _type[1] = max; \
+}
+#define vpu_cmp_(_type) { \
+    uint32_t flags = ctx->cr[CR_FLAGS].asDWord; \
+    for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
+        set_flags(ctx, ctx->v[a->v2].as ## _type[i] - ctx->v[a->v3].as ## _type[i]); \
+        ctx->v[a->v1].as ## _type[i] = check_condition1(a->cond, ctx->cr[CR_FLAGS].asFlags); \
+    } \
+    ctx->cr[CR_FLAGS].asDWord = flags; \
+}
+#define vpu_tst_(_type) { \
+    uint32_t flags = ctx->cr[CR_FLAGS].asDWord; \
+    for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
+        set_flags(ctx, ctx->v[a->v2].as ## _type[i] & ctx->v[a->v3].as ## _type[i]); \
+        ctx->v[a->v1].as ## _type[i] = check_condition1(a->cond, ctx->cr[CR_FLAGS].asFlags); \
+    } \
+    ctx->cr[CR_FLAGS].asDWord = flags; \
 }
 
+#define vpu_abs_(_type) { \
+    for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
+        ctx->v[a->v1].as ## _type[i] = VABS(ctx->v[a->v2].as ## _type[i]); \
+    } \
+}
+#define vop_sqrt_(_type) { \
+    for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
+        ctx->v[a->v1].as ## _type[i] = sqrt(ctx->v[a->v2].as ## _type[i]); \
+    } \
+}
+#define vop_fmod32() { \
+    for (size_t i = 0; i < sizeof(ctx->v[0].asFloat32s) / sizeof(ctx->v[0].asFloat32s[0]); i++) { \
+        ctx->v[a->v1].asFloat32s[i] = fmodf(ctx->v[a->v2].asFloat32s[i], ctx->v[a->v3].asFloat32s[i]); \
+    } \
+}
+#define vop_fmod64() { \
+    for (size_t i = 0; i < sizeof(ctx->v[0].asFloat64s) / sizeof(ctx->v[0].asFloat64s[0]); i++) { \
+        ctx->v[a->v1].asFloat64s[i] = fmod(ctx->v[a->v2].asFloat64s[i], ctx->v[a->v3].asFloat64s[i]); \
+    } \
+}
 #define vpu_conv_(_from, _to) { \
     uint8_t min = \
         sizeof(ctx->v[0].as ## _to) / sizeof(ctx->v[0].as ## _to[0]) < sizeof(ctx->v[0].as ## _from) / sizeof(ctx->v[0].as ## _from[0]) ? \
@@ -1123,6 +1245,19 @@ for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _t
         ctx->v[a->v1].as ## _to[i] = ctx->v[a->v2].as ## _from[i]; \
     } \
 }
+#define vpu_len_(_what) \
+    do { \
+        QWord_t count = 0; \
+        for (size_t i = 0; sizeof(ctx->v[0].as ## _what) / sizeof(ctx->v[0].as ## _what[0]); i++) { \
+            if (ctx->v[a->v1].as ## _what[i]) { \
+                count++; \
+            } else { \
+                break; \
+            } \
+        } \
+        writeQWord(ctx, a->r1, set_flags(ctx, count), REG_DEST); \
+    } while (0)
+
 #define vpu_conv2(_from, _to) vpu_conv_(_from, _to)
 #define vpu_conv(_from) \
     switch (a->target) { \
@@ -1139,19 +1274,12 @@ for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _t
 #define vop(_type, _what) vop_(_type, _what)
 #define vop_as(_type) vop_as_(_type)
 #define vop_madd(_type) vop_madd_(_type)
-
-#define vpu_len_(_what) \
-    do { \
-        QWord_t count = 0; \
-        for (size_t i = 0; sizeof(ctx->v[0].as ## _what) / sizeof(ctx->v[0].as ## _what[0]); i++) { \
-            if (ctx->v[a->v1].as ## _what[i]) { \
-                count++; \
-            } else { \
-                break; \
-            } \
-        } \
-        writeQWord(ctx, a->r1, set_flags(ctx, count), REG_DEST); \
-    } while (0)
+#define vop_movall(_type, _sc) vop_movall_(_type, _sc)
+#define vop_minmax(_type) vop_minmax_(_type)
+#define vpu_cmp(_type) vpu_cmp_(_type)
+#define vpu_tst(_type) vpu_tst_(_type)
+#define vpu_abs(_type) vpu_abs_(_type)
+#define vop_sqrt(_type) vop_sqrt_(_type)
 #define vpu_len(_what) vpu_len_(_what)
 
 #define vpu_o QWord
@@ -1162,6 +1290,15 @@ for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _t
 #define vpu_l LWords
 #define vpu_s Float32s
 #define vpu_f Float64s
+
+#define vpus_o SQWord
+#define vpus_b SBytes
+#define vpus_w SWords
+#define vpus_d SDWords
+#define vpus_q SQWords
+#define vpus_l SLWords
+#define vpus_s Float32s
+#define vpus_f Float64s
 
 static bool trans_vadd(DisasContext *ctx, arg_vadd *a) {
     switch (a->type) {
@@ -1217,7 +1354,7 @@ static bool trans_vdiv(DisasContext *ctx, arg_vdiv *a) {
 }
 static bool trans_vaddsub(DisasContext *ctx, arg_vaddsub *a) {
     switch (a->type) {
-        case 0: vop_as(vpu_o); break;
+        case 0: raise(SIGILL); break;
         case 1: vop_as(vpu_b); break;
         case 2: vop_as(vpu_w); break;
         case 3: vop_as(vpu_d); break;
@@ -1230,7 +1367,7 @@ static bool trans_vaddsub(DisasContext *ctx, arg_vaddsub *a) {
 }
 static bool trans_vmadd(DisasContext *ctx, arg_vmadd *a) {
     switch (a->type) {
-        case 0: vop_madd(vpu_o); break;
+        case 0: raise(SIGILL); break;
         case 1: vop_madd(vpu_b); break;
         case 2: vop_madd(vpu_w); break;
         case 3: vop_madd(vpu_d); break;
@@ -1243,14 +1380,27 @@ static bool trans_vmadd(DisasContext *ctx, arg_vmadd *a) {
 }
 static bool trans_vmov_reg(DisasContext *ctx, arg_vmov_reg *a) {
     switch (a->type) {
-        case 0: ctx->v[a->v1].asQWord[a->slot] = readQWord(ctx, a->r2, REG_SRC1);
-        case 1: ctx->v[a->v1].asBytes[a->slot] = readByte(ctx, a->r2, REG_SRC1);
-        case 2: ctx->v[a->v1].asWords[a->slot] = readWord(ctx, a->r2, REG_SRC1);
-        case 3: ctx->v[a->v1].asDWords[a->slot] = readDWord(ctx, a->r2, REG_SRC1);
-        case 4: ctx->v[a->v1].asQWords[a->slot] = readQWord(ctx, a->r2, REG_SRC1);
-        case 5: ctx->v[a->v1].asLWords[a->slot] = readQWord(ctx, a->r2, REG_SRC1);
-        case 6: ctx->v[a->v1].asFloat32s[a->slot] = readFloat32(ctx, a->r2, REG_SRC1);
-        case 7: ctx->v[a->v1].asFloat64s[a->slot] = readFloat64(ctx, a->r2, REG_SRC1);
+        case 0: ctx->v[a->v1].asQWord[0] = readQWord(ctx, a->r2, REG_SRC1); break;
+        case 1: ctx->v[a->v1].asBytes[a->slot] = readByte(ctx, a->r2, REG_SRC1); break;
+        case 2: ctx->v[a->v1].asWords[a->slot] = readWord(ctx, a->r2, REG_SRC1); break;
+        case 3: ctx->v[a->v1].asDWords[a->slot] = readDWord(ctx, a->r2, REG_SRC1); break;
+        case 4: ctx->v[a->v1].asQWords[a->slot] = readQWord(ctx, a->r2, REG_SRC1); break;
+        case 5: ctx->v[a->v1].asLWords[a->slot] = readQWord(ctx, a->r2, REG_SRC1); break;
+        case 6: ctx->v[a->v1].asFloat32s[a->slot] = readFloat32(ctx, a->r2, REG_SRC1); break;
+        case 7: ctx->v[a->v1].asFloat64s[a->slot] = readFloat64(ctx, a->r2, REG_SRC1); break;
+    }
+    return true;
+}
+static bool trans_vmov_reg2(DisasContext *ctx, arg_vmov_reg2 *a) {
+    switch (a->type) {
+        case 0: writeQWord(ctx, a->r2, ctx->v[a->v1].asQWord[0], REG_DEST); break;
+        case 1: writeByte(ctx, a->r2, ctx->v[a->v1].asBytes[a->slot], REG_DEST); break;
+        case 2: writeWord(ctx, a->r2, ctx->v[a->v1].asWords[a->slot], REG_DEST); break;
+        case 3: writeDWord(ctx, a->r2, ctx->v[a->v1].asDWords[a->slot], REG_DEST); break;
+        case 4: writeQWord(ctx, a->r2, ctx->v[a->v1].asQWords[a->slot], REG_DEST); break;
+        case 5: writeQWord(ctx, a->r2, ctx->v[a->v1].asLWords[a->slot], REG_DEST); break;
+        case 6: writeFloat32(ctx, a->r2, ctx->v[a->v1].asFloat32s[a->slot], REG_DEST); break;
+        case 7: writeFloat64(ctx, a->r2, ctx->v[a->v1].asFloat64s[a->slot], REG_DEST); break;
     }
     return true;
 }
@@ -1328,14 +1478,184 @@ static bool trans_vstr_reg_update(DisasContext *ctx, arg_vstr_reg_update *a) {
     *(hive_vector_register_t*) addr = ctx->v[a->v1];
     return true;
 }
+static bool trans_vand(DisasContext *ctx, arg_vand *a) {
+    switch (a->type) {
+        case 0: vop(vpu_o, &); break;
+        case 1: vop(vpu_b, &); break;
+        case 2: vop(vpu_w, &); break;
+        case 3: vop(vpu_d, &); break;
+        case 4: vop(vpu_q, &); break;
+        case 5: vop(vpu_l, &); break;
+        case 6: raise(SIGILL); break;
+        case 7: raise(SIGILL); break;
+    }
+    return true;
+}
+static bool trans_vor(DisasContext *ctx, arg_vor *a) {
+    switch (a->type) {
+        case 0: vop(vpu_o, |); break;
+        case 1: vop(vpu_b, |); break;
+        case 2: vop(vpu_w, |); break;
+        case 3: vop(vpu_d, |); break;
+        case 4: vop(vpu_q, |); break;
+        case 5: vop(vpu_l, |); break;
+        case 6: raise(SIGILL); break;
+        case 7: raise(SIGILL); break;
+    }
+    return true;
+}
+static bool trans_vxor(DisasContext *ctx, arg_vxor *a) {
+    switch (a->type) {
+        case 0: vop(vpu_o, ^); break;
+        case 1: vop(vpu_b, ^); break;
+        case 2: vop(vpu_w, ^); break;
+        case 3: vop(vpu_d, ^); break;
+        case 4: vop(vpu_q, ^); break;
+        case 5: vop(vpu_l, ^); break;
+        case 6: raise(SIGILL); break;
+        case 7: raise(SIGILL); break;
+    }
+    return true;
+}
+static bool trans_vcmp(DisasContext *ctx, arg_vcmp *a) {
+    switch (a->type) {
+        case 0: vpu_cmp(vpu_o); break;
+        case 1: vpu_cmp(vpu_b); break;
+        case 2: vpu_cmp(vpu_w); break;
+        case 3: vpu_cmp(vpu_d); break;
+        case 4: vpu_cmp(vpu_q); break;
+        case 5: vpu_cmp(vpu_l); break;
+        case 6: vpu_cmp(vpu_s); break;
+        case 7: vpu_cmp(vpu_f); break;
+    }
+    return true;
+}
+static bool trans_vtst(DisasContext *ctx, arg_vtst *a) {
+    switch (a->type) {
+        case 0: vpu_tst(vpu_o); break;
+        case 1: vpu_tst(vpu_b); break;
+        case 2: vpu_tst(vpu_w); break;
+        case 3: vpu_tst(vpu_d); break;
+        case 4: vpu_tst(vpu_q); break;
+        case 5: vpu_tst(vpu_l); break;
+        case 6: raise(SIGILL); break;
+        case 7: raise(SIGILL); break;
+    }
+    return true;
+}
+static bool trans_vminmax(DisasContext *ctx, arg_vminmax *a) {
+    switch (a->type) {
+        case 0: vop_minmax(vpu_o); break;
+        case 1: vop_minmax(vpu_b); break;
+        case 2: vop_minmax(vpu_w); break;
+        case 3: vop_minmax(vpu_d); break;
+        case 4: vop_minmax(vpu_q); break;
+        case 5: vop_minmax(vpu_l); break;
+        case 6: vop_minmax(vpu_s); break;
+        case 7: vop_minmax(vpu_f); break;
+    }
+    return true;
+}
+static bool trans_vabs(DisasContext *ctx, arg_vabs *a) {
+    switch (a->type) {
+        case 0: vpu_abs(vpu_o); break;
+        case 1: vpu_abs(vpu_b); break;
+        case 2: vpu_abs(vpu_w); break;
+        case 3: vpu_abs(vpu_d); break;
+        case 4: vpu_abs(vpu_q); break;
+        case 5: vpu_abs(vpu_l); break;
+        case 6: vpu_abs(vpu_s); break;
+        case 7: vpu_abs(vpu_f); break;
+    }
+    return true;
+}
+static bool trans_vshl(DisasContext *ctx, arg_vshl *a) {
+    switch (a->type) {
+        case 0: vop(vpu_o, <<); break;
+        case 1: vop(vpu_b, <<); break;
+        case 2: vop(vpu_w, <<); break;
+        case 3: vop(vpu_d, <<); break;
+        case 4: vop(vpu_q, <<); break;
+        case 5: vop(vpu_l, <<); break;
+        case 6: raise(SIGILL); break;
+        case 7: raise(SIGILL); break;
+    }
+    return true;
+}
+static bool trans_vshr(DisasContext *ctx, arg_vshr *a) {
+    if (a->is_signed) {
+        switch (a->type) {
+            case 0: vop(vpus_o, >>); break;
+            case 1: vop(vpus_b, >>); break;
+            case 2: vop(vpus_w, >>); break;
+            case 3: vop(vpus_d, >>); break;
+            case 4: vop(vpus_q, >>); break;
+            case 5: vop(vpus_l, >>); break;
+            case 6: raise(SIGILL); break;
+            case 7: raise(SIGILL); break;
+        }
+    } else {
+        switch (a->type) {
+            case 0: vop(vpu_o, >>); break;
+            case 1: vop(vpu_b, >>); break;
+            case 2: vop(vpu_w, >>); break;
+            case 3: vop(vpu_d, >>); break;
+            case 4: vop(vpu_q, >>); break;
+            case 5: vop(vpu_l, >>); break;
+            case 6: raise(SIGILL); break;
+            case 7: raise(SIGILL); break;
+        }
+    }
+    return true;
+}
+static bool trans_vsqrt(DisasContext *ctx, arg_vsqrt *a) {
+    switch (a->type) {
+        case 0: vop_sqrt(vpu_o); break;
+        case 1: vop_sqrt(vpu_b); break;
+        case 2: vop_sqrt(vpu_w); break;
+        case 3: vop_sqrt(vpu_d); break;
+        case 4: vop_sqrt(vpu_q); break;
+        case 5: vop_sqrt(vpu_l); break;
+        case 6: vop_sqrt(vpu_s); break;
+        case 7: vop_sqrt(vpu_f); break;
+    }
+    return true;
+}
+static bool trans_vmod(DisasContext *ctx, arg_vmod *a) {
+    switch (a->type) {
+        case 0: vop(vpu_o, %); break;
+        case 1: vop(vpu_b, %); break;
+        case 2: vop(vpu_w, %); break;
+        case 3: vop(vpu_d, %); break;
+        case 4: vop(vpu_q, %); break;
+        case 5: vop(vpu_l, %); break;
+        case 6: vop_fmod32(); break;
+        case 7: vop_fmod64(); break;
+    }
+    return true;
+}
+static bool trans_vmovall(DisasContext *ctx, arg_vmovall *a) {
+    switch (a->type) {
+        case 0: vop_movall(vpu_o, QWord); break;
+        case 1: vop_movall(vpu_b, Byte); break;
+        case 2: vop_movall(vpu_w, Word); break;
+        case 3: vop_movall(vpu_d, DWord); break;
+        case 4: vop_movall(vpu_q, QWord); break;
+        case 5: vop_movall(vpu_l, QWord); break;
+        case 6: vop_movall(vpu_s, Float32); break;
+        case 7: vop_movall(vpu_f, Float64); break;
+    }
+    return true;
+}
 
 void coredump(struct cpu_state* ctx);
 char* dis(hive_instruction_t** ins, uint64_t addr);
 
 void exec_instr(struct cpu_state* ctx, uint32_t ins) {
-    if (!check_condition(*(hive_instruction_t*) &ins, ctx->cr[CR_FLAGS].asFlags))
-        return;
-    if (!decode(ctx, ins)) {
+    if (
+        check_condition(*(hive_instruction_t*) &ins, ctx->cr[CR_FLAGS].asFlags) &&
+        !decode(ctx, ins)
+    ) {
         interrupt(SIGILL);
     }
 }
@@ -1399,10 +1719,7 @@ int runstate(struct cpu_state* ctx) {
         sig = 0;
     }
     while (1) {
-        DWord_t ins = *ctx->r[REG_PC].asDWordPtr;
-        // hive_instruction_t* x = ctx->r[REG_PC].asInstrPtr;
-        // printf("%016llx: %s\n", (uint64_t) x, dis(&x, (uint64_t) x));
-        exec_instr(ctx, ins);
+        exec_instr(ctx, memReadDWord(ctx, ctx->r[REG_PC].asPointer));
         ctx->r[REG_PC].asDWordPtr++;
         ctx->cr[CR_CYCLES].asQWord++;
     }

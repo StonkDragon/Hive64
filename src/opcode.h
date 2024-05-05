@@ -15,9 +15,15 @@
 #define SUBOP_DATA_BEXT         0b0100
 #define SUBOP_DATA_BDEP         0b0101
 #define SUBOP_DATA_FPU          0b0110
-#define SUBOP_DATA_VPU          0b0111
-#define SUBOP_DATA_CSWAP        0b1000
-#define SUBOP_DATA_XCHG         0b1001
+#define SUBOP_DATA_CSWAP        0b0111
+#define SUBOP_DATA_XCHG         0b1000
+#define SUBOP_DATA_0            0b1001
+#define SUBOP_DATA_1            0b1010
+#define SUBOP_DATA_2            0b1011
+#define SUBOP_DATA_VPU          0b1100
+#define SUBOP_DATA_VPU2         0b1101
+#define SUBOP_DATA_3            0b1110
+#define SUBOP_DATA_4            0b1111
 
 #define OP_DATA_ALU_add         0x0
 #define OP_DATA_ALU_sub         0x1
@@ -58,6 +64,20 @@
 #define OP_DATA_VPU_len         0x9
 #define OP_DATA_VPU_ldr         0xA
 #define OP_DATA_VPU_str         0xB
+#define OP_DATA_VPU_and         0xC
+#define OP_DATA_VPU_or          0xD
+#define OP_DATA_VPU_xor         0xE
+#define OP_DATA_VPU_cmp         0xF
+
+#define OP_DATA_VPU_minmax      0x0
+#define OP_DATA_VPU_abs         0x1
+#define OP_DATA_VPU_shl         0x2
+#define OP_DATA_VPU_shr         0x3
+#define OP_DATA_VPU_sqrt        0x4
+#define OP_DATA_VPU_mod         0x5
+#define OP_DATA_VPU_movall      0x6
+
+#define OP_DATA_VPU_tst         0xF
 
 #define OP_LOAD_lea             0b00
 #define OP_LOAD_movzk           0b01

@@ -90,7 +90,7 @@
 		"vector_mnemonics": {
 			"patterns": [{
 				"name": "keyword.control",
-				"match": "\\bv((o|b|w|d|q|l|s|f)(add|sub|mul|div|addsub|madd|mov|conv(o|b|w|d|q|l|s|f)|len)|ldr|str)\\b"
+				"match": "\\bv((o|b|w|d|q|l|s|f)(add|sub|mul|div|addsub|madd|and|or|xor|cmp|tst|minmax|abs|shl|shr|sqrt|mod|mov(all)?|conv(o|b|w|d|q|l|s|f)|len)|ldr|str)\\b"
 			}]
 		},
 		"registers": {

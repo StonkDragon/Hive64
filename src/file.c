@@ -241,35 +241,35 @@ void relocate(LoadCommand_Array sects, Relocation_Array relocs, Symbol_Array sym
                 exit(1); \
             }
 
+        hive_instruction_t* pc = ((hive_instruction_t*) (lc.data + current_address));
         switch (reloc.type) {
             case sym_abs:
                 *((QWord_t*) (lc.data + current_address)) = target_address;
                 break;
             case sym_branch: {
-                    hive_instruction_t* s = ((hive_instruction_t*) (lc.data + current_address));
-                    int32_t diff = target_address - (uint64_t) s;
+                    int32_t diff = target_address - (uint64_t) pc;
                     check_align();
                     diff /= sizeof(hive_instruction_t);
                     relative_check(POW2(24));
-                    s->type_branch_generic.offset = diff;
+                    pc->type_branch_generic.offset = diff;
                 }
                 break;
             case sym_load: {
                     hive_instruction_t* s = ((hive_instruction_t*) (lc.data + current_address));
-                    int32_t diff = target_address - (uint64_t) s;
+                    int32_t diff = target_address - (uint64_t) pc;
                     check_align();
                     diff /= sizeof(hive_instruction_t);
                     relative_check(POW2(19));
-                    s->type_load_signed.imm = diff;
+                    pc->type_load_signed.imm = diff;
                 }
                 break;
             case sym_ls_off: {
                     hive_instruction_t* s = ((hive_instruction_t*) (lc.data + current_address));
-                    int32_t diff = target_address - (uint64_t) s;
+                    int32_t diff = target_address - (uint64_t) pc;
                     check_align();
                     diff /= sizeof(hive_instruction_t);
                     relative_check(POW2(18));
-                    s->type_load_ls_off.imm = diff;
+                    pc->type_load_ls_off.imm = diff;
                 }
                 break;
         }

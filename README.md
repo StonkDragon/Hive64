@@ -49,12 +49,12 @@ add b0, b1, b2
 All registers in an instruction must have the same size (Exception: Address/offset register in `ldr`/`str` instructions -> always 64-bit)
 
 Operating on any part of the register using a size override leaves all other parts unchanged.
-Using the `h` suffix on a quadword register is undefined.
+Using the `h` suffix on a quadword register is unspecified.
 `h`-suffixed registers are encoded with a [prefix instruction](#prefix-instruction) specifying a register override.
 
 ## Vector registers
 Hive64 has 16 vector registers.
-All vector registers have a size of 256 bits.
+All vector registers have a size of 512 bits.
 They can be accessed as:
 - 32 byte sized elements
 - 16 word sized elements
@@ -247,16 +247,14 @@ Every condition except `always` and `never` can be specified in the assembler by
 |`swe r1, r2`|              `ccc0111110[r1-][r2-]000.........`|`r1 = swap_bytes(r2)` (undefined for byte registers)|
 
 ### Prefix Instruction
-The prefix instruction always look like this: `0111100001...............CBADFsz`
+The prefix instruction always look like this: `0111100001................CBADsz`
 A capital letter indicates the default value of the bit is `0`.
 A lowercase letter indicates the default value of the bit is `1`.
 - `sz`: Size override. One of `00` (byte), `01` (word), `10` (doubleword), or `11` (quadword)
-- `F`: When set, `zero` and `negative` flags won't update
 - `D`, `A`, `B`, `C`: Whether the destination/source 1/source 2/source 3 corresponds to the high register parts.
 
 The prefix instruction is optional and changes the next instructions behaviour (for example changing the amount of bytes loaded in a `ldr` instruction)
-Specifying any register part override (`A`/`B`/`C`/`D`) and leaving `sz` set to `11` is undefined.
-Specifying any control register selector (`X`/`Y`/`Z`/`W`) for a register number >= 12 is undefined.
+Specifying any register part override (`A`/`B`/`C`/`D`) and leaving `sz` set to `11` is unspecified.
 
 ### Floating point Arithmetic
 |Mnemonic|Encoding|Description|
@@ -339,100 +337,206 @@ Specifying any control register selector (`X`/`Y`/`Z`/`W`) for a register number
 |`sbxt r1, r2, a, b`|       `ccc01[chi][r1-][r2-]01001l[strt]`|`r1 = extend_sign(extract_bits(r2, start: a, count: b), from: b, to: 64)`|
 |`ubdp r1, r2, a, b`|       `ccc01[chi][r1-][r2-]01010l[strt]`|`r1 = deposit_bits(r1, r2, start: a, count: b)`|
 |`sbdp r1, r2, a, b`|       `ccc01[chi][r1-][r2-]01011l[strt]`|`r1 = deposit_bits(r1, r2, start: a, count: b)`|
-|`cswap r1, r2, r3, cond`|  `ccc01.....[r1-][r2-]1000cnd[r3-]`|`if (check_condition(cnd)) { r1 = r2 } else { r1 = r3 }`|
-|`xchg r1, r2`|             `ccc01.....[r1-][r2-]1001........`|`tmp = r1; r1 = r2; r2 = tmp`|
+|`cswap r1, r2, r3, cond`|  `ccc01.....[r1-][r2-]0111cnd[r3-]`|`if (check_condition(cnd)) { r1 = r2 } else { r1 = r3 }`|
+|`xchg r1, r2`|             `ccc01.....[r1-][r2-]1000........`|`tmp = r1; r1 = r2; r2 = tmp`|
 
 ### Vector Operations
 |Mnemonic|Encoding|Description|
 |-|-|-|
-|`vbadd v1, v2, v3`|        `ccc010000001[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
-|`voadd v1, v2, v3`|        `ccc010000000[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
-|`vwadd v1, v2, v3`|        `ccc010000010[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
-|`vdadd v1, v2, v3`|        `ccc010000011[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
-|`vqadd v1, v2, v3`|        `ccc010000100[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
-|`vladd v1, v2, v3`|        `ccc010000101[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
-|`vsadd v1, v2, v3`|        `ccc010000110[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
-|`vfadd v1, v2, v3`|        `ccc010000111[v2][v1]0111....[v3]`|`v1 = v2 + v3`|
-|`vosub v1, v2, v3`|        `ccc010001000[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
-|`vbsub v1, v2, v3`|        `ccc010001001[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
-|`vwsub v1, v2, v3`|        `ccc010001010[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
-|`vdsub v1, v2, v3`|        `ccc010001011[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
-|`vqsub v1, v2, v3`|        `ccc010001100[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
-|`vlsub v1, v2, v3`|        `ccc010001101[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
-|`vssub v1, v2, v3`|        `ccc010001110[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
-|`vfsub v1, v2, v3`|        `ccc010001111[v2][v1]0111....[v3]`|`v1 = v2 - v3`|
-|`vomul v1, v2, v3`|        `ccc010010000[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
-|`vbmul v1, v2, v3`|        `ccc010010001[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
-|`vwmul v1, v2, v3`|        `ccc010010010[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
-|`vdmul v1, v2, v3`|        `ccc010010011[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
-|`vqmul v1, v2, v3`|        `ccc010010100[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
-|`vlmul v1, v2, v3`|        `ccc010010101[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
-|`vsmul v1, v2, v3`|        `ccc010010110[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
-|`vfmul v1, v2, v3`|        `ccc010010111[v2][v1]0111....[v3]`|`v1 = v2 * v3`|
-|`vodiv v1, v2, v3`|        `ccc010011000[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
-|`vbdiv v1, v2, v3`|        `ccc010011001[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
-|`vwdiv v1, v2, v3`|        `ccc010011010[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
-|`vddiv v1, v2, v3`|        `ccc010011011[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
-|`vqdiv v1, v2, v3`|        `ccc010011100[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
-|`vldiv v1, v2, v3`|        `ccc010011101[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
-|`vsdiv v1, v2, v3`|        `ccc010011110[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
-|`vfdiv v1, v2, v3`|        `ccc010011111[v2][v1]0111....[v3]`|`v1 = v2 / v3`|
-|`voaddsub v1, v2, v3`|     `ccc010100000[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vbaddsub v1, v2, v3`|     `ccc010100001[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vwaddsub v1, v2, v3`|     `ccc010100010[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vdaddsub v1, v2, v3`|     `ccc010100011[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vqaddsub v1, v2, v3`|     `ccc010100100[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vladdsub v1, v2, v3`|     `ccc010100101[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vsaddsub v1, v2, v3`|     `ccc010100110[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vfaddsub v1, v2, v3`|     `ccc010100111[v2][v1]0111....[v3]`|`v1 = add_sub(v2, v3)`|
-|`vomadd v1, v2, v3`|       `ccc010101000[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
-|`vbmadd v1, v2, v3`|       `ccc010101001[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
-|`vwmadd v1, v2, v3`|       `ccc010101010[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
-|`vdmadd v1, v2, v3`|       `ccc010101011[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
-|`vqmadd v1, v2, v3`|       `ccc010101100[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
-|`vlmadd v1, v2, v3`|       `ccc010101101[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
-|`vsmadd v1, v2, v3`|       `ccc010101110[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
-|`vfmadd v1, v2, v3`|       `ccc010101111[v2][v1]0111....[v3]`|`v1 = dot(v2, v3)`|
-|`vomov v1, r2, at`|        `ccc010110000..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
-|`vbmov v1, r2, at`|        `ccc010110001..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
-|`vwmov v1, r2, at`|        `ccc010110010..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
-|`vdmov v1, r2, at`|        `ccc010110011..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
-|`vqmov v1, r2, at`|        `ccc010110100..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
-|`vlmov v1, r2, at`|        `ccc010110101..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
-|`vsmov v1, r2, at`|        `ccc010110110..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
-|`vfmov v1, r2, at`|        `ccc010110111..hi[v1]0111slo[r2-]`|`v1[at] = r2`|
-|`vomov v1, v2`|            `ccc010111000[v2][v1]0111........`|`v1 = v2`|
-|`vbmov v1, v2`|            `ccc010111001[v2][v1]0111........`|`v1 = v2`|
-|`vwmov v1, v2`|            `ccc010111010[v2][v1]0111........`|`v1 = v2`|
-|`vdmov v1, v2`|            `ccc010111011[v2][v1]0111........`|`v1 = v2`|
-|`vqmov v1, v2`|            `ccc010111100[v2][v1]0111........`|`v1 = v2`|
-|`vlmov v1, v2`|            `ccc010111101[v2][v1]0111........`|`v1 = v2`|
-|`vsmov v1, v2`|            `ccc010111110[v2][v1]0111........`|`v1 = v2`|
-|`vfmov v1, v2`|            `ccc010111111[v2][v1]0111........`|`v1 = v2`|
-|`voconvT v1, v2`|          `ccc011000000[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vbconvT v1, v2`|          `ccc011000001[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vwconvT v1, v2`|          `ccc011000010[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vdconvT v1, v2`|          `ccc011000011[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vqconvT v1, v2`|          `ccc011000100[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vlconvT v1, v2`|          `ccc011000101[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vsconvT v1, v2`|          `ccc011000110[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`vfconvT v1, v2`|          `ccc011000111[v2][v1]0111.....TTT`|`v1 = vector_convert(v2, target: T)`|
-|`volen r1, v2`|            `ccc011001000....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
-|`vblen r1, v2`|            `ccc011001001....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
-|`vwlen r1, v2`|            `ccc011001010....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
-|`vdlen r1, v2`|            `ccc011001011....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
-|`vqlen r1, v2`|            `ccc011001100....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
-|`vllen r1, v2`|            `ccc011001101....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
-|`vslen r1, v2`|            `ccc011001110....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
-|`vflen r1, v2`|            `ccc011001111....[v1]0111...[r1-]`|`r1 = first_zero(v1)`|
-|`vldr v1, [r2, imm]`|      `ccc01101010[r1-][v1]0111[-imm8-]`|`v1 = *(r2 + imm)`|
-|`vldr v1, [r2, imm]!`|     `ccc01101011[r1-][v1]0111[-imm8-]`|`v1 = *(r2); r2 += imm`|
-|`vstr v1, [r2, imm]`|      `ccc01101110[r1-][v1]0111[-imm8-]`|`*(r2 + imm) = v1`|
-|`vstr v1, [r2, imm]!`|     `ccc01101111[r1-][v1]0111[-imm8-]`|`r2 += imm; v1 = *(r2)`|
-|`vldr v1, [r2, r3]`|       `ccc01101000[r1-][v1]0111...[r2-]`|`v1 = *(r2 + r3)`|
-|`vldr v1, [r2, r3]!`|      `ccc01101001[r1-][v1]0111...[r2-]`|`v1 = *(r2); r2 += r3`|
-|`vstr v1, [r2, r3]`|       `ccc01101100[r1-][v1]0111...[r2-]`|`*(r2 + r3) + v1`|
-|`vstr v1, [r2, r3]!`|      `ccc01101101[r1-][v1]0111...[r2-]`|`r2 += r3; v1 = *(r2)`|
+|`vbadd v1, v2, v3`|        `ccc010000001[v2][v1]1100....[v3]`|`v1 = v2 + v3`|
+|`voadd v1, v2, v3`|        `ccc010000000[v2][v1]1100....[v3]`|`v1 = v2 + v3`|
+|`vwadd v1, v2, v3`|        `ccc010000010[v2][v1]1100....[v3]`|`v1 = v2 + v3`|
+|`vdadd v1, v2, v3`|        `ccc010000011[v2][v1]1100....[v3]`|`v1 = v2 + v3`|
+|`vqadd v1, v2, v3`|        `ccc010000100[v2][v1]1100....[v3]`|`v1 = v2 + v3`|
+|`vladd v1, v2, v3`|        `ccc010000101[v2][v1]1100....[v3]`|`v1 = v2 + v3`|
+|`vsadd v1, v2, v3`|        `ccc010000110[v2][v1]1100....[v3]`|`v1 = v2 + v3`|
+|`vfadd v1, v2, v3`|        `ccc010000111[v2][v1]1100....[v3]`|`v1 = v2 + v3`|
+|`vosub v1, v2, v3`|        `ccc010001000[v2][v1]1100....[v3]`|`v1 = v2 - v3`|
+|`vbsub v1, v2, v3`|        `ccc010001001[v2][v1]1100....[v3]`|`v1 = v2 - v3`|
+|`vwsub v1, v2, v3`|        `ccc010001010[v2][v1]1100....[v3]`|`v1 = v2 - v3`|
+|`vdsub v1, v2, v3`|        `ccc010001011[v2][v1]1100....[v3]`|`v1 = v2 - v3`|
+|`vqsub v1, v2, v3`|        `ccc010001100[v2][v1]1100....[v3]`|`v1 = v2 - v3`|
+|`vlsub v1, v2, v3`|        `ccc010001101[v2][v1]1100....[v3]`|`v1 = v2 - v3`|
+|`vssub v1, v2, v3`|        `ccc010001110[v2][v1]1100....[v3]`|`v1 = v2 - v3`|
+|`vfsub v1, v2, v3`|        `ccc010001111[v2][v1]1100....[v3]`|`v1 = v2 - v3`|
+|`vomul v1, v2, v3`|        `ccc010010000[v2][v1]1100....[v3]`|`v1 = v2 * v3`|
+|`vbmul v1, v2, v3`|        `ccc010010001[v2][v1]1100....[v3]`|`v1 = v2 * v3`|
+|`vwmul v1, v2, v3`|        `ccc010010010[v2][v1]1100....[v3]`|`v1 = v2 * v3`|
+|`vdmul v1, v2, v3`|        `ccc010010011[v2][v1]1100....[v3]`|`v1 = v2 * v3`|
+|`vqmul v1, v2, v3`|        `ccc010010100[v2][v1]1100....[v3]`|`v1 = v2 * v3`|
+|`vlmul v1, v2, v3`|        `ccc010010101[v2][v1]1100....[v3]`|`v1 = v2 * v3`|
+|`vsmul v1, v2, v3`|        `ccc010010110[v2][v1]1100....[v3]`|`v1 = v2 * v3`|
+|`vfmul v1, v2, v3`|        `ccc010010111[v2][v1]1100....[v3]`|`v1 = v2 * v3`|
+|`vodiv v1, v2, v3`|        `ccc010011000[v2][v1]1100....[v3]`|`v1 = v2 / v3`|
+|`vbdiv v1, v2, v3`|        `ccc010011001[v2][v1]1100....[v3]`|`v1 = v2 / v3`|
+|`vwdiv v1, v2, v3`|        `ccc010011010[v2][v1]1100....[v3]`|`v1 = v2 / v3`|
+|`vddiv v1, v2, v3`|        `ccc010011011[v2][v1]1100....[v3]`|`v1 = v2 / v3`|
+|`vqdiv v1, v2, v3`|        `ccc010011100[v2][v1]1100....[v3]`|`v1 = v2 / v3`|
+|`vldiv v1, v2, v3`|        `ccc010011101[v2][v1]1100....[v3]`|`v1 = v2 / v3`|
+|`vsdiv v1, v2, v3`|        `ccc010011110[v2][v1]1100....[v3]`|`v1 = v2 / v3`|
+|`vfdiv v1, v2, v3`|        `ccc010011111[v2][v1]1100....[v3]`|`v1 = v2 / v3`|
+|`voaddsub v1, v2, v3`|     `ccc010100000[v2][v1]1100....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vbaddsub v1, v2, v3`|     `ccc010100001[v2][v1]1100....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vwaddsub v1, v2, v3`|     `ccc010100010[v2][v1]1100....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vdaddsub v1, v2, v3`|     `ccc010100011[v2][v1]1100....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vqaddsub v1, v2, v3`|     `ccc010100100[v2][v1]1100....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vladdsub v1, v2, v3`|     `ccc010100101[v2][v1]1100....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vsaddsub v1, v2, v3`|     `ccc010100110[v2][v1]1100....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vfaddsub v1, v2, v3`|     `ccc010100111[v2][v1]1100....[v3]`|`v1 = add_sub(v2, v3)`|
+|`vomadd v1, v2, v3`|       `ccc010101000[v2][v1]1100....[v3]`|`v1 = dot(v2, v3)`|
+|`vbmadd v1, v2, v3`|       `ccc010101001[v2][v1]1100....[v3]`|`v1 = dot(v2, v3)`|
+|`vwmadd v1, v2, v3`|       `ccc010101010[v2][v1]1100....[v3]`|`v1 = dot(v2, v3)`|
+|`vdmadd v1, v2, v3`|       `ccc010101011[v2][v1]1100....[v3]`|`v1 = dot(v2, v3)`|
+|`vqmadd v1, v2, v3`|       `ccc010101100[v2][v1]1100....[v3]`|`v1 = dot(v2, v3)`|
+|`vlmadd v1, v2, v3`|       `ccc010101101[v2][v1]1100....[v3]`|`v1 = dot(v2, v3)`|
+|`vsmadd v1, v2, v3`|       `ccc010101110[v2][v1]1100....[v3]`|`v1 = dot(v2, v3)`|
+|`vfmadd v1, v2, v3`|       `ccc010101111[v2][v1]1100....[v3]`|`v1 = dot(v2, v3)`|
+|`vomov v1, r2, at`|        `ccc0101100000shi[v1]1100slo[r2-]`|`v1[shi << 3 \| slo] = r2`|
+|`vbmov v1, r2, at`|        `ccc0101100010shi[v1]1100slo[r2-]`|`v1[shi << 3 \| slo] = r2`|
+|`vwmov v1, r2, at`|        `ccc0101100100shi[v1]1100slo[r2-]`|`v1[shi << 3 \| slo] = r2`|
+|`vdmov v1, r2, at`|        `ccc0101100110shi[v1]1100slo[r2-]`|`v1[shi << 3 \| slo] = r2`|
+|`vqmov v1, r2, at`|        `ccc0101101000shi[v1]1100slo[r2-]`|`v1[shi << 3 \| slo] = r2`|
+|`vlmov v1, r2, at`|        `ccc0101101010shi[v1]1100slo[r2-]`|`v1[shi << 3 \| slo] = r2`|
+|`vsmov v1, r2, at`|        `ccc0101101100shi[v1]1100slo[r2-]`|`v1[shi << 3 \| slo] = r2`|
+|`vfmov v1, r2, at`|        `ccc0101101110shi[v1]1100slo[r2-]`|`v1[shi << 3 \| slo] = r2`|
+|`vomov r1, v2, at`|        `ccc0101100001shi[v2]1100slo[r1-]`|`r1 = v2[shi << 3 \| slo]`|
+|`vbmov r1, v2, at`|        `ccc0101100011shi[v2]1100slo[r1-]`|`r1 = v2[shi << 3 \| slo]`|
+|`vwmov r1, v2, at`|        `ccc0101100101shi[v2]1100slo[r1-]`|`r1 = v2[shi << 3 \| slo]`|
+|`vdmov r1, v2, at`|        `ccc0101100111shi[v2]1100slo[r1-]`|`r1 = v2[shi << 3 \| slo]`|
+|`vqmov r1, v2, at`|        `ccc0101101001shi[v2]1100slo[r1-]`|`r1 = v2[shi << 3 \| slo]`|
+|`vlmov r1, v2, at`|        `ccc0101101011shi[v2]1100slo[r1-]`|`r1 = v2[shi << 3 \| slo]`|
+|`vsmov r1, v2, at`|        `ccc0101101101shi[v2]1100slo[r1-]`|`r1 = v2[shi << 3 \| slo]`|
+|`vfmov r1, v2, at`|        `ccc0101101111shi[v2]1100slo[r1-]`|`r1 = v2[shi << 3 \| slo]`|
+|`vomovall v1, r2`|         `ccc010110000....[v1]1101...[r2-]`|`v1 = r2`|
+|`vbmovall v1, r2`|         `ccc010110001....[v1]1101...[r2-]`|`v1 = r2`|
+|`vwmovall v1, r2`|         `ccc010110010....[v1]1101...[r2-]`|`v1 = r2`|
+|`vdmovall v1, r2`|         `ccc010110011....[v1]1101...[r2-]`|`v1 = r2`|
+|`vqmovall v1, r2`|         `ccc010110100....[v1]1101...[r2-]`|`v1 = r2`|
+|`vlmovall v1, r2`|         `ccc010110101....[v1]1101...[r2-]`|`v1 = r2`|
+|`vsmovall v1, r2`|         `ccc010110110....[v1]1101...[r2-]`|`v1 = r2`|
+|`vfmovall v1, r2`|         `ccc010110111....[v1]1101...[r2-]`|`v1 = r2`|
+|`vomov v1, v2`|            `ccc010111000[v2][v1]1100........`|`v1 = v2`|
+|`vbmov v1, v2`|            `ccc010111001[v2][v1]1100........`|`v1 = v2`|
+|`vwmov v1, v2`|            `ccc010111010[v2][v1]1100........`|`v1 = v2`|
+|`vdmov v1, v2`|            `ccc010111011[v2][v1]1100........`|`v1 = v2`|
+|`vqmov v1, v2`|            `ccc010111100[v2][v1]1100........`|`v1 = v2`|
+|`vlmov v1, v2`|            `ccc010111101[v2][v1]1100........`|`v1 = v2`|
+|`vsmov v1, v2`|            `ccc010111110[v2][v1]1100........`|`v1 = v2`|
+|`vfmov v1, v2`|            `ccc010111111[v2][v1]1100........`|`v1 = v2`|
+|`voconvT v1, v2`|          `ccc011000000[v2][v1]1100.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vbconvT v1, v2`|          `ccc011000001[v2][v1]1100.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vwconvT v1, v2`|          `ccc011000010[v2][v1]1100.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vdconvT v1, v2`|          `ccc011000011[v2][v1]1100.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vqconvT v1, v2`|          `ccc011000100[v2][v1]1100.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vlconvT v1, v2`|          `ccc011000101[v2][v1]1100.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vsconvT v1, v2`|          `ccc011000110[v2][v1]1100.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`vfconvT v1, v2`|          `ccc011000111[v2][v1]1100.....TTT`|`v1 = vector_convert(v2, target: T)`|
+|`volen r1, v2`|            `ccc011001000....[v1]1100...[r1-]`|`r1 = first_zero(v1)`|
+|`vblen r1, v2`|            `ccc011001001....[v1]1100...[r1-]`|`r1 = first_zero(v1)`|
+|`vwlen r1, v2`|            `ccc011001010....[v1]1100...[r1-]`|`r1 = first_zero(v1)`|
+|`vdlen r1, v2`|            `ccc011001011....[v1]1100...[r1-]`|`r1 = first_zero(v1)`|
+|`vqlen r1, v2`|            `ccc011001100....[v1]1100...[r1-]`|`r1 = first_zero(v1)`|
+|`vllen r1, v2`|            `ccc011001101....[v1]1100...[r1-]`|`r1 = first_zero(v1)`|
+|`vslen r1, v2`|            `ccc011001110....[v1]1100...[r1-]`|`r1 = first_zero(v1)`|
+|`vflen r1, v2`|            `ccc011001111....[v1]1100...[r1-]`|`r1 = first_zero(v1)`|
+|`vldr v1, [r2, imm]`|      `ccc01101010[r1-][v1]1100[-imm8-]`|`v1 = *(r2 + imm)`|
+|`vldr v1, [r2, imm]!`|     `ccc01101011[r1-][v1]1100[-imm8-]`|`v1 = *(r2); r2 += imm`|
+|`vstr v1, [r2, imm]`|      `ccc01101110[r1-][v1]1100[-imm8-]`|`*(r2 + imm) = v1`|
+|`vstr v1, [r2, imm]!`|     `ccc01101111[r1-][v1]1100[-imm8-]`|`r2 += imm; v1 = *(r2)`|
+|`vldr v1, [r2, r3]`|       `ccc01101000[r1-][v1]1100...[r2-]`|`v1 = *(r2 + r3)`|
+|`vldr v1, [r2, r3]!`|      `ccc01101001[r1-][v1]1100...[r2-]`|`v1 = *(r2); r2 += r3`|
+|`vstr v1, [r2, r3]`|       `ccc01101100[r1-][v1]1100...[r2-]`|`*(r2 + r3) + v1`|
+|`vstr v1, [r2, r3]!`|      `ccc01101101[r1-][v1]1100...[r2-]`|`r2 += r3; v1 = *(r2)`|
+|`voand v1, v2, v3`|        `ccc011100000[v2][v1]1100....[v3]`|`v1 = v2 & v3`|
+|`vband v1, v2, v3`|        `ccc011100001[v2][v1]1100....[v3]`|`v1 = v2 & v3`|
+|`vwand v1, v2, v3`|        `ccc011100010[v2][v1]1100....[v3]`|`v1 = v2 & v3`|
+|`vdand v1, v2, v3`|        `ccc011100011[v2][v1]1100....[v3]`|`v1 = v2 & v3`|
+|`vqand v1, v2, v3`|        `ccc011100100[v2][v1]1100....[v3]`|`v1 = v2 & v3`|
+|`vland v1, v2, v3`|        `ccc011100101[v2][v1]1100....[v3]`|`v1 = v2 & v3`|
+|`voor v1, v2, v3`|         `ccc011101000[v2][v1]1100....[v3]`|`v1 = v2 \| v3`|
+|`vbor v1, v2, v3`|         `ccc011101001[v2][v1]1100....[v3]`|`v1 = v2 \| v3`|
+|`vwor v1, v2, v3`|         `ccc011101010[v2][v1]1100....[v3]`|`v1 = v2 \| v3`|
+|`vdor v1, v2, v3`|         `ccc011101011[v2][v1]1100....[v3]`|`v1 = v2 \| v3`|
+|`vqor v1, v2, v3`|         `ccc011101100[v2][v1]1100....[v3]`|`v1 = v2 \| v3`|
+|`vlor v1, v2, v3`|         `ccc011101101[v2][v1]1100....[v3]`|`v1 = v2 \| v3`|
+|`voxor v1, v2, v3`|        `ccc011110000[v2][v1]1100....[v3]`|`v1 = v2 ^ v3`|
+|`vbxor v1, v2, v3`|        `ccc011110001[v2][v1]1100....[v3]`|`v1 = v2 ^ v3`|
+|`vwxor v1, v2, v3`|        `ccc011110010[v2][v1]1100....[v3]`|`v1 = v2 ^ v3`|
+|`vdxor v1, v2, v3`|        `ccc011110011[v2][v1]1100....[v3]`|`v1 = v2 ^ v3`|
+|`vqxor v1, v2, v3`|        `ccc011110100[v2][v1]1100....[v3]`|`v1 = v2 ^ v3`|
+|`vlxor v1, v2, v3`|        `ccc011110101[v2][v1]1100....[v3]`|`v1 = v2 ^ v3`|
+|`vocmp v1, v2, v3`|        `ccc011111000[v2][v1]1100.cnd[v3]`|`v1 = vector_flags(v2 - v3, cond: cnd)`|
+|`vbcmp v1, v2, v3`|        `ccc011111001[v2][v1]1100.cnd[v3]`|`v1 = vector_flags(v2 - v3, cond: cnd)`|
+|`vwcmp v1, v2, v3`|        `ccc011111010[v2][v1]1100.cnd[v3]`|`v1 = vector_flags(v2 - v3, cond: cnd)`|
+|`vdcmp v1, v2, v3`|        `ccc011111011[v2][v1]1100.cnd[v3]`|`v1 = vector_flags(v2 - v3, cond: cnd)`|
+|`vqcmp v1, v2, v3`|        `ccc011111100[v2][v1]1100.cnd[v3]`|`v1 = vector_flags(v2 - v3, cond: cnd)`|
+|`vlcmp v1, v2, v3`|        `ccc011111101[v2][v1]1100.cnd[v3]`|`v1 = vector_flags(v2 - v3, cond: cnd)`|
+|`vscmp v1, v2, v3`|        `ccc011111110[v2][v1]1100.cnd[v3]`|`v1 = vector_flags(v2 - v3, cond: cnd)`|
+|`vfcmp v1, v2, v3`|        `ccc011111111[v2][v1]1100.cnd[v3]`|`v1 = vector_flags(v2 - v3, cond: cnd)`|
+|`votst v1, v2, v3`|        `ccc011111000[v2][v1]1101.cnd[v3]`|`v1 = vector_flags(v2 & v3, cond: cnd)`|
+|`vbtst v1, v2, v3`|        `ccc011111001[v2][v1]1101.cnd[v3]`|`v1 = vector_flags(v2 & v3, cond: cnd)`|
+|`vwtst v1, v2, v3`|        `ccc011111010[v2][v1]1101.cnd[v3]`|`v1 = vector_flags(v2 & v3, cond: cnd)`|
+|`vdtst v1, v2, v3`|        `ccc011111011[v2][v1]1101.cnd[v3]`|`v1 = vector_flags(v2 & v3, cond: cnd)`|
+|`vqtst v1, v2, v3`|        `ccc011111100[v2][v1]1101.cnd[v3]`|`v1 = vector_flags(v2 & v3, cond: cnd)`|
+|`vltst v1, v2, v3`|        `ccc011111101[v2][v1]1101.cnd[v3]`|`v1 = vector_flags(v2 & v3, cond: cnd)`|
+|`vominmax v1, v2`|         `ccc010000000[v2][v1]1101.......0`|`v1[0] = min(v2); v1[1] = max(v2)`|
+|`vbminmax v1, v2`|         `ccc010000001[v2][v1]1101.......0`|`v1[0] = min(v2); v1[1] = max(v2)`|
+|`vwminmax v1, v2`|         `ccc010000010[v2][v1]1101.......0`|`v1[0] = min(v2); v1[1] = max(v2)`|
+|`vdminmax v1, v2`|         `ccc010000011[v2][v1]1101.......0`|`v1[0] = min(v2); v1[1] = max(v2)`|
+|`vqminmax v1, v2`|         `ccc010000100[v2][v1]1101.......0`|`v1[0] = min(v2); v1[1] = max(v2)`|
+|`vlminmax v1, v2`|         `ccc010000101[v2][v1]1101.......0`|`v1[0] = min(v2); v1[1] = max(v2)`|
+|`vsminmax v1, v2`|         `ccc010000110[v2][v1]1101.......0`|`v1[0] = min(v2); v1[1] = max(v2)`|
+|`vfminmax v1, v2`|         `ccc010000111[v2][v1]1101.......0`|`v1[0] = min(v2); v1[1] = max(v2)`|
+|`vominmaxs v1, v2`|        `ccc010000000[v2][v1]1101.......1`|`v1[0] = mins(v2); v1[1] = maxs(v2)`|
+|`vbminmaxs v1, v2`|        `ccc010000001[v2][v1]1101.......1`|`v1[0] = mins(v2); v1[1] = maxs(v2)`|
+|`vwminmaxs v1, v2`|        `ccc010000010[v2][v1]1101.......1`|`v1[0] = mins(v2); v1[1] = maxs(v2)`|
+|`vdminmaxs v1, v2`|        `ccc010000011[v2][v1]1101.......1`|`v1[0] = mins(v2); v1[1] = maxs(v2)`|
+|`vqminmaxs v1, v2`|        `ccc010000100[v2][v1]1101.......1`|`v1[0] = mins(v2); v1[1] = maxs(v2)`|
+|`vlminmaxs v1, v2`|        `ccc010000101[v2][v1]1101.......1`|`v1[0] = mins(v2); v1[1] = maxs(v2)`|
+|`vsminmaxs v1, v2`|        `ccc010000110[v2][v1]1101.......1`|`v1[0] = mins(v2); v1[1] = maxs(v2)`|
+|`vfminmaxs v1, v2`|        `ccc010000111[v2][v1]1101.......1`|`v1[0] = mins(v2); v1[1] = maxs(v2)`|
+|`voabs v1, v2`|            `ccc010001000[v2][v1]1101........`|`v1 = abs(v2)`|
+|`vbabs v1, v2`|            `ccc010001001[v2][v1]1101........`|`v1 = abs(v2)`|
+|`vwabs v1, v2`|            `ccc010001010[v2][v1]1101........`|`v1 = abs(v2)`|
+|`vdabs v1, v2`|            `ccc010001011[v2][v1]1101........`|`v1 = abs(v2)`|
+|`vqabs v1, v2`|            `ccc010001100[v2][v1]1101........`|`v1 = abs(v2)`|
+|`vlabs v1, v2`|            `ccc010001101[v2][v1]1101........`|`v1 = abs(v2)`|
+|`vsabs v1, v2`|            `ccc010001110[v2][v1]1101........`|`v1 = abs(v2)`|
+|`vfabs v1, v2`|            `ccc010001111[v2][v1]1101........`|`v1 = abs(v2)`|
+|`voshl v1, v2, v3`|        `ccc010010000[v2][v1]1101....[v3]`|`v1 = v2 << v3`|
+|`vbshl v1, v2, v3`|        `ccc010010001[v2][v1]1101....[v3]`|`v1 = v2 << v3`|
+|`vwshl v1, v2, v3`|        `ccc010010010[v2][v1]1101....[v3]`|`v1 = v2 << v3`|
+|`vdshl v1, v2, v3`|        `ccc010010011[v2][v1]1101....[v3]`|`v1 = v2 << v3`|
+|`vqshl v1, v2, v3`|        `ccc010010100[v2][v1]1101....[v3]`|`v1 = v2 << v3`|
+|`vlshl v1, v2, v3`|        `ccc010010101[v2][v1]1101....[v3]`|`v1 = v2 << v3`|
+|`voshr v1, v2, v3`|        `ccc010011000[v2][v1]1101...0[v3]`|`v1 = v2 >> v3`|
+|`vbshr v1, v2, v3`|        `ccc010011001[v2][v1]1101...0[v3]`|`v1 = v2 >> v3`|
+|`vwshr v1, v2, v3`|        `ccc010011010[v2][v1]1101...0[v3]`|`v1 = v2 >> v3`|
+|`vdshr v1, v2, v3`|        `ccc010011011[v2][v1]1101...0[v3]`|`v1 = v2 >> v3`|
+|`vqshr v1, v2, v3`|        `ccc010011100[v2][v1]1101...0[v3]`|`v1 = v2 >> v3`|
+|`vlshr v1, v2, v3`|        `ccc010011101[v2][v1]1101...0[v3]`|`v1 = v2 >> v3`|
+|`vosar v1, v2, v3`|        `ccc010011000[v2][v1]1101...1[v3]`|`v1 = v2 >> v3`|
+|`vbsar v1, v2, v3`|        `ccc010011001[v2][v1]1101...1[v3]`|`v1 = v2 >> v3`|
+|`vwsar v1, v2, v3`|        `ccc010011010[v2][v1]1101...1[v3]`|`v1 = v2 >> v3`|
+|`vdsar v1, v2, v3`|        `ccc010011011[v2][v1]1101...1[v3]`|`v1 = v2 >> v3`|
+|`vqsar v1, v2, v3`|        `ccc010011100[v2][v1]1101...1[v3]`|`v1 = v2 >> v3`|
+|`vlsar v1, v2, v3`|        `ccc010011101[v2][v1]1101...1[v3]`|`v1 = v2 >> v3`|
+|`vosqrt v1, v2`|           `ccc010100000[v2][v1]1101........`|`v1 = sqrt(v2)`|
+|`vbsqrt v1, v2`|           `ccc010100001[v2][v1]1101........`|`v1 = sqrt(v2)`|
+|`vwsqrt v1, v2`|           `ccc010100010[v2][v1]1101........`|`v1 = sqrt(v2)`|
+|`vdsqrt v1, v2`|           `ccc010100011[v2][v1]1101........`|`v1 = sqrt(v2)`|
+|`vqsqrt v1, v2`|           `ccc010100100[v2][v1]1101........`|`v1 = sqrt(v2)`|
+|`vlsqrt v1, v2`|           `ccc010100101[v2][v1]1101........`|`v1 = sqrt(v2)`|
+|`vssqrt v1, v2`|           `ccc010100110[v2][v1]1101........`|`v1 = sqrt(v2)`|
+|`vfsqrt v1, v2`|           `ccc010100111[v2][v1]1101........`|`v1 = sqrt(v2)`|
+|`vomod v1, v2`|            `ccc010101000[v2][v1]1101....[v3]`|`v1 = v2 % v3`|
+|`vbmod v1, v2`|            `ccc010101001[v2][v1]1101....[v3]`|`v1 = v2 % v3`|
+|`vwmod v1, v2`|            `ccc010101010[v2][v1]1101....[v3]`|`v1 = v2 % v3`|
+|`vdmod v1, v2`|            `ccc010101011[v2][v1]1101....[v3]`|`v1 = v2 % v3`|
+|`vqmod v1, v2`|            `ccc010101100[v2][v1]1101....[v3]`|`v1 = v2 % v3`|
+|`vlmod v1, v2`|            `ccc010101101[v2][v1]1101....[v3]`|`v1 = v2 % v3`|
+|`vsmod v1, v2`|            `ccc010101110[v2][v1]1101....[v3]`|`v1 = v2 % v3`|
+|`vfmod v1, v2`|            `ccc010101111[v2][v1]1101....[v3]`|`v1 = v2 % v3`|
 
 #### Builtin functions
 ##### `extend_sign(register, from, to)`

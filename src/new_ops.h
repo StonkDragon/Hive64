@@ -17,6 +17,7 @@
 #define HIVE_FAT_FILE_MAGIC 0xFEEDFACF
 
 typedef __uint128_t LWord_t;    // long word
+typedef __int128_t SLWord_t;    // signed long word
 typedef uint64_t QWord_t;       // quad word
 typedef uint32_t DWord_t;       // double word
 typedef uint16_t Word_t;        // word
@@ -142,6 +143,28 @@ typedef union {
         CONDITION_AND_TYPE;
     } PACKED type_data_vpu;
     struct {
+        uint8_t v3: 4;
+        uint8_t is_sign: 1;
+        PAD(3);
+        uint8_t data_op: 4;
+        uint8_t v1: 4;
+        uint8_t v2: 4;
+        uint8_t mode: 3;
+        uint8_t op: 4;
+        CONDITION_AND_TYPE;
+    } PACKED type_data_vpu_signed;
+    struct {
+        uint8_t v3: 4;
+        uint8_t cond: 3;
+        PAD(1);
+        uint8_t data_op: 4;
+        uint8_t v1: 4;
+        uint8_t v2: 4;
+        uint8_t mode: 3;
+        uint8_t op: 4;
+        CONDITION_AND_TYPE;
+    } PACKED type_data_vpu_cmp;
+    struct {
         uint8_t target_mode: 3;
         PAD(5);
         uint8_t data_op: 4;
@@ -156,8 +179,8 @@ typedef union {
         uint8_t slot_lo: 3;
         uint8_t data_op: 4;
         uint8_t v1: 4;
-        uint8_t slot_hi: 2;
-        PAD(2);
+        uint8_t slot_hi: 3;
+        uint8_t target_scalar: 1;
         uint8_t mode: 3;
         uint8_t op: 4;
         CONDITION_AND_TYPE;
@@ -275,8 +298,7 @@ typedef union {
     struct {
         uint8_t size: 2;
         uint8_t reg_override: 4;
-        uint8_t references_cr: 4;
-        uint8_t reset_flags: 1;
+        uint8_t rel_override: 5;
         PAD(11);
         uint8_t op: 5;
         CONDITION_AND_TYPE;
@@ -284,19 +306,33 @@ typedef union {
 } PACKED hive_instruction_t;
 
 #ifdef static_assert
-#define CHECK(what) static_assert(sizeof(((hive_instruction_t*) NULL)->what) == sizeof(DWord_t), "hive_instruction_t::" #what " is wrong size")
 static_assert(sizeof(hive_instruction_t) == sizeof(DWord_t), "hive_instruction_t is wrong size");
+#endif
+
+#define VECTOR_SIZE 512
+
+#ifdef static_assert
+static_assert(VECTOR_SIZE >= (sizeof(QWord_t) * 8), "hive_vector_register_t is wrong size");
+static_assert((VECTOR_SIZE % 64) == 0, "hive_vector_register_t is wrong size");
 #endif
 
 typedef union {
     QWord_t     asQWord[1];
-    Byte_t      asBytes[32];
-    Word_t      asWords[16];
-    DWord_t     asDWords[8];
-    QWord_t     asQWords[4];
-    LWord_t     asLWords[2];
-    Float32_t   asFloat32s[8];
-    Float64_t   asFloat64s[4];
+    Byte_t      asBytes[VECTOR_SIZE / 8];
+    Word_t      asWords[VECTOR_SIZE / 16];
+    DWord_t     asDWords[VECTOR_SIZE / 32];
+    QWord_t     asQWords[VECTOR_SIZE / 64];
+    LWord_t     asLWords[VECTOR_SIZE / 128];
+    Float32_t   asFloat32s[VECTOR_SIZE / 32];
+    Float64_t   asFloat64s[VECTOR_SIZE / 64];
+    SQWord_t    asSQWord[1];
+    SByte_t     asSBytes[VECTOR_SIZE / 8];
+    SWord_t     asSWords[VECTOR_SIZE / 16];
+    SDWord_t    asSDWords[VECTOR_SIZE / 32];
+    SQWord_t    asSQWords[VECTOR_SIZE / 64];
+    SLWord_t    asSLWords[VECTOR_SIZE / 128];
+    Float32_t   asSFloat32s[VECTOR_SIZE / 32];
+    Float64_t   asSFloat64s[VECTOR_SIZE / 64];
 } hive_vector_register_t;
 
 typedef struct {

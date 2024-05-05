@@ -320,23 +320,7 @@ _memcpy:
 
     xor r9, r9
 
-    cmp r2, 32
-    b.lt $no_vector_copy
-
-    $vector_loop:
-        cmp r9, r2
-        b.ge $finish_vector
-
-        vldr v0, [r1, r9]
-        vstr v0, [r0, r9]
-
-        add r9, 32
-        b $vector_loop
-
-    $finish_vector:
-    sub r9, 32
-
-    $no_vector_copy:
+    $copy:
         cmp r9, r2
         b.eq $finish_copy
 
@@ -344,7 +328,7 @@ _memcpy:
         str b8, [r0, r9]
 
         inc r9
-        b $no_vector_copy
+        b $copy
     $finish_copy:
 
     pp r0
