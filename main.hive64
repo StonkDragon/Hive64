@@ -6,6 +6,8 @@ _main:
     lea r0, msg
     bl _puts
 
+    swe w0, w0
+
     mov r0, 0
     ldr lr, [sp, 16]!
     ret

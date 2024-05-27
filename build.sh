@@ -5,6 +5,7 @@ set -xe
 mkdir -p build
 
 python3 decodetree.py hive64.decode > src/decode.h
+python3 decodetree.py hive64.decode --translate=dis > src/dis.h
 
 # clang -O0 -g -std=gnu17 -o build/h64 -Isrc/ src/**/*.c -lm
 clang -O3 -std=gnu17 -o build/h64 -Isrc/ src/**/*.c -lm

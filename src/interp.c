@@ -146,29 +146,33 @@ static inline uint8_t swap_bytes_8(uint8_t x) {
 #define INTENT_READ 0
 
 #define reg_reader(_type) \
-static inline _type ## _t read ## _type (struct cpu_state* ctx, uint8_t reg, uint8_t counter) { \
-    if (unlikely(is_slot_overridden(ctx, counter))) { \
-        return ctx->r[reg].as ## _type ## Pair.high; \
+static inline _type ## _t read ## _type (struct cpu_state* ctx, uint8_t reg) { \
+    if (sizeof(_type ## _t) != sizeof(QWord_t)) { \
+        if (unlikely(reg & 0x10)) { \
+            return ctx->r[reg & 0x0F].as ## _type ## Pair.high; \
+        } else { \
+            return ctx->r[reg & 0x0F].as ## _type ## Pair.low; \
+        } \
     } else { \
-        return ctx->r[reg].as ## _type ## Pair.low; \
+        return ctx->r[reg].as ## _type; \
     } \
 }
 #define reg_writer(_type) \
-static inline void write ## _type (struct cpu_state* ctx, uint8_t reg, _type ## _t val, uint8_t counter) { \
-    if (unlikely(is_slot_overridden(ctx, counter))) { \
-        ctx->r[reg].as ## _type ## Pair.high = val; \
+static inline void write ## _type (struct cpu_state* ctx, uint8_t reg, _type ## _t val) { \
+    if (sizeof(_type ## _t) != sizeof(QWord_t)) { \
+        if (unlikely(reg & 0x10)) { \
+            ctx->r[reg & 0x0F].as ## _type ## Pair.high = val; \
+        } else { \
+            ctx->r[reg & 0x0F].as ## _type ## Pair.low = val; \
+        } \
     } else { \
-        ctx->r[reg].as ## _type ## Pair.low = val; \
+        ctx->r[reg].as ## _type = val; \
     } \
 }
 
 extern svc_call svcs[];
 __thread bool handling_interrupt = false;
 __thread jmp_buf lidt;
-
-static inline bool is_slot_overridden(struct cpu_state* ctx, uint8_t counter) {
-    return (ctx->cr[CR_FLAGS].asFlags.reg_state & (1 << counter)) != 0;
-}
 
 static inline void check_permissions(struct cpu_state* ctx, uint8_t mode) {
     if (unlikely(ctx->cr[CR_RUNLEVEL].asQWord > mode)) {
@@ -182,45 +186,17 @@ reg_reader(DWord)
 reg_reader(SByte)
 reg_reader(SWord)
 reg_reader(SDWord)
-Float32_t readFloat32(struct cpu_state* ctx, uint8_t reg, uint8_t counter) {
+Float32_t readFloat32(struct cpu_state* ctx, uint8_t reg) {
     return ctx->r[reg].asFloat32;
 }
-Float64_t readFloat64(struct cpu_state* ctx, uint8_t reg, uint8_t counter) {
+Float64_t readFloat64(struct cpu_state* ctx, uint8_t reg) {
     return ctx->r[reg].asFloat64;
 }
-QWord_t readQWord(struct cpu_state* ctx, uint8_t reg, uint8_t counter) {
+QWord_t readQWord(struct cpu_state* ctx, uint8_t reg) {
     return ctx->r[reg].asQWord;
 }
-SQWord_t readSQWord(struct cpu_state* ctx, uint8_t reg, uint8_t counter) {
+SQWord_t readSQWord(struct cpu_state* ctx, uint8_t reg) {
     return ctx->r[reg].asSQWord;
-}
-
-QWord_t readUnsigned(struct cpu_state* ctx, uint8_t reg, uint8_t counter) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT:  return readByte(ctx, reg, counter);
-        case SIZE_16BIT: return readWord(ctx, reg, counter);
-        case SIZE_32BIT: return readDWord(ctx, reg, counter);
-        case SIZE_64BIT: return readQWord(ctx, reg, counter);
-    }
-#if __has_builtin(__builtin_unreachable)
-    __builtin_unreachable();
-#else
-    abort();
-#endif
-}
-
-SQWord_t readSigned(struct cpu_state* ctx, uint8_t reg, uint8_t counter) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT:  return readSByte(ctx, reg, counter);
-        case SIZE_16BIT: return readSWord(ctx, reg, counter);
-        case SIZE_32BIT: return readSDWord(ctx, reg, counter);
-        case SIZE_64BIT: return readSQWord(ctx, reg, counter);
-    }
-#if __has_builtin(__builtin_unreachable)
-    __builtin_unreachable();
-#else
-    abort();
-#endif
 }
 
 reg_writer(Byte)
@@ -229,45 +205,17 @@ reg_writer(DWord)
 reg_writer(SByte)
 reg_writer(SWord)
 reg_writer(SDWord)
-void writeFloat32(struct cpu_state* ctx, uint8_t reg, Float32_t val, uint8_t counter) {
+void writeFloat32(struct cpu_state* ctx, uint8_t reg, Float32_t val) {
     ctx->r[reg].asFloat32 = val;
 }
-void writeFloat64(struct cpu_state* ctx, uint8_t reg, Float64_t val, uint8_t counter) {
+void writeFloat64(struct cpu_state* ctx, uint8_t reg, Float64_t val) {
     ctx->r[reg].asFloat64 = val;
 }
-void writeQWord(struct cpu_state* ctx, uint8_t reg, QWord_t val, uint8_t counter) {
+void writeQWord(struct cpu_state* ctx, uint8_t reg, QWord_t val) {
     ctx->r[reg].asQWord = val;
 }
-void writeSQWord(struct cpu_state* ctx, uint8_t reg, SQWord_t val, uint8_t counter) {
+void writeSQWord(struct cpu_state* ctx, uint8_t reg, SQWord_t val) {
     ctx->r[reg].asSQWord = val;
-}
-
-void writeUnsigned(struct cpu_state* ctx, uint8_t reg, QWord_t val, uint8_t counter) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT:  writeByte(ctx, reg, val, counter); return;
-        case SIZE_16BIT: writeWord(ctx, reg, val, counter); return;
-        case SIZE_32BIT: writeDWord(ctx, reg, val, counter); return;
-        case SIZE_64BIT: writeQWord(ctx, reg, val, counter); return;
-    }
-#if __has_builtin(__builtin_unreachable)
-    __builtin_unreachable();
-#else
-    abort();
-#endif
-}
-
-void writeSigned(struct cpu_state* ctx, uint8_t reg, SQWord_t val, uint8_t counter) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT:  writeSByte(ctx, reg, val, counter); return;
-        case SIZE_16BIT: writeSWord(ctx, reg, val, counter); return;
-        case SIZE_32BIT: writeSDWord(ctx, reg, val, counter); return;
-        case SIZE_64BIT: writeSQWord(ctx, reg, val, counter); return;
-    }
-#if __has_builtin(__builtin_unreachable)
-    __builtin_unreachable();
-#else
-    abort();
-#endif
 }
 
 #define mem_reader(_type) \
@@ -286,10 +234,14 @@ void memWrite ## _type (struct cpu_state* ctx, void* addr, _type ## _t val) { \
 }
 
 bool authenticate_ptr(struct cpu_state* ctx, void* addr, size_t read_size) {
-    if (read_size > 4) {
-        return ((uint64_t) addr % 4) == 0;
+    if (ctx->cr[CR_FLAGS].asFlags.allow_unaligned_mem) {
+        return true;
     } else {
-        return ((uint64_t) addr % read_size) == 0;
+        if (read_size > 8) {
+            return ((uint64_t) addr % 8) == 0;
+        } else {
+            return ((uint64_t) addr % read_size) == 0;
+        }
     }
 }
 
@@ -366,62 +318,62 @@ static bool trans_branch_link(DisasContext *ctx, arg_branch_link *a) {
     return true;
 }
 static bool trans_branch_reg(DisasContext *ctx, arg_branch_reg *a) {
-    BRANCH(readQWord(ctx, a->r1, REG_DEST));
+    BRANCH(readQWord(ctx, a->r1));
     return true;
 }
 static bool trans_branch_reg_link(DisasContext *ctx, arg_branch_reg_link *a) {
     LINK();
-    BRANCH(readQWord(ctx, a->r1, REG_DEST));
+    BRANCH(readQWord(ctx, a->r1));
     return true;
 }
 
-#define ALU_R(_op) switch (ctx->cr[CR_FLAGS].asFlags.size) { \
-        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, readByte(ctx, a->r2, REG_SRC1) _op readByte(ctx, a->r3, REG_SRC2)), REG_DEST); break; \
-        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, readWord(ctx, a->r2, REG_SRC1) _op readWord(ctx, a->r3, REG_SRC2)), REG_DEST); break; \
-        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, readDWord(ctx, a->r2, REG_SRC1) _op readDWord(ctx, a->r3, REG_SRC2)), REG_DEST); break; \
-        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, readQWord(ctx, a->r2, REG_SRC1) _op readQWord(ctx, a->r3, REG_SRC2)), REG_DEST); break; \
+#define ALU_R(_op) switch (a->size) { \
+        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, readByte(ctx, a->r2) _op readByte(ctx, a->r3))); break; \
+        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, readWord(ctx, a->r2) _op readWord(ctx, a->r3))); break; \
+        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, readDWord(ctx, a->r2) _op readDWord(ctx, a->r3))); break; \
+        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, readQWord(ctx, a->r2) _op readQWord(ctx, a->r3))); break; \
     }
-#define ALU_I(_op) switch (ctx->cr[CR_FLAGS].asFlags.size) { \
-        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, readByte(ctx, a->r2, REG_SRC1) _op (Byte_t) a->imm8), REG_DEST); break; \
-        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, readWord(ctx, a->r2, REG_SRC1) _op (Word_t) a->imm8), REG_DEST); break; \
-        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, readDWord(ctx, a->r2, REG_SRC1) _op (DWord_t) a->imm8), REG_DEST); break; \
-        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, readQWord(ctx, a->r2, REG_SRC1) _op (QWord_t) a->imm8), REG_DEST); break; \
+#define ALU_I(_op) switch (a->size) { \
+        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, readByte(ctx, a->r2) _op (Byte_t) a->imm8)); break; \
+        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, readWord(ctx, a->r2) _op (Word_t) a->imm8)); break; \
+        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, readDWord(ctx, a->r2) _op (DWord_t) a->imm8)); break; \
+        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, readQWord(ctx, a->r2) _op (QWord_t) a->imm8)); break; \
     }
-#define ALU_R_ROT(_rot) switch (ctx->cr[CR_FLAGS].asFlags.size) { \
-        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, _rot(readByte(ctx, a->r2, REG_SRC1), readByte(ctx, a->r3, REG_SRC2))), REG_DEST); break; \
-        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, _rot(readWord(ctx, a->r2, REG_SRC1), readWord(ctx, a->r3, REG_SRC2))), REG_DEST); break; \
-        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, _rot(readDWord(ctx, a->r2, REG_SRC1), readDWord(ctx, a->r3, REG_SRC2))), REG_DEST); break; \
-        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, _rot(readQWord(ctx, a->r2, REG_SRC1), readQWord(ctx, a->r3, REG_SRC2))), REG_DEST); break; \
+#define ALU_R_ROT(_rot) switch (a->size) { \
+        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, _rot(readByte(ctx, a->r2), readByte(ctx, a->r3)))); break; \
+        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, _rot(readWord(ctx, a->r2), readWord(ctx, a->r3)))); break; \
+        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, _rot(readDWord(ctx, a->r2), readDWord(ctx, a->r3)))); break; \
+        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, _rot(readQWord(ctx, a->r2), readQWord(ctx, a->r3)))); break; \
     }
-#define ALU_I_ROT(_rot) switch (ctx->cr[CR_FLAGS].asFlags.size) { \
-        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, _rot(readByte(ctx, a->r2, REG_SRC1), (Byte_t) a->imm8)), REG_DEST); break; \
-        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, _rot(readWord(ctx, a->r2, REG_SRC1), (Word_t) a->imm8)), REG_DEST); break; \
-        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, _rot(readDWord(ctx, a->r2, REG_SRC1), (DWord_t) a->imm8)), REG_DEST); break; \
-        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, _rot(readQWord(ctx, a->r2, REG_SRC1), (QWord_t) a->imm8)), REG_DEST); break; \
+#define ALU_I_ROT(_rot) switch (a->size) { \
+        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, _rot(readByte(ctx, a->r2), (Byte_t) a->imm8))); break; \
+        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, _rot(readWord(ctx, a->r2), (Word_t) a->imm8))); break; \
+        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, _rot(readDWord(ctx, a->r2), (DWord_t) a->imm8))); break; \
+        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, _rot(readQWord(ctx, a->r2), (QWord_t) a->imm8))); break; \
     }
-#define ALU_R_DISC(_op) switch (ctx->cr[CR_FLAGS].asFlags.size) { \
-        case SIZE_8BIT: set_flags(ctx, readByte(ctx, a->r2, REG_SRC1) _op readByte(ctx, a->r3, REG_SRC2)); break; \
-        case SIZE_16BIT: set_flags(ctx, readWord(ctx, a->r2, REG_SRC1) _op readWord(ctx, a->r3, REG_SRC2)); break; \
-        case SIZE_32BIT: set_flags(ctx, readDWord(ctx, a->r2, REG_SRC1) _op readDWord(ctx, a->r3, REG_SRC2)); break; \
-        case SIZE_64BIT: set_flags(ctx, readQWord(ctx, a->r2, REG_SRC1) _op readQWord(ctx, a->r3, REG_SRC2)); break; \
+#define ALU_R_DISC(_op) switch (a->size) { \
+        case SIZE_8BIT: set_flags(ctx, readByte(ctx, a->r2) _op readByte(ctx, a->r3)); break; \
+        case SIZE_16BIT: set_flags(ctx, readWord(ctx, a->r2) _op readWord(ctx, a->r3)); break; \
+        case SIZE_32BIT: set_flags(ctx, readDWord(ctx, a->r2) _op readDWord(ctx, a->r3)); break; \
+        case SIZE_64BIT: set_flags(ctx, readQWord(ctx, a->r2) _op readQWord(ctx, a->r3)); break; \
     }
-#define ALU_I_DISC(_op) switch (ctx->cr[CR_FLAGS].asFlags.size) { \
-        case SIZE_8BIT: set_flags(ctx, readByte(ctx, a->r2, REG_SRC1) _op (Byte_t) a->imm8); break; \
-        case SIZE_16BIT: set_flags(ctx, readWord(ctx, a->r2, REG_SRC1) _op (Word_t) a->imm8); break; \
-        case SIZE_32BIT: set_flags(ctx, readDWord(ctx, a->r2, REG_SRC1) _op (DWord_t) a->imm8); break; \
-        case SIZE_64BIT: set_flags(ctx, readQWord(ctx, a->r2, REG_SRC1) _op (QWord_t) a->imm8); break; \
+#define ALU_I_DISC(_op) switch (a->size) { \
+        case SIZE_8BIT: set_flags(ctx, readByte(ctx, a->r2) _op (Byte_t) a->imm8); break; \
+        case SIZE_16BIT: set_flags(ctx, readWord(ctx, a->r2) _op (Word_t) a->imm8); break; \
+        case SIZE_32BIT: set_flags(ctx, readDWord(ctx, a->r2) _op (DWord_t) a->imm8); break; \
+        case SIZE_64BIT: set_flags(ctx, readQWord(ctx, a->r2) _op (QWord_t) a->imm8); break; \
     }
-#define SALU_R(_op) switch (ctx->cr[CR_FLAGS].asFlags.size) { \
-        case SIZE_8BIT: writeSByte(ctx, a->r1, set_flags(ctx, readSByte(ctx, a->r2, REG_SRC1) _op readSByte(ctx, a->r3, REG_SRC2)), REG_DEST); break; \
-        case SIZE_16BIT: writeSWord(ctx, a->r1, set_flags(ctx, readSWord(ctx, a->r2, REG_SRC1) _op readSWord(ctx, a->r3, REG_SRC2)), REG_DEST); break; \
-        case SIZE_32BIT: writeSDWord(ctx, a->r1, set_flags(ctx, readSDWord(ctx, a->r2, REG_SRC1) _op readSDWord(ctx, a->r3, REG_SRC2)), REG_DEST); break; \
-        case SIZE_64BIT: writeSQWord(ctx, a->r1, set_flags(ctx, readSQWord(ctx, a->r2, REG_SRC1) _op readSQWord(ctx, a->r3, REG_SRC2)), REG_DEST); break; \
+#define SALU_R(_op) switch (a->size) { \
+        case SIZE_8BIT: writeSByte(ctx, a->r1, set_flags(ctx, readSByte(ctx, a->r2) _op readSByte(ctx, a->r3))); break; \
+        case SIZE_16BIT: writeSWord(ctx, a->r1, set_flags(ctx, readSWord(ctx, a->r2) _op readSWord(ctx, a->r3))); break; \
+        case SIZE_32BIT: writeSDWord(ctx, a->r1, set_flags(ctx, readSDWord(ctx, a->r2) _op readSDWord(ctx, a->r3))); break; \
+        case SIZE_64BIT: writeSQWord(ctx, a->r1, set_flags(ctx, readSQWord(ctx, a->r2) _op readSQWord(ctx, a->r3))); break; \
     }
-#define SALU_I(_op) switch (ctx->cr[CR_FLAGS].asFlags.size) { \
-        case SIZE_8BIT: writeSByte(ctx, a->r1, set_flags(ctx, readSByte(ctx, a->r2, REG_SRC1) _op (SByte_t) a->imm8), REG_DEST); break; \
-        case SIZE_16BIT: writeSWord(ctx, a->r1, set_flags(ctx, readSWord(ctx, a->r2, REG_SRC1) _op (SWord_t) a->imm8), REG_DEST); break; \
-        case SIZE_32BIT: writeSDWord(ctx, a->r1, set_flags(ctx, readSDWord(ctx, a->r2, REG_SRC1) _op (SDWord_t) a->imm8), REG_DEST); break; \
-        case SIZE_64BIT: writeSQWord(ctx, a->r1, set_flags(ctx, readSQWord(ctx, a->r2, REG_SRC1) _op (SQWord_t) a->imm8), REG_DEST); break; \
+#define SALU_I(_op) switch (a->size) { \
+        case SIZE_8BIT: writeSByte(ctx, a->r1, set_flags(ctx, readSByte(ctx, a->r2) _op (SByte_t) a->imm8)); break; \
+        case SIZE_16BIT: writeSWord(ctx, a->r1, set_flags(ctx, readSWord(ctx, a->r2) _op (SWord_t) a->imm8)); break; \
+        case SIZE_32BIT: writeSDWord(ctx, a->r1, set_flags(ctx, readSDWord(ctx, a->r2) _op (SDWord_t) a->imm8)); break; \
+        case SIZE_64BIT: writeSQWord(ctx, a->r1, set_flags(ctx, readSQWord(ctx, a->r2) _op (SQWord_t) a->imm8)); break; \
     }
 
 static bool trans_add_reg(DisasContext *ctx, arg_add_reg *a) {
@@ -545,11 +497,11 @@ static bool trans_ret(DisasContext *ctx, arg_ret *a) {
     return true;
 }
 static bool trans_mov(DisasContext *ctx, arg_mov *a) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, readByte(ctx, a->r2, REG_SRC1)), REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, readWord(ctx, a->r2, REG_SRC1)), REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, readDWord(ctx, a->r2, REG_SRC1)), REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, readQWord(ctx, a->r2, REG_SRC1)), REG_DEST); break;
+    switch (a->size) {
+        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, readByte(ctx, a->r2))); break;
+        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, readWord(ctx, a->r2))); break;
+        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, readDWord(ctx, a->r2))); break;
+        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, readQWord(ctx, a->r2))); break;
     }
     return true;
 }
@@ -574,261 +526,245 @@ static bool trans_ror_imm(DisasContext *ctx, arg_ror_imm *a) {
     return true;
 }
 static bool trans_neg(DisasContext *ctx, arg_neg *a) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeSByte(ctx, a->r1, -readSByte(ctx, a->r2, REG_SRC1), REG_DEST); break;
-        case SIZE_16BIT: writeSWord(ctx, a->r1, -readSWord(ctx, a->r2, REG_SRC1), REG_DEST); break;
-        case SIZE_32BIT: writeSDWord(ctx, a->r1, -readSDWord(ctx, a->r2, REG_SRC1), REG_DEST); break;
-        case SIZE_64BIT: writeSQWord(ctx, a->r1, -readSQWord(ctx, a->r2, REG_SRC1), REG_DEST); break;
+    switch (a->size) {
+        case SIZE_8BIT: writeSByte(ctx, a->r1, -readSByte(ctx, a->r2)); break;
+        case SIZE_16BIT: writeSWord(ctx, a->r1, -readSWord(ctx, a->r2)); break;
+        case SIZE_32BIT: writeSDWord(ctx, a->r1, -readSDWord(ctx, a->r2)); break;
+        case SIZE_64BIT: writeSQWord(ctx, a->r1, -readSQWord(ctx, a->r2)); break;
     }
     return true;
 }
 static bool trans_not(DisasContext *ctx, arg_not *a) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, ~readByte(ctx, a->r2, REG_SRC1), REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, ~readWord(ctx, a->r2, REG_SRC1), REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, ~readDWord(ctx, a->r2, REG_SRC1), REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, ~readQWord(ctx, a->r2, REG_SRC1), REG_DEST); break;
+    switch (a->size) {
+        case SIZE_8BIT: writeByte(ctx, a->r1, ~readByte(ctx, a->r2)); break;
+        case SIZE_16BIT: writeWord(ctx, a->r1, ~readWord(ctx, a->r2)); break;
+        case SIZE_32BIT: writeDWord(ctx, a->r1, ~readDWord(ctx, a->r2)); break;
+        case SIZE_64BIT: writeQWord(ctx, a->r1, ~readQWord(ctx, a->r2)); break;
     }
     return true;
 }
 static bool trans_extend(DisasContext *ctx, arg_extend *a) {
-    if (a->to <= a->from) {
+    if (a->to <= a->size) {
         return false;
     }
     SQWord_t val;
-    switch (a->from) {
-        case SIZE_8BIT: val = readSByte(ctx, a->r2, REG_SRC1); break;
-        case SIZE_16BIT: val = readSWord(ctx, a->r2, REG_SRC1); break;
-        case SIZE_32BIT: val = readSDWord(ctx, a->r2, REG_SRC1); break;
+    switch (a->size) {
+        case SIZE_8BIT: val = readSByte(ctx, a->r2); break;
+        case SIZE_16BIT: val = readSWord(ctx, a->r2); break;
+        case SIZE_32BIT: val = readSDWord(ctx, a->r2); break;
         default: return false;
     }
     switch (a->to) {
-        case SIZE_16BIT: writeSWord(ctx, a->r2, val, REG_DEST); break;
-        case SIZE_32BIT: writeSDWord(ctx, a->r2, val, REG_DEST); break;
-        case SIZE_64BIT: writeSQWord(ctx, a->r2, val, REG_DEST); break;
+        case SIZE_16BIT: writeSWord(ctx, a->r2, val); break;
+        case SIZE_32BIT: writeSDWord(ctx, a->r2, val); break;
+        case SIZE_64BIT: writeSQWord(ctx, a->r2, val); break;
         default: return false;
     }
 
     return true;
 }
 static bool trans_swe(DisasContext *ctx, arg_swe *a) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, swap_bytes(readByte(ctx, a->r2, REG_SRC1)), REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, swap_bytes(readWord(ctx, a->r2, REG_SRC1)), REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, swap_bytes(readDWord(ctx, a->r2, REG_SRC1)), REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, swap_bytes(readQWord(ctx, a->r2, REG_SRC1)), REG_DEST); break;
+    switch (a->size) {
+        case SIZE_8BIT: writeByte(ctx, a->r1, swap_bytes(readByte(ctx, a->r2))); break;
+        case SIZE_16BIT: writeWord(ctx, a->r1, swap_bytes(readWord(ctx, a->r2))); break;
+        case SIZE_32BIT: writeDWord(ctx, a->r1, swap_bytes(readDWord(ctx, a->r2))); break;
+        case SIZE_64BIT: writeQWord(ctx, a->r1, swap_bytes(readQWord(ctx, a->r2))); break;
     }
     return true;
 }
 static bool trans_cswap(DisasContext *ctx, arg_cswap *a) {
     uint8_t reg = a->r3;
-    uint8_t cnt = REG_SRC2;
     int check_condition1(uint8_t cond, hive_flag_register_t fr);
     if (check_condition1(a->cond, ctx->cr[CR_FLAGS].asFlags)) {
         reg = a->r2;
-        cnt = REG_SRC1;
     }
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, readByte(ctx, reg, cnt), REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, readWord(ctx, reg, cnt), REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, readDWord(ctx, reg, cnt), REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, readQWord(ctx, reg, cnt), REG_DEST); break;
+    switch (a->size) {
+        case SIZE_8BIT: writeByte(ctx, a->r1, readByte(ctx, reg)); break;
+        case SIZE_16BIT: writeWord(ctx, a->r1, readWord(ctx, reg)); break;
+        case SIZE_32BIT: writeDWord(ctx, a->r1, readDWord(ctx, reg)); break;
+        case SIZE_64BIT: writeQWord(ctx, a->r1, readQWord(ctx, reg)); break;
     }
     return true;
 }
 static bool trans_xchg(DisasContext *ctx, arg_xchg *a) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
+    switch (a->size) {
         case SIZE_8BIT: {
-                Byte_t tmp = readByte(ctx, a->r1, REG_DEST);
-                writeByte(ctx, a->r1, readByte(ctx, a->r2, REG_SRC1), REG_DEST);
-                writeByte(ctx, a->r2, tmp, REG_SRC1);
+                Byte_t tmp = readByte(ctx, a->r1);
+                writeByte(ctx, a->r1, readByte(ctx, a->r2));
+                writeByte(ctx, a->r2, tmp);
             }
             break;
         case SIZE_16BIT: {
-                Word_t tmp = readWord(ctx, a->r1, REG_DEST);
-                writeWord(ctx, a->r1, readWord(ctx, a->r2, REG_SRC1), REG_DEST);
-                writeWord(ctx, a->r2, tmp, REG_SRC1);
+                Word_t tmp = readWord(ctx, a->r1);
+                writeWord(ctx, a->r1, readWord(ctx, a->r2));
+                writeWord(ctx, a->r2, tmp);
             }
             break;
         case SIZE_32BIT: {
-                DWord_t tmp = readDWord(ctx, a->r1, REG_DEST);
-                writeDWord(ctx, a->r1, readDWord(ctx, a->r2, REG_SRC1), REG_DEST);
-                writeDWord(ctx, a->r2, tmp, REG_SRC1);
+                DWord_t tmp = readDWord(ctx, a->r1);
+                writeDWord(ctx, a->r1, readDWord(ctx, a->r2));
+                writeDWord(ctx, a->r2, tmp);
             }
             break;
         case SIZE_64BIT: {
-                QWord_t tmp = readQWord(ctx, a->r1, REG_DEST);
-                writeQWord(ctx, a->r1, readQWord(ctx, a->r2, REG_SRC1), REG_DEST);
-                writeQWord(ctx, a->r2, tmp, REG_SRC1);
+                QWord_t tmp = readQWord(ctx, a->r1);
+                writeQWord(ctx, a->r1, readQWord(ctx, a->r2));
+                writeQWord(ctx, a->r2, tmp);
             }
             break;
     }
     return true;
 }
-static bool trans_prefix(DisasContext *ctx, arg_prefix *a) {
-    // override size, register state, and relative override
-    ctx->cr[CR_FLAGS].asFlags.size = a->sz;
-    ctx->cr[CR_FLAGS].asFlags.reg_state = a->reg_override;
-    
-    // exec
-    ctx->r[REG_PC].asInstrPtr++;
-    exec_instr(ctx, memReadDWord(ctx, ctx->r[REG_PC].asDWordPtr));
-    
-    // restore default state
-    ctx->cr[CR_FLAGS].asFlags.size = SIZE_64BIT;
-    ctx->cr[CR_FLAGS].asFlags.reg_state = 0;
-    return true;
-}
 static bool trans_fadd(DisasContext *ctx, arg_fadd *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1) + readFloat64(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) + readFloat64(ctx, a->r3)));
     return true;
 }
 static bool trans_faddi(DisasContext *ctx, arg_faddi *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1) + readSQWord(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) + readSQWord(ctx, a->r3)));
     return true;
 }
 static bool trans_fsub(DisasContext *ctx, arg_fsub *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1) - readFloat64(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) - readFloat64(ctx, a->r3)));
     return true;
 }
 static bool trans_fsubi(DisasContext *ctx, arg_fsubi *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1) - readSQWord(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) - readSQWord(ctx, a->r3)));
     return true;
 }
 static bool trans_fcmp(DisasContext *ctx, arg_fcmp *a) {
-    set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1) - readFloat64(ctx, a->r3, REG_SRC2));
+    set_flags(ctx, readFloat64(ctx, a->r2) - readFloat64(ctx, a->r3));
     return true;
 }
 static bool trans_fcmpi(DisasContext *ctx, arg_fcmpi *a) {
-    set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1) - readSQWord(ctx, a->r3, REG_SRC2));
+    set_flags(ctx, readFloat64(ctx, a->r2) - readSQWord(ctx, a->r3));
     return true;
 }
 static bool trans_fmul(DisasContext *ctx, arg_fmul *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1) * readFloat64(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) * readFloat64(ctx, a->r3)));
     return true;
 }
 static bool trans_fmuli(DisasContext *ctx, arg_fmuli *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1) * readSQWord(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) * readSQWord(ctx, a->r3)));
     return true;
 }
 static bool trans_fdiv(DisasContext *ctx, arg_fdiv *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1) / readFloat64(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) / readFloat64(ctx, a->r3)));
     return true;
 }
 static bool trans_fdivi(DisasContext *ctx, arg_fdivi *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1) / readSQWord(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) / readSQWord(ctx, a->r3)));
     return true;
 }
 static bool trans_fmod(DisasContext *ctx, arg_fmod *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, fmod(readFloat64(ctx, a->r2, REG_SRC1), readFloat64(ctx, a->r3, REG_SRC2))), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, fmod(readFloat64(ctx, a->r2), readFloat64(ctx, a->r3))));
     return true;
 }
 static bool trans_fmodi(DisasContext *ctx, arg_fmodi *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, fmod(readFloat64(ctx, a->r2, REG_SRC1), readSQWord(ctx, a->r3, REG_SRC2))), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, fmod(readFloat64(ctx, a->r2), readSQWord(ctx, a->r3))));
     return true;
 }
 static bool trans_f2i(DisasContext *ctx, arg_f2i *a) {
-    writeSQWord(ctx, a->r1, readFloat64(ctx, a->r2, REG_SRC1), REG_DEST);
+    writeSQWord(ctx, a->r1, readFloat64(ctx, a->r2));
     return true;
 }
 static bool trans_i2f(DisasContext *ctx, arg_i2f *a) {
-    writeFloat64(ctx, a->r1, readSQWord(ctx, a->r2, REG_SRC1), REG_DEST);
+    writeFloat64(ctx, a->r1, readSQWord(ctx, a->r2));
     return true;
 }
 static bool trans_fsin(DisasContext *ctx, arg_fsin *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, sin(readFloat64(ctx, a->r2, REG_SRC1))), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, sin(readFloat64(ctx, a->r2))));
     return true;
 }
 static bool trans_fsini(DisasContext *ctx, arg_fsini *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, sin(readSQWord(ctx, a->r2, REG_SRC1))), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, sin(readSQWord(ctx, a->r2))));
     return true;
 }
 static bool trans_fsqrt(DisasContext *ctx, arg_fsqrt *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, sqrt(readFloat64(ctx, a->r2, REG_SRC1))), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, sqrt(readFloat64(ctx, a->r2))));
     return true;
 }
 static bool trans_fsqrti(DisasContext *ctx, arg_fsqrti *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, sqrt(readSQWord(ctx, a->r2, REG_SRC1))), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, sqrt(readSQWord(ctx, a->r2))));
     return true;
 }
 static bool trans_sadd(DisasContext *ctx, arg_sadd *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1) + readFloat32(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) + readFloat32(ctx, a->r3)));
     return true;
 }
 static bool trans_saddi(DisasContext *ctx, arg_saddi *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1) + readSDWord(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) + readSDWord(ctx, a->r3)));
     return true;
 }
 static bool trans_ssub(DisasContext *ctx, arg_ssub *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1) - readFloat32(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) - readFloat32(ctx, a->r3)));
     return true;
 }
 static bool trans_ssubi(DisasContext *ctx, arg_ssubi *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1) - readSDWord(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) - readSDWord(ctx, a->r3)));
     return true;
 }
 static bool trans_scmp(DisasContext *ctx, arg_scmp *a) {
-    set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1) - readFloat32(ctx, a->r3, REG_SRC2));
+    set_flags(ctx, readFloat32(ctx, a->r2) - readFloat32(ctx, a->r3));
     return true;
 }
 static bool trans_scmpi(DisasContext *ctx, arg_scmpi *a) {
-    set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1) - readSDWord(ctx, a->r3, REG_SRC2));
+    set_flags(ctx, readFloat32(ctx, a->r2) - readSDWord(ctx, a->r3));
     return true;
 }
 static bool trans_smul(DisasContext *ctx, arg_smul *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1) * readFloat32(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) * readFloat32(ctx, a->r3)));
     return true;
 }
 static bool trans_smuli(DisasContext *ctx, arg_smuli *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1) * readSDWord(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) * readSDWord(ctx, a->r3)));
     return true;
 }
 static bool trans_sdiv(DisasContext *ctx, arg_sdiv *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1) / readFloat32(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) / readFloat32(ctx, a->r3)));
     return true;
 }
 static bool trans_sdivi(DisasContext *ctx, arg_sdivi *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1) / readSDWord(ctx, a->r3, REG_SRC2)), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) / readSDWord(ctx, a->r3)));
     return true;
 }
 static bool trans_smod(DisasContext *ctx, arg_smod *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, fmod(readFloat32(ctx, a->r2, REG_SRC1), readFloat32(ctx, a->r3, REG_SRC2))), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, fmod(readFloat32(ctx, a->r2), readFloat32(ctx, a->r3))));
     return true;
 }
 static bool trans_smodi(DisasContext *ctx, arg_smodi *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, fmod(readFloat32(ctx, a->r2, REG_SRC1), readSDWord(ctx, a->r3, REG_SRC2))), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, fmod(readFloat32(ctx, a->r2), readSDWord(ctx, a->r3))));
     return true;
 }
 static bool trans_s2i(DisasContext *ctx, arg_s2i *a) {
-    writeSQWord(ctx, a->r1, readFloat32(ctx, a->r2, REG_SRC1), REG_DEST);
+    writeSQWord(ctx, a->r1, readFloat32(ctx, a->r2));
     return true;
 }
 static bool trans_i2s(DisasContext *ctx, arg_i2s *a) {
-    writeFloat32(ctx, a->r1, readSDWord(ctx, a->r2, REG_SRC1), REG_DEST);
+    writeFloat32(ctx, a->r1, readSDWord(ctx, a->r2));
     return true;
 }
 static bool trans_ssin(DisasContext *ctx, arg_ssin *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, sin(readFloat32(ctx, a->r2, REG_SRC1))), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, sin(readFloat32(ctx, a->r2))));
     return true;
 }
 static bool trans_ssini(DisasContext *ctx, arg_ssini *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, sin(readSDWord(ctx, a->r2, REG_SRC1))), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, sin(readSDWord(ctx, a->r2))));
     return true;
 }
 static bool trans_ssqrt(DisasContext *ctx, arg_ssqrt *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, sqrt(readFloat32(ctx, a->r2, REG_SRC1))), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, sqrt(readFloat32(ctx, a->r2))));
     return true;
 }
 static bool trans_ssqrti(DisasContext *ctx, arg_ssqrti *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, sqrt(readSDWord(ctx, a->r2, REG_SRC1))), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, sqrt(readSDWord(ctx, a->r2))));
     return true;
 }
 static bool trans_s2f(DisasContext *ctx, arg_s2f *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2, REG_SRC1)), REG_DEST);
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2)));
     return true;
 }
 static bool trans_f2s(DisasContext *ctx, arg_f2s *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2, REG_SRC1)), REG_DEST);
+    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2)));
     return true;
 }
 static bool trans_cpuid(DisasContext *ctx, arg_cpuid *a) {
@@ -846,24 +782,29 @@ static bool trans_cpuid(DisasContext *ctx, arg_cpuid *a) {
     }
     return true;
 }
+static bool trans_brk(DisasContext *ctx, arg_brk *a) {
+    ctx->cr[CR_BREAK].asWord = a->what;
+    raise(SIGTRAP);
+    return true;
+}
 static bool trans_zeroupper(DisasContext *ctx, arg_zeroupper *a) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
+    switch (a->size) {
         case SIZE_8BIT: {
-            Byte_t value = readByte(ctx, a->r1, REG_DEST);
+            Byte_t value = readByte(ctx, a->r1);
             ctx->r[a->r1].asQWord = 0;
-            writeByte(ctx, a->r1, value, REG_DEST);
+            writeByte(ctx, a->r1, value);
             break;
         }
         case SIZE_16BIT: {
-            Word_t value = readWord(ctx, a->r1, REG_DEST);
+            Word_t value = readWord(ctx, a->r1);
             ctx->r[a->r1].asQWord = 0;
-            writeWord(ctx, a->r1, value, REG_DEST);
+            writeWord(ctx, a->r1, value);
             break;
         }
         case SIZE_32BIT: {
-            DWord_t value = readDWord(ctx, a->r1, REG_DEST);
+            DWord_t value = readDWord(ctx, a->r1);
             ctx->r[a->r1].asQWord = 0;
-            writeDWord(ctx, a->r1, value, REG_DEST);
+            writeDWord(ctx, a->r1, value);
             break;
         }
         default: return false;
@@ -905,11 +846,11 @@ static bool trans_svc(DisasContext *ctx, arg_svc *a) {
 }
 static bool trans_mov_cr_r(DisasContext *ctx, arg_mov_cr_r *a) {
     check_permissions(ctx, EM_HYPERVISOR);
-    ctx->cr[a->cr1] = ctx->r[a->r1];
+    ctx->cr[a->cr1].asQWord = set_flags(ctx, ctx->r[a->r1].asQWord);
     return true;
 }
 static bool trans_mov_r_cr(DisasContext *ctx, arg_mov_r_cr *a) {
-    ctx->r[a->r1] = ctx->cr[a->cr1];
+    ctx->r[a->r1].asQWord = set_flags(ctx, ctx->cr[a->cr1].asQWord);
     return true;
 }
 static bool trans_hexit(DisasContext *ctx, arg_hexit *a) {
@@ -923,209 +864,177 @@ static bool trans_sexit(DisasContext *ctx, arg_sexit *a) {
     return true;
 }
 static bool trans_lea(DisasContext *ctx, arg_lea *a) {
-    writeQWord(ctx, a->r1, PC_REL(a->rel), REG_DEST);
+    writeQWord(ctx, a->r1, PC_REL(a->rel));
     return true;
 }
 static bool trans_movz_0(DisasContext *ctx, arg_movz_0 *a) {
-    writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 0), REG_DEST);
+    writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 0));
     return true;
 }
 static bool trans_movz_16(DisasContext *ctx, arg_movz_16 *a) {
-    writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 16), REG_DEST);
+    writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 16));
     return true;
 }
 static bool trans_movz_32(DisasContext *ctx, arg_movz_32 *a) {
-    writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 32), REG_DEST);
+    writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 32));
     return true;
 }
 static bool trans_movz_48(DisasContext *ctx, arg_movz_48 *a) {
-    writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 48), REG_DEST);
+    writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 48));
     return true;
 }
 static bool trans_movk_0(DisasContext *ctx, arg_movk_0 *a) {
-    QWord_t val = readQWord(ctx, a->r1, REG_DEST);
+    QWord_t val = readQWord(ctx, a->r1);
     val &= 0xFFFFFFFFFFFF0000;
     val |= ((QWord_t) a->imm) << 0;
-    writeQWord(ctx, a->r1, set_flags(ctx, val), REG_DEST);
+    writeQWord(ctx, a->r1, set_flags(ctx, val));
     return true;
 }
 static bool trans_movk_16(DisasContext *ctx, arg_movk_16 *a) {
-    QWord_t val = readQWord(ctx, a->r1, REG_DEST);
+    QWord_t val = readQWord(ctx, a->r1);
     val &= 0xFFFFFFFF0000FFFF;
     val |= ((QWord_t) a->imm) << 16;
-    writeQWord(ctx, a->r1, set_flags(ctx, val), REG_DEST);
+    writeQWord(ctx, a->r1, set_flags(ctx, val));
     return true;
 }
 static bool trans_movk_32(DisasContext *ctx, arg_movk_32 *a) {
-    QWord_t val = readQWord(ctx, a->r1, REG_DEST);
+    QWord_t val = readQWord(ctx, a->r1);
     val &= 0xFFFF0000FFFFFFFF;
     val |= ((QWord_t) a->imm) << 32;
-    writeQWord(ctx, a->r1, set_flags(ctx, val), REG_DEST);
+    writeQWord(ctx, a->r1, set_flags(ctx, val));
     return true;
 }
 static bool trans_movk_48(DisasContext *ctx, arg_movk_48 *a) {
-    QWord_t val = readQWord(ctx, a->r1, REG_DEST);
+    QWord_t val = readQWord(ctx, a->r1);
     val &= 0x0000FFFFFFFFFFFF;
     val |= ((QWord_t) a->imm) << 48;
-    writeQWord(ctx, a->r1, set_flags(ctx, val), REG_DEST);
+    writeQWord(ctx, a->r1, set_flags(ctx, val));
     return true;
 }
 static bool trans_ldr_reg(DisasContext *ctx, arg_ldr_reg *a) {
-    QWord_t addr = readQWord(ctx, a->r2, REG_SRC1) + (readQWord(ctx, a->r3, REG_SRC2) << a->shift);
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, memReadWord(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, memReadDWord(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, memReadQWord(ctx, (void*) addr), REG_DEST); break;
+    QWord_t addr = readQWord(ctx, a->r2) + (readQWord(ctx, a->r3) << a->shift);
+    switch (a->size) {
+        case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr)); break;
+        case SIZE_16BIT: writeWord(ctx, a->r1, memReadWord(ctx, (void*) addr)); break;
+        case SIZE_32BIT: writeDWord(ctx, a->r1, memReadDWord(ctx, (void*) addr)); break;
+        case SIZE_64BIT: writeQWord(ctx, a->r1, memReadQWord(ctx, (void*) addr)); break;
     }
     return true;
 }
 static bool trans_ldr_reg_update(DisasContext *ctx, arg_ldr_reg_update *a) {
-    QWord_t addr = readQWord(ctx, a->r2, REG_SRC1);
-    writeQWord(ctx, a->r2, addr + (readQWord(ctx, a->r3, REG_SRC2) << a->shift), REG_SRC1);
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, memReadWord(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, memReadDWord(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, memReadQWord(ctx, (void*) addr), REG_DEST); break;
+    QWord_t addr = readQWord(ctx, a->r2);
+    writeQWord(ctx, a->r2, addr + (readQWord(ctx, a->r3) << a->shift));
+    switch (a->size) {
+        case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr)); break;
+        case SIZE_16BIT: writeWord(ctx, a->r1, memReadWord(ctx, (void*) addr)); break;
+        case SIZE_32BIT: writeDWord(ctx, a->r1, memReadDWord(ctx, (void*) addr)); break;
+        case SIZE_64BIT: writeQWord(ctx, a->r1, memReadQWord(ctx, (void*) addr)); break;
     }
     return true;
 }
 static bool trans_ldr_imm(DisasContext *ctx, arg_ldr_imm *a) {
-    QWord_t addr = readQWord(ctx, a->r2, REG_SRC1) + a->imm;
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, memReadWord(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, memReadDWord(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, memReadQWord(ctx, (void*) addr), REG_DEST); break;
+    QWord_t addr = readQWord(ctx, a->r2) + a->imm;
+    switch (a->size) {
+        case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr)); break;
+        case SIZE_16BIT: writeWord(ctx, a->r1, memReadWord(ctx, (void*) addr)); break;
+        case SIZE_32BIT: writeDWord(ctx, a->r1, memReadDWord(ctx, (void*) addr)); break;
+        case SIZE_64BIT: writeQWord(ctx, a->r1, memReadQWord(ctx, (void*) addr)); break;
     }
     return true;
 }
 static bool trans_ldr_imm_update(DisasContext *ctx, arg_ldr_imm_update *a) {
-    QWord_t addr = readQWord(ctx, a->r2, REG_SRC1);
-    writeQWord(ctx, a->r2, addr + a->imm, REG_SRC1);
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, memReadWord(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, memReadDWord(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, memReadQWord(ctx, (void*) addr), REG_DEST); break;
+    QWord_t addr = readQWord(ctx, a->r2);
+    writeQWord(ctx, a->r2, addr + a->imm);
+    switch (a->size) {
+        case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr)); break;
+        case SIZE_16BIT: writeWord(ctx, a->r1, memReadWord(ctx, (void*) addr)); break;
+        case SIZE_32BIT: writeDWord(ctx, a->r1, memReadDWord(ctx, (void*) addr)); break;
+        case SIZE_64BIT: writeQWord(ctx, a->r1, memReadQWord(ctx, (void*) addr)); break;
     }
     return true;
 }
 static bool trans_str_reg(DisasContext *ctx, arg_str_reg *a) {
-    QWord_t addr = readQWord(ctx, a->r2, REG_SRC1) + (readQWord(ctx, a->r3, REG_SRC2) << a->shift);
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1, REG_DEST)); break;
-        case SIZE_16BIT: memWriteWord(ctx, (void*) addr, readWord(ctx, a->r1, REG_DEST)); break;
-        case SIZE_32BIT: memWriteDWord(ctx, (void*) addr, readDWord(ctx, a->r1, REG_DEST)); break;
-        case SIZE_64BIT: memWriteQWord(ctx, (void*) addr, readQWord(ctx, a->r1, REG_DEST)); break;
+    QWord_t addr = readQWord(ctx, a->r2) + (readQWord(ctx, a->r3) << a->shift);
+    switch (a->size) {
+        case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1)); break;
+        case SIZE_16BIT: memWriteWord(ctx, (void*) addr, readWord(ctx, a->r1)); break;
+        case SIZE_32BIT: memWriteDWord(ctx, (void*) addr, readDWord(ctx, a->r1)); break;
+        case SIZE_64BIT: memWriteQWord(ctx, (void*) addr, readQWord(ctx, a->r1)); break;
     }
     return true;
 }
 static bool trans_str_reg_update(DisasContext *ctx, arg_str_reg_update *a) {
-    QWord_t addr = readQWord(ctx, a->r2, REG_SRC1);
-    writeQWord(ctx, a->r2, addr += (readQWord(ctx, a->r3, REG_SRC2) << a->shift), REG_SRC1);
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1, REG_DEST)); break;
-        case SIZE_16BIT: memWriteWord(ctx, (void*) addr, readWord(ctx, a->r1, REG_DEST)); break;
-        case SIZE_32BIT: memWriteDWord(ctx, (void*) addr, readDWord(ctx, a->r1, REG_DEST)); break;
-        case SIZE_64BIT: memWriteQWord(ctx, (void*) addr, readQWord(ctx, a->r1, REG_DEST)); break;
+    QWord_t addr = readQWord(ctx, a->r2);
+    writeQWord(ctx, a->r2, addr += (readQWord(ctx, a->r3) << a->shift));
+    switch (a->size) {
+        case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1)); break;
+        case SIZE_16BIT: memWriteWord(ctx, (void*) addr, readWord(ctx, a->r1)); break;
+        case SIZE_32BIT: memWriteDWord(ctx, (void*) addr, readDWord(ctx, a->r1)); break;
+        case SIZE_64BIT: memWriteQWord(ctx, (void*) addr, readQWord(ctx, a->r1)); break;
     }
     return true;
 }
 static bool trans_str_imm(DisasContext *ctx, arg_str_imm *a) {
-    QWord_t addr = readQWord(ctx, a->r2, REG_SRC1) + a->imm;
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1, REG_DEST)); break;
-        case SIZE_16BIT: memWriteWord(ctx, (void*) addr, readWord(ctx, a->r1, REG_DEST)); break;
-        case SIZE_32BIT: memWriteDWord(ctx, (void*) addr, readDWord(ctx, a->r1, REG_DEST)); break;
-        case SIZE_64BIT: memWriteQWord(ctx, (void*) addr, readQWord(ctx, a->r1, REG_DEST)); break;
+    QWord_t addr = readQWord(ctx, a->r2) + a->imm;
+    switch (a->size) {
+        case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1)); break;
+        case SIZE_16BIT: memWriteWord(ctx, (void*) addr, readWord(ctx, a->r1)); break;
+        case SIZE_32BIT: memWriteDWord(ctx, (void*) addr, readDWord(ctx, a->r1)); break;
+        case SIZE_64BIT: memWriteQWord(ctx, (void*) addr, readQWord(ctx, a->r1)); break;
     }
     return true;
 }
 static bool trans_str_imm_update(DisasContext *ctx, arg_str_imm_update *a) {
-    QWord_t addr = readQWord(ctx, a->r2, REG_SRC1);
-    writeQWord(ctx, a->r2, addr += a->imm, REG_SRC1);
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1, REG_DEST)); break;
-        case SIZE_16BIT: memWriteWord(ctx, (void*) addr, readWord(ctx, a->r1, REG_DEST)); break;
-        case SIZE_32BIT: memWriteDWord(ctx, (void*) addr, readDWord(ctx, a->r1, REG_DEST)); break;
-        case SIZE_64BIT: memWriteQWord(ctx, (void*) addr, readQWord(ctx, a->r1, REG_DEST)); break;
+    QWord_t addr = readQWord(ctx, a->r2);
+    writeQWord(ctx, a->r2, addr += a->imm);
+    switch (a->size) {
+        case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1)); break;
+        case SIZE_16BIT: memWriteWord(ctx, (void*) addr, readWord(ctx, a->r1)); break;
+        case SIZE_32BIT: memWriteDWord(ctx, (void*) addr, readDWord(ctx, a->r1)); break;
+        case SIZE_64BIT: memWriteQWord(ctx, (void*) addr, readQWord(ctx, a->r1)); break;
     }
     return true;
 }
 static bool trans_ldr_pc_rel(DisasContext *ctx, arg_ldr_pc_rel *a) {
     QWord_t addr = PC_REL(a->rel);
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, memReadWord(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, memReadDWord(ctx, (void*) addr), REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, memReadQWord(ctx, (void*) addr), REG_DEST); break;
+    switch (a->size) {
+        case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr)); break;
+        case SIZE_16BIT: writeWord(ctx, a->r1, memReadWord(ctx, (void*) addr)); break;
+        case SIZE_32BIT: writeDWord(ctx, a->r1, memReadDWord(ctx, (void*) addr)); break;
+        case SIZE_64BIT: writeQWord(ctx, a->r1, memReadQWord(ctx, (void*) addr)); break;
     }
     return true;
 }
 static bool trans_str_pc_rel(DisasContext *ctx, arg_str_pc_rel *a) {
     QWord_t addr = PC_REL(a->rel);
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1, REG_DEST)); break;
-        case SIZE_16BIT: memWriteWord(ctx, (void*) addr, readWord(ctx, a->r1, REG_DEST)); break;
-        case SIZE_32BIT: memWriteDWord(ctx, (void*) addr, readDWord(ctx, a->r1, REG_DEST)); break;
-        case SIZE_64BIT: memWriteQWord(ctx, (void*) addr, readQWord(ctx, a->r1, REG_DEST)); break;
+    switch (a->size) {
+        case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1)); break;
+        case SIZE_16BIT: memWriteWord(ctx, (void*) addr, readWord(ctx, a->r1)); break;
+        case SIZE_32BIT: memWriteDWord(ctx, (void*) addr, readDWord(ctx, a->r1)); break;
+        case SIZE_64BIT: memWriteQWord(ctx, (void*) addr, readQWord(ctx, a->r1)); break;
     }
     return true;
 }
 static bool trans_ubxt(DisasContext *ctx, arg_ubxt *a) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, extract64(readByte(ctx, a->r2, REG_SRC1), a->start, a->count + 1), REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, extract64(readWord(ctx, a->r2, REG_SRC1), a->start, a->count + 1), REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, extract64(readDWord(ctx, a->r2, REG_SRC1), a->start, a->count + 1), REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, extract64(readQWord(ctx, a->r2, REG_SRC1), a->start, a->count + 1), REG_DEST); break;
-    }
+    writeQWord(ctx, a->r1, extract64(readQWord(ctx, a->r2), a->start, a->count + 1));
     return true;
 }
 static bool trans_sbxt(DisasContext *ctx, arg_sbxt *a) {
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeSByte(ctx, a->r1, sextract64(readByte(ctx, a->r2, REG_SRC1), a->start, a->count + 1), REG_DEST); break;
-        case SIZE_16BIT: writeSWord(ctx, a->r1, sextract64(readWord(ctx, a->r2, REG_SRC1), a->start, a->count + 1), REG_DEST); break;
-        case SIZE_32BIT: writeSDWord(ctx, a->r1, sextract64(readDWord(ctx, a->r2, REG_SRC1), a->start, a->count + 1), REG_DEST); break;
-        case SIZE_64BIT: writeSQWord(ctx, a->r1, sextract64(readQWord(ctx, a->r2, REG_SRC1), a->start, a->count + 1), REG_DEST); break;
-    }
+    writeSQWord(ctx, a->r1, sextract64(readQWord(ctx, a->r2), a->start, a->count + 1));
     return true;
 }
 static bool trans_ubdp(DisasContext *ctx, arg_ubdp *a) {
-    QWord_t val;
-    QWord_t ins;
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: val = readByte(ctx, a->r1, REG_DEST); ins = readByte(ctx, a->r2, REG_SRC1); break;
-        case SIZE_16BIT: val = readWord(ctx, a->r1, REG_DEST); ins = readWord(ctx, a->r2, REG_SRC1); break;
-        case SIZE_32BIT: val = readDWord(ctx, a->r1, REG_DEST); ins = readDWord(ctx, a->r2, REG_SRC1); break;
-        case SIZE_64BIT: val = readQWord(ctx, a->r1, REG_DEST); ins = readQWord(ctx, a->r2, REG_SRC1); break;
-    }
+    QWord_t val = readQWord(ctx, a->r1);
+    QWord_t ins = readQWord(ctx, a->r2);
     val = deposit64(val, a->start, a->count + 1, ins);
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, val, REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, val, REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, val, REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, val, REG_DEST); break;
-    }
+    writeQWord(ctx, a->r1, val);
     return true;
 }
 static bool trans_sbdp(DisasContext *ctx, arg_sbdp *a) {
-    QWord_t val;
-    QWord_t ins;
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: val = readByte(ctx, a->r1, REG_DEST); ins = readByte(ctx, a->r2, REG_SRC1); break;
-        case SIZE_16BIT: val = readWord(ctx, a->r1, REG_DEST); ins = readWord(ctx, a->r2, REG_SRC1); break;
-        case SIZE_32BIT: val = readDWord(ctx, a->r1, REG_DEST); ins = readDWord(ctx, a->r2, REG_SRC1); break;
-        case SIZE_64BIT: val = readQWord(ctx, a->r1, REG_DEST); ins = readQWord(ctx, a->r2, REG_SRC1); break;
-    }
+    QWord_t val = readQWord(ctx, a->r1);
+    QWord_t ins = readQWord(ctx, a->r2);
     val = deposit64(val, a->start, a->count + 1, ins);
-    switch (ctx->cr[CR_FLAGS].asFlags.size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, val, REG_DEST); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, val, REG_DEST); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, val, REG_DEST); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, val, REG_DEST); break;
-    }
+    writeQWord(ctx, a->r1, val);
     return true;
 }
 
@@ -1169,7 +1078,7 @@ VABSFUNC(Float64_t, f64)
     ctx->v[a->v1].as ## _type[0] = counter; \
 }
 #define vop_movall_(_type, _sc) { \
-    _sc ## _t val = read ## _sc(ctx, a->r2, REG_SRC1); \
+    _sc ## _t val = read ## _sc(ctx, a->r2); \
     for (size_t i = 0; i < sizeof(ctx->v[0].as ## _type) / sizeof(ctx->v[0].as ## _type[0]); i++) { \
         ctx->v[a->v1].as ## _type[i] = val; \
     } \
@@ -1255,7 +1164,7 @@ VABSFUNC(Float64_t, f64)
                 break; \
             } \
         } \
-        writeQWord(ctx, a->r1, set_flags(ctx, count), REG_DEST); \
+        writeQWord(ctx, a->r1, set_flags(ctx, count)); \
     } while (0)
 
 #define vpu_conv2(_from, _to) vpu_conv_(_from, _to)
@@ -1380,27 +1289,27 @@ static bool trans_vmadd(DisasContext *ctx, arg_vmadd *a) {
 }
 static bool trans_vmov_reg(DisasContext *ctx, arg_vmov_reg *a) {
     switch (a->type) {
-        case 0: ctx->v[a->v1].asQWord[0] = readQWord(ctx, a->r2, REG_SRC1); break;
-        case 1: ctx->v[a->v1].asBytes[a->slot] = readByte(ctx, a->r2, REG_SRC1); break;
-        case 2: ctx->v[a->v1].asWords[a->slot] = readWord(ctx, a->r2, REG_SRC1); break;
-        case 3: ctx->v[a->v1].asDWords[a->slot] = readDWord(ctx, a->r2, REG_SRC1); break;
-        case 4: ctx->v[a->v1].asQWords[a->slot] = readQWord(ctx, a->r2, REG_SRC1); break;
-        case 5: ctx->v[a->v1].asLWords[a->slot] = readQWord(ctx, a->r2, REG_SRC1); break;
-        case 6: ctx->v[a->v1].asFloat32s[a->slot] = readFloat32(ctx, a->r2, REG_SRC1); break;
-        case 7: ctx->v[a->v1].asFloat64s[a->slot] = readFloat64(ctx, a->r2, REG_SRC1); break;
+        case 0: ctx->v[a->v1].asQWord[0] = readQWord(ctx, a->r2); break;
+        case 1: ctx->v[a->v1].asBytes[a->slot] = readByte(ctx, a->r2); break;
+        case 2: ctx->v[a->v1].asWords[a->slot] = readWord(ctx, a->r2); break;
+        case 3: ctx->v[a->v1].asDWords[a->slot] = readDWord(ctx, a->r2); break;
+        case 4: ctx->v[a->v1].asQWords[a->slot] = readQWord(ctx, a->r2); break;
+        case 5: ctx->v[a->v1].asLWords[a->slot] = readQWord(ctx, a->r2); break;
+        case 6: ctx->v[a->v1].asFloat32s[a->slot] = readFloat32(ctx, a->r2); break;
+        case 7: ctx->v[a->v1].asFloat64s[a->slot] = readFloat64(ctx, a->r2); break;
     }
     return true;
 }
 static bool trans_vmov_reg2(DisasContext *ctx, arg_vmov_reg2 *a) {
     switch (a->type) {
-        case 0: writeQWord(ctx, a->r2, ctx->v[a->v1].asQWord[0], REG_DEST); break;
-        case 1: writeByte(ctx, a->r2, ctx->v[a->v1].asBytes[a->slot], REG_DEST); break;
-        case 2: writeWord(ctx, a->r2, ctx->v[a->v1].asWords[a->slot], REG_DEST); break;
-        case 3: writeDWord(ctx, a->r2, ctx->v[a->v1].asDWords[a->slot], REG_DEST); break;
-        case 4: writeQWord(ctx, a->r2, ctx->v[a->v1].asQWords[a->slot], REG_DEST); break;
-        case 5: writeQWord(ctx, a->r2, ctx->v[a->v1].asLWords[a->slot], REG_DEST); break;
-        case 6: writeFloat32(ctx, a->r2, ctx->v[a->v1].asFloat32s[a->slot], REG_DEST); break;
-        case 7: writeFloat64(ctx, a->r2, ctx->v[a->v1].asFloat64s[a->slot], REG_DEST); break;
+        case 0: writeQWord(ctx, a->r2, ctx->v[a->v1].asQWord[0]); break;
+        case 1: writeByte(ctx, a->r2, ctx->v[a->v1].asBytes[a->slot]); break;
+        case 2: writeWord(ctx, a->r2, ctx->v[a->v1].asWords[a->slot]); break;
+        case 3: writeDWord(ctx, a->r2, ctx->v[a->v1].asDWords[a->slot]); break;
+        case 4: writeQWord(ctx, a->r2, ctx->v[a->v1].asQWords[a->slot]); break;
+        case 5: writeQWord(ctx, a->r2, ctx->v[a->v1].asLWords[a->slot]); break;
+        case 6: writeFloat32(ctx, a->r2, ctx->v[a->v1].asFloat32s[a->slot]); break;
+        case 7: writeFloat64(ctx, a->r2, ctx->v[a->v1].asFloat64s[a->slot]); break;
     }
     return true;
 }
@@ -1435,47 +1344,63 @@ static bool trans_vlen(DisasContext *ctx, arg_vlen *a) {
     return true;
 }
 static bool trans_vldr_imm(DisasContext *ctx, arg_vldr_imm *a) {
-    QWord_t addr = readQWord(ctx, a->r1, REG_SRC1) + a->imm;
-    ctx->v[a->v1] = *(hive_vector_register_t*) addr;
+    QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + a->imm);
+    for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
+        ctx->v[a->v1].asQWords[i] = memReadQWord(ctx, &addr[i]);
+    }
     return true;
 }
 static bool trans_vldr_imm_update(DisasContext *ctx, arg_vldr_imm_update *a) {
-    QWord_t addr = readQWord(ctx, a->r1, REG_SRC1);
-    writeQWord(ctx, a->r1, addr + a->imm, REG_SRC1);
-    ctx->v[a->v1] = *(hive_vector_register_t*) addr;
+    QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1));
+    writeQWord(ctx, a->r1, (QWord_t) (addr + a->imm));
+    for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
+        ctx->v[a->v1].asQWords[i] = memReadQWord(ctx, &addr[i]);
+    }
     return true;
 }
 static bool trans_vstr_imm(DisasContext *ctx, arg_vstr_imm *a) {
-    QWord_t addr = readQWord(ctx, a->r1, REG_SRC1) + a->imm;
-    *(hive_vector_register_t*) addr = ctx->v[a->v1];
+    QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + a->imm);
+    for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
+        memWriteQWord(ctx, &addr[i], ctx->v[a->v1].asQWords[i]);
+    }
     return true;
 }
 static bool trans_vstr_imm_update(DisasContext *ctx, arg_vstr_imm_update *a) {
-    QWord_t addr = readQWord(ctx, a->r1, REG_SRC1) + a->imm;
-    writeQWord(ctx, a->r1, addr, REG_SRC1);
-    *(hive_vector_register_t*) addr = ctx->v[a->v1];
+    QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + a->imm);
+    writeQWord(ctx, a->r1, (QWord_t) (addr));
+    for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
+        memWriteQWord(ctx, &addr[i], ctx->v[a->v1].asQWords[i]);
+    }
     return true;
 }
 static bool trans_vldr_reg(DisasContext *ctx, arg_vldr_reg *a) {
-    QWord_t addr = readQWord(ctx, a->r1, REG_SRC1) + readQWord(ctx, a->r2, REG_SRC2);
-    ctx->v[a->v1] = *(hive_vector_register_t*) addr;
+    QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + readQWord(ctx, a->r2));
+    for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
+        ctx->v[a->v1].asQWords[i] = memReadQWord(ctx, &addr[i]);
+    }
     return true;
 }
 static bool trans_vldr_reg_update(DisasContext *ctx, arg_vldr_reg_update *a) {
-    QWord_t addr = readQWord(ctx, a->r1, REG_SRC1);
-    writeQWord(ctx, a->r1, addr + readQWord(ctx, a->r2, REG_SRC2), REG_SRC1);
-    ctx->v[a->v1] = *(hive_vector_register_t*) addr;
+    QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1));
+    writeQWord(ctx, a->r1, (QWord_t) (addr + readQWord(ctx, a->r2)));
+    for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
+        ctx->v[a->v1].asQWords[i] = memReadQWord(ctx, &addr[i]);
+    }
     return true;
 }
 static bool trans_vstr_reg(DisasContext *ctx, arg_vstr_reg *a) {
-    QWord_t addr = readQWord(ctx, a->r1, REG_SRC1) + readQWord(ctx, a->r2, REG_SRC2);
-    *(hive_vector_register_t*) addr = ctx->v[a->v1];
+    QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + readQWord(ctx, a->r2));
+    for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
+        memWriteQWord(ctx, &addr[i], ctx->v[a->v1].asQWords[i]);
+    }
     return true;
 }
 static bool trans_vstr_reg_update(DisasContext *ctx, arg_vstr_reg_update *a) {
-    QWord_t addr = readQWord(ctx, a->r1, REG_SRC1) + readQWord(ctx, a->r2, REG_SRC2);
-    writeQWord(ctx, a->r1, addr, REG_SRC1);
-    *(hive_vector_register_t*) addr = ctx->v[a->v1];
+    QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + readQWord(ctx, a->r2));
+    writeQWord(ctx, a->r1, (QWord_t) (addr));
+    for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
+        memWriteQWord(ctx, &addr[i], ctx->v[a->v1].asQWords[i]);
+    }
     return true;
 }
 static bool trans_vand(DisasContext *ctx, arg_vand *a) {
@@ -1652,10 +1577,8 @@ void coredump(struct cpu_state* ctx);
 char* dis(hive_instruction_t** ins, uint64_t addr);
 
 void exec_instr(struct cpu_state* ctx, uint32_t ins) {
-    if (
-        check_condition(*(hive_instruction_t*) &ins, ctx->cr[CR_FLAGS].asFlags) &&
-        !decode(ctx, ins)
-    ) {
+    if (!check_condition(*(hive_instruction_t*) &ins, ctx->cr[CR_FLAGS].asFlags)) return;
+    if (!decode(ctx, ins)) {
         interrupt(SIGILL);
     }
 }
@@ -1709,6 +1632,7 @@ int runstate(struct cpu_state* ctx) {
             [SIGBUS] = INT_PF,
             [SIGSEGV] = INT_GP,
             [SIGTRAP] = INT_IP,
+            [SIGABRT] = INT_BRK,
         };
         handling_interrupt = true;
         ctx->r[REG_SP].asQWord -= 16;
@@ -1735,7 +1659,6 @@ void exec(void* start) {
     cpu_state.cr[CR_CPUID].asQWord = 0;
     cpu_state.cr[CR_CORES].asQWord = 1;
     cpu_state.cr[CR_THREADS].asQWord = 1;
-    cpu_state.cr[CR_FLAGS].asFlags.size = SIZE_64BIT;
     
     signal(SIGABRT, interrupt_handler);
     signal(SIGILL, interrupt_handler);

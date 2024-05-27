@@ -21,11 +21,8 @@ char* condition_to_string(hive_instruction_t ins) {
     return condition_to_string0(ins.generic.condition);
 }
 
-static uint8_t register_override = 0;
-static uint8_t size = SIZE_64BIT;
-
-char* register_to_string_ptr(uint8_t reg, uint8_t counter) {
-    uint8_t high = ((register_override & (1 << counter)) != 0);
+char* register_to_string_ptr(uint8_t reg, uint8_t size) {
+    uint8_t high = size != SIZE_64BIT && (reg & 0x10);
     if (reg == REG_LR) return "lr";
     if (reg == REG_SP) return "sp";
     if (reg == REG_PC) return "pc";
@@ -36,8 +33,11 @@ char* register_to_string_ptr(uint8_t reg, uint8_t counter) {
     return s;
 }
 
-char* register_to_string(uint8_t reg, uint8_t counter) {
-    uint8_t high = ((register_override & (1 << counter)) != 0);
+char* register_to_string(uint8_t reg, uint8_t size) {
+    uint8_t high = size != SIZE_64BIT && (reg & 0x10);
+    if (size != SIZE_64BIT) {
+        reg &= 0xF;
+    }
     if (reg == REG_LR) return "lr";
     if (reg == REG_SP) return "sp";
     if (reg == REG_PC) return "pc";
@@ -54,418 +54,1330 @@ char* register_to_string(uint8_t reg, uint8_t counter) {
     return s;
 }
 
-char* dis_branch(hive_instruction_t ins, uint64_t addr) {
-    char* s = strformat("b%s%s", ins.type_branch.link ? "l" : "", ins.type_branch.is_reg ? "r" : "");
-    if (ins.type_branch.is_reg) {
-        s = strformat("%s%s %s", s, condition_to_string(ins), register_to_string(ins.type_branch_register.r1, REG_DEST));
-    } else {
-        s = strformat("%s%s 0x%llx", s, condition_to_string(ins), addr + ins.type_branch.offset * sizeof(hive_instruction_t));
-    }
-    return s;
+typedef struct {
+    uint64_t addr;
+    char* instr;
+} DisasContext;
+
+static inline uint32_t deposit32(uint32_t value, int start, int length, uint32_t fieldval) {
+    uint32_t mask;
+    assert(start >= 0 && length > 0 && length <= 32 - start);
+    mask = (~0U >> (32 - length)) << start;
+    return (value & ~mask) | ((fieldval << start) & mask);
 }
 
-char* salu_ops_nw[16] = {
-    [OP_DATA_ALU_add] = "add",
-    [OP_DATA_ALU_sub] = "cmp",
-    [OP_DATA_ALU_mul] = "mul",
-    [OP_DATA_ALU_div] = "divs",
-    [OP_DATA_ALU_mod] = "mods",
-    [OP_DATA_ALU_and] = "tst",
-    [OP_DATA_ALU_or] = "or",
-    [OP_DATA_ALU_xor] = "xor",
-    [OP_DATA_ALU_shl] = "shl",
-    [OP_DATA_ALU_shr] = "shr",
-    [OP_DATA_ALU_rol] = "rol",
-    [OP_DATA_ALU_ror] = "ror",
-    [OP_DATA_ALU_neg] = "neg",
-    [OP_DATA_ALU_not] = "not",
-    [OP_DATA_ALU_sext] = "ext",
-    [OP_DATA_ALU_swe] = "swe",
-};
-char* salu_ops[16] = {
-    [OP_DATA_ALU_add] = "add",
-    [OP_DATA_ALU_sub] = "sub",
-    [OP_DATA_ALU_mul] = "mul",
-    [OP_DATA_ALU_div] = "divs",
-    [OP_DATA_ALU_mod] = "mods",
-    [OP_DATA_ALU_and] = "and",
-    [OP_DATA_ALU_or] = "or",
-    [OP_DATA_ALU_xor] = "xor",
-    [OP_DATA_ALU_shl] = "shl",
-    [OP_DATA_ALU_shr] = "shr",
-    [OP_DATA_ALU_rol] = "rol",
-    [OP_DATA_ALU_ror] = "ror",
-    [OP_DATA_ALU_neg] = "neg",
-    [OP_DATA_ALU_not] = "not",
-    [OP_DATA_ALU_sext] = "ext",
-    [OP_DATA_ALU_swe] = "swe",
-};
-char* alu_ops_nw[16] = {
-    [OP_DATA_ALU_add] = "add",
-    [OP_DATA_ALU_sub] = "cmp",
-    [OP_DATA_ALU_mul] = "mul",
-    [OP_DATA_ALU_div] = "div",
-    [OP_DATA_ALU_mod] = "mod",
-    [OP_DATA_ALU_and] = "tst",
-    [OP_DATA_ALU_or] = "or",
-    [OP_DATA_ALU_xor] = "xor",
-    [OP_DATA_ALU_shl] = "shl",
-    [OP_DATA_ALU_shr] = "shr",
-    [OP_DATA_ALU_rol] = "rol",
-    [OP_DATA_ALU_ror] = "ror",
-    [OP_DATA_ALU_neg] = "neg",
-    [OP_DATA_ALU_not] = "not",
-    [OP_DATA_ALU_sext] = "ext",
-    [OP_DATA_ALU_swe] = "swe",
-};
-char* alu_ops[16] = {
-    [OP_DATA_ALU_add] = "add",
-    [OP_DATA_ALU_sub] = "sub",
-    [OP_DATA_ALU_mul] = "mul",
-    [OP_DATA_ALU_div] = "div",
-    [OP_DATA_ALU_mod] = "mod",
-    [OP_DATA_ALU_and] = "and",
-    [OP_DATA_ALU_or] = "or",
-    [OP_DATA_ALU_xor] = "xor",
-    [OP_DATA_ALU_shl] = "shl",
-    [OP_DATA_ALU_shr] = "shr",
-    [OP_DATA_ALU_rol] = "rol",
-    [OP_DATA_ALU_ror] = "ror",
-    [OP_DATA_ALU_neg] = "neg",
-    [OP_DATA_ALU_not] = "not",
-    [OP_DATA_ALU_sext] = "ext",
-    [OP_DATA_ALU_swe] = "swe",
-};
-
-char* dis_data_alu(hive_instruction_t ins, uint64_t addr) {
-    char* s = NULL;
-    if (ins.type_data_alui.op == OP_DATA_ALU_sext) {
-        char sizes[] = {
-            [SIZE_8BIT] = 'b',
-            [SIZE_16BIT] = 'w',
-            [SIZE_32BIT] = 'd',
-            [SIZE_64BIT] = 'q',
-        };
-        return strformat("ext%c%c%s %s, %s", sizes[ins.type_data_sext.from], sizes[ins.type_data_sext.to], condition_to_string(ins), register_to_string(ins.type_data_sext.r1, REG_DEST), register_to_string(ins.type_data_sext.r2, REG_SRC1));
-    }
-    if (ins.type_data.data_op == SUBOP_DATA_ALU_I && ins.type_data_alui.op == OP_DATA_ALU_shl && ins.type_data_alui.imm == 0) {
-        if (ins.type_data_alui.r1 == REG_PC && ins.type_data_alui.r2 == REG_LR) {
-            return strformat("ret%s", condition_to_string(ins));
-        }
-        return strformat("mov%s %s, %s", condition_to_string(ins), register_to_string(ins.type_data_alui.r1, REG_DEST), register_to_string(ins.type_data_alui.r2, REG_SRC1));
-    }
-    if (ins.type_data_alui.salu) {
-        if (ins.type_data_alui.no_writeback) {
-            s = strformat("%s%s %s,", salu_ops_nw[ins.type_data_alui.op], condition_to_string(ins), register_to_string(ins.type_data_alui.r2, REG_SRC1));
-        } else {
-            s = strformat("%s%s %s, %s,", salu_ops[ins.type_data_alui.op], condition_to_string(ins), register_to_string(ins.type_data_alui.r1, REG_DEST), register_to_string(ins.type_data_alui.r2, REG_SRC1));
-        }
-    } else {
-        if (ins.type_data_alui.no_writeback) {
-            s = strformat("%s%s %s,", alu_ops_nw[ins.type_data_alui.op], condition_to_string(ins), register_to_string(ins.type_data_alui.r2, REG_SRC1));
-        } else {
-            s = strformat("%s%s %s, %s,", alu_ops[ins.type_data_alui.op], condition_to_string(ins), register_to_string(ins.type_data_alui.r1, REG_DEST), register_to_string(ins.type_data_alui.r2, REG_SRC1));
-        }
-    }
-    if (ins.type_data.data_op == SUBOP_DATA_ALU_I) {
-        s = strformat("%s %d", s, ins.type_data_alui.imm);
-    } else {
-        s = strformat("%s %s", s, register_to_string(ins.type_data_alur.r3, REG_SRC2));
-    }
-    return s;
+static inline uint64_t deposit64(uint64_t value, int start, int length, uint64_t fieldval) {
+    uint64_t mask;
+    assert(start >= 0 && length > 0 && length <= 64 - start);
+    mask = (~0ULL >> (64 - length)) << start;
+    return (value & ~mask) | ((fieldval << start) & mask);
 }
 
-char* fpu_ops[] = {
-    [OP_DATA_FLOAT_add] = "add",
-    [OP_DATA_FLOAT_sub] = "sub",
-    [OP_DATA_FLOAT_mul] = "mul",
-    [OP_DATA_FLOAT_div] = "div",
-    [OP_DATA_FLOAT_mod] = "mod",
-    [OP_DATA_FLOAT_f2i] = "f2i",
-    [OP_DATA_FLOAT_sin] = "sin",
-    [OP_DATA_FLOAT_sqrt] = "sqrt",
-};
-char* fpu_ops_i[] = {
-    [OP_DATA_FLOAT_add] = "addi",
-    [OP_DATA_FLOAT_sub] = "subi",
-    [OP_DATA_FLOAT_mul] = "muli",
-    [OP_DATA_FLOAT_div] = "divi",
-    [OP_DATA_FLOAT_mod] = "modi",
-    [OP_DATA_FLOAT_f2i] = "i2f",
-    [OP_DATA_FLOAT_sin] = "sin",
-    [OP_DATA_FLOAT_sqrt] = "sqrt",
-};
-
-char* dis_data_fpu(hive_instruction_t ins, uint64_t addr) {
-    char* s = NULL;
-    char** ops = ins.type_data_fpu.use_int_arg2 ? fpu_ops_i : fpu_ops;
-    switch (ins.type_data_fpu.op) {
-        case OP_DATA_FLOAT_add:  case_fallthrough;
-        case OP_DATA_FLOAT_sub:  case_fallthrough;
-        case OP_DATA_FLOAT_mul:  case_fallthrough;
-        case OP_DATA_FLOAT_div:  case_fallthrough;
-        case OP_DATA_FLOAT_mod:  s = strformat("%s%s %s, %s, %s", ops[ins.type_data_fpu.op], condition_to_string(ins), register_to_string(ins.type_data_fpu.r1, REG_DEST), register_to_string(ins.type_data_fpu.r2, REG_SRC1), register_to_string(ins.type_data_fpu.r3, REG_SRC2)); break;
-        case OP_DATA_FLOAT_f2i:  case_fallthrough;
-        case OP_DATA_FLOAT_sin:  case_fallthrough;
-        case OP_DATA_FLOAT_sqrt: s = strformat("%s%s %s, %s", ops[ins.type_data_fpu.op], condition_to_string(ins), register_to_string(ins.type_data_fpu.r1, REG_DEST), register_to_string(ins.type_data_fpu.r2, REG_SRC1)); break;
-    }
-    return s;
+static inline uint64_t extract64(uint64_t value, int start, int length) {
+    assert(start >= 0 && length > 0 && length <= 64 - start);
+    return (value >> start) & (~0ULL >> (64 - length));
 }
 
-char* dis_data_vpu(hive_instruction_t ins, uint64_t addr) {
-    uint8_t modes[] = {
-        [0] = 'o',
-        [1] = 'b',
-        [2] = 'w',
-        [3] = 'd',
-        [4] = 'q',
-        [5] = 'l',
-        [6] = 's',
-        [7] = 'f',
+static inline int64_t sextract64(uint64_t value, int start, int length) {
+    assert(start >= 0 && length > 0 && length <= 64 - start);
+    return ((int64_t)(value << (64 - length - start))) >> (64 - length);
+}
+
+static inline uint32_t extract32(uint32_t value, int start, int length) {
+    assert(start >= 0 && length > 0 && length <= 32 - start);
+    return (value >> start) & (~0U >> (32 - length));
+}
+
+static inline int32_t sextract32(uint32_t value, int start, int length) {
+    assert(start >= 0 && length > 0 && length <= 32 - start);
+    return ((int32_t)(value << (32 - length - start))) >> (32 - length);
+}
+
+#include "dis.h"
+
+bool dis_branch(DisasContext *ctx, arg_branch *a) {
+    ctx->instr = strformat("b 0x%016llx", ctx->addr + a->rel);
+    return true;
+}
+bool dis_branch_link(DisasContext *ctx, arg_branch_link *a) {
+    ctx->instr = strformat("bl 0x%016llx", ctx->addr + a->rel);
+    return true;
+}
+bool dis_branch_reg(DisasContext *ctx, arg_branch_reg *a) {
+    ctx->instr = strformat("br %s", register_to_string(a->r1, SIZE_64BIT));
+    return true;
+}
+bool dis_branch_reg_link(DisasContext *ctx, arg_branch_reg_link *a) {
+    ctx->instr = strformat("blr %s", register_to_string(a->r1, SIZE_64BIT));
+    return true;
+}
+bool dis_add_reg(DisasContext *ctx, arg_add_reg *a) {
+    ctx->instr = strformat(
+        "add %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_sub_reg(DisasContext *ctx, arg_sub_reg *a) {
+    ctx->instr = strformat(
+        "sub %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_cmp_reg(DisasContext *ctx, arg_cmp_reg *a) {
+    ctx->instr = strformat(
+        "cmp %s, %s",
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_mul_reg(DisasContext *ctx, arg_mul_reg *a) {
+    ctx->instr = strformat(
+        "mul %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_div_reg(DisasContext *ctx, arg_div_reg *a) {
+    ctx->instr = strformat(
+        "div %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_mod_reg(DisasContext *ctx, arg_mod_reg *a) {
+    ctx->instr = strformat(
+        "mod %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_divs_reg(DisasContext *ctx, arg_divs_reg *a) {
+    ctx->instr = strformat(
+        "divs %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_mods_reg(DisasContext *ctx, arg_mods_reg *a) {
+    ctx->instr = strformat(
+        "mods %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_and_reg(DisasContext *ctx, arg_and_reg *a) {
+    ctx->instr = strformat(
+        "and %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_tst_reg(DisasContext *ctx, arg_tst_reg *a) {
+    ctx->instr = strformat(
+        "tst %s, %s",
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_or_reg(DisasContext *ctx, arg_or_reg *a) {
+    ctx->instr = strformat(
+        "or %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_xor_reg(DisasContext *ctx, arg_xor_reg *a) {
+    ctx->instr = strformat(
+        "xor %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_shl_reg(DisasContext *ctx, arg_shl_reg *a) {
+    ctx->instr = strformat(
+        "shl %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_shr_reg(DisasContext *ctx, arg_shr_reg *a) {
+    ctx->instr = strformat(
+        "shr %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_sar_reg(DisasContext *ctx, arg_sar_reg *a) {
+    ctx->instr = strformat(
+        "sar %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_rol_reg(DisasContext *ctx, arg_rol_reg *a) {
+    ctx->instr = strformat(
+        "rol %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_ror_reg(DisasContext *ctx, arg_ror_reg *a) {
+    ctx->instr = strformat(
+        "ror %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size)
+    );
+    return true;
+}
+bool dis_add_imm(DisasContext *ctx, arg_add_imm *a) {
+    ctx->instr = strformat(
+        "add %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_sub_imm(DisasContext *ctx, arg_sub_imm *a) {
+    ctx->instr = strformat(
+        "sub %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_cmp_imm(DisasContext *ctx, arg_cmp_imm *a) {
+    ctx->instr = strformat(
+        "cmp %s, %d",
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_mul_imm(DisasContext *ctx, arg_mul_imm *a) {
+    ctx->instr = strformat(
+        "mul %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_div_imm(DisasContext *ctx, arg_div_imm *a) {
+    ctx->instr = strformat(
+        "div %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_mod_imm(DisasContext *ctx, arg_mod_imm *a) {
+    ctx->instr = strformat(
+        "mod %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_divs_imm(DisasContext *ctx, arg_divs_imm *a) {
+    ctx->instr = strformat(
+        "divs %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_mods_imm(DisasContext *ctx, arg_mods_imm *a) {
+    ctx->instr = strformat(
+        "mods %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_and_imm(DisasContext *ctx, arg_and_imm *a) {
+    ctx->instr = strformat(
+        "and %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_tst_imm(DisasContext *ctx, arg_tst_imm *a) {
+    ctx->instr = strformat(
+        "tst %s, %d",
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_or_imm(DisasContext *ctx, arg_or_imm *a) {
+    ctx->instr = strformat(
+        "or %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_xor_imm(DisasContext *ctx, arg_xor_imm *a) {
+    ctx->instr = strformat(
+        "xor %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_ret(DisasContext *ctx, arg_ret *a) {
+    ctx->instr = strformat("ret");
+    return true;
+}
+bool dis_mov(DisasContext *ctx, arg_mov *a) {
+    ctx->instr = strformat(
+        "mov %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size)
+    );
+    return true;
+}
+bool dis_shl_imm(DisasContext *ctx, arg_shl_imm *a) {
+    ctx->instr = strformat(
+        "shl %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_shr_imm(DisasContext *ctx, arg_shr_imm *a) {
+    ctx->instr = strformat(
+        "shr %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_sar_imm(DisasContext *ctx, arg_sar_imm *a) {
+    ctx->instr = strformat(
+        "sar %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_rol_imm(DisasContext *ctx, arg_rol_imm *a) {
+    ctx->instr = strformat(
+        "rol %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_ror_imm(DisasContext *ctx, arg_ror_imm *a) {
+    ctx->instr = strformat(
+        "ror %s, %s, %d",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        a->imm8
+    );
+    return true;
+}
+bool dis_neg(DisasContext *ctx, arg_neg *a) {
+    ctx->instr = strformat(
+        "neg %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size)
+    );
+    return true;
+}
+bool dis_not(DisasContext *ctx, arg_not *a) {
+    ctx->instr = strformat(
+        "not %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size)
+    );
+    return true;
+}
+bool dis_extend(DisasContext *ctx, arg_extend *a) {
+    char sz[] = {
+        [SIZE_8BIT] = 'b',
+        [SIZE_16BIT] = 'w',
+        [SIZE_32BIT] = 'd',
+        [SIZE_64BIT] = 'q',
     };
-    uint8_t max_slots[] = {
-        [0] = 1,
-        [1] = 32,
-        [2] = 16,
-        [3] = 8,
-        [4] = 4,
-        [5] = 2,
-        [6] = 8,
-        [7] = 4,
+    ctx->instr = strformat(
+        "ext%c%c %s, %s",
+        sz[a->size],
+        sz[a->to],
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->to)
+    );
+    return true;
+}
+bool dis_swe(DisasContext *ctx, arg_swe *a) {
+    ctx->instr = strformat(
+        "swe %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size)
+    );
+    return true;
+}
+bool dis_cswap(DisasContext *ctx, arg_cswap *a) {
+    ctx->instr = strformat(
+        "cswap %s, %s, %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size),
+        register_to_string(a->r3, a->size),
+        condition_to_string0(a->cond)
+    );
+    return true;
+}
+bool dis_xchg(DisasContext *ctx, arg_xchg *a) {
+    ctx->instr = strformat(
+        "xchg %s, %s",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, a->size)
+    );
+    return true;
+}
+bool dis_fadd(DisasContext *ctx, arg_fadd *a) {
+    ctx->instr = strformat(
+        "fadd %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_faddi(DisasContext *ctx, arg_faddi *a) {
+    ctx->instr = strformat(
+        "faddi %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fsub(DisasContext *ctx, arg_fsub *a) {
+    ctx->instr = strformat(
+        "fsub %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fsubi(DisasContext *ctx, arg_fsubi *a) {
+    ctx->instr = strformat(
+        "fsubi %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fcmp(DisasContext *ctx, arg_fcmp *a) {
+    ctx->instr = strformat(
+        "fcmp %s, %s",
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fcmpi(DisasContext *ctx, arg_fcmpi *a) {
+    ctx->instr = strformat(
+        "fcmpi %s, %s",
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fmul(DisasContext *ctx, arg_fmul *a) {
+    ctx->instr = strformat(
+        "fmul %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fmuli(DisasContext *ctx, arg_fmuli *a) {
+    ctx->instr = strformat(
+        "fmuli %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fdiv(DisasContext *ctx, arg_fdiv *a) {
+    ctx->instr = strformat(
+        "fdiv %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fdivi(DisasContext *ctx, arg_fdivi *a) {
+    ctx->instr = strformat(
+        "fdivi %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fmod(DisasContext *ctx, arg_fmod *a) {
+    ctx->instr = strformat(
+        "fmod %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fmodi(DisasContext *ctx, arg_fmodi *a) {
+    ctx->instr = strformat(
+        "fmodi %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_f2i(DisasContext *ctx, arg_f2i *a) {
+    ctx->instr = strformat(
+        "f2i %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_i2f(DisasContext *ctx, arg_i2f *a) {
+    ctx->instr = strformat(
+        "i2f %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fsin(DisasContext *ctx, arg_fsin *a) {
+    ctx->instr = strformat(
+        "fsin %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fsini(DisasContext *ctx, arg_fsini *a) {
+    ctx->instr = strformat(
+        "fsini %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fsqrt(DisasContext *ctx, arg_fsqrt *a) {
+    ctx->instr = strformat(
+        "fsqrt %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_fsqrti(DisasContext *ctx, arg_fsqrti *a) {
+    ctx->instr = strformat(
+        "fsqrti %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_sadd(DisasContext *ctx, arg_sadd *a) {
+    ctx->instr = strformat(
+        "fadd %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_saddi(DisasContext *ctx, arg_saddi *a) {
+    ctx->instr = strformat(
+        "saddi %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_ssub(DisasContext *ctx, arg_ssub *a) {
+    ctx->instr = strformat(
+        "ssub %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_ssubi(DisasContext *ctx, arg_ssubi *a) {
+    ctx->instr = strformat(
+        "ssubi %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_scmp(DisasContext *ctx, arg_scmp *a) {
+    ctx->instr = strformat(
+        "scmp %s, %s",
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_scmpi(DisasContext *ctx, arg_scmpi *a) {
+    ctx->instr = strformat(
+        "scmpi %s, %s",
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_smul(DisasContext *ctx, arg_smul *a) {
+    ctx->instr = strformat(
+        "smul %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_smuli(DisasContext *ctx, arg_smuli *a) {
+    ctx->instr = strformat(
+        "smuli %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_sdiv(DisasContext *ctx, arg_sdiv *a) {
+    ctx->instr = strformat(
+        "sdiv %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_sdivi(DisasContext *ctx, arg_sdivi *a) {
+    ctx->instr = strformat(
+        "sdivi %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_smod(DisasContext *ctx, arg_smod *a) {
+    ctx->instr = strformat(
+        "smod %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_smodi(DisasContext *ctx, arg_smodi *a) {
+    ctx->instr = strformat(
+        "smodi %s, %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_s2i(DisasContext *ctx, arg_s2i *a) {
+    ctx->instr = strformat(
+        "s2i %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_i2s(DisasContext *ctx, arg_i2s *a) {
+    ctx->instr = strformat(
+        "i2s %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_ssin(DisasContext *ctx, arg_ssin *a) {
+    ctx->instr = strformat(
+        "ssin %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_ssini(DisasContext *ctx, arg_ssini *a) {
+    ctx->instr = strformat(
+        "ssini %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_ssqrt(DisasContext *ctx, arg_ssqrt *a) {
+    ctx->instr = strformat(
+        "ssqrt %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_ssqrti(DisasContext *ctx, arg_ssqrti *a) {
+    ctx->instr = strformat(
+        "ssqrti %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_s2f(DisasContext *ctx, arg_s2f *a) {
+    ctx->instr = strformat(
+        "s2f %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_f2s(DisasContext *ctx, arg_f2s *a) {
+    ctx->instr = strformat(
+        "f2s %s, %s",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_cpuid(DisasContext *ctx, arg_cpuid *a) {
+    ctx->instr = strformat("cpuid");
+    return true;
+}
+bool dis_zeroupper(DisasContext *ctx, arg_zeroupper *a) {
+    ctx->instr = strformat("zeroupper %s", register_to_string(a->r1, a->size));
+    return true;
+}
+bool dis_sret(DisasContext *ctx, arg_sret *a) {
+    ctx->instr = strformat("sret");
+    return true;
+}
+bool dis_hret(DisasContext *ctx, arg_hret *a) {
+    ctx->instr = strformat("hret");
+    return true;
+}
+bool dis_iret(DisasContext *ctx, arg_iret *a) {
+    ctx->instr = strformat("iret");
+    return true;
+}
+bool dis_svc(DisasContext *ctx, arg_svc *a) {
+    ctx->instr = strformat("svc");
+    return true;
+}
+bool dis_mov_cr_r(DisasContext *ctx, arg_mov_cr_r *a) {
+    ctx->instr = strformat("mov cr%d, %s", a->cr1, register_to_string(a->r1, SIZE_64BIT));
+    return true;
+}
+bool dis_mov_r_cr(DisasContext *ctx, arg_mov_r_cr *a) {
+    ctx->instr = strformat("mov %s, cr%d", register_to_string(a->r1, SIZE_64BIT), a->cr1);
+    return true;
+}
+bool dis_hexit(DisasContext *ctx, arg_hexit *a) {
+    ctx->instr = strformat("hexit");
+    return true;
+}
+bool dis_sexit(DisasContext *ctx, arg_sexit *a) {
+    ctx->instr = strformat("sexit");
+    return true;
+}
+bool dis_lea(DisasContext *ctx, arg_lea *a) {
+    ctx->instr = strformat(
+        "lea %s, 0x%016llx",
+        register_to_string(a->r1, SIZE_64BIT),
+        ctx->addr + a->rel
+    );
+    return true;
+}
+bool dis_movz_0(DisasContext *ctx, arg_movz_0 *a) {
+    ctx->instr = strformat(
+        "movz %s, 0x%04x",
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_movz_16(DisasContext *ctx, arg_movz_16 *a) {
+    ctx->instr = strformat(
+        "movz %s, 0x%04x, 16",
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_movz_32(DisasContext *ctx, arg_movz_32 *a) {
+    ctx->instr = strformat(
+        "movz %s, 0x%04x, 32",
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_movz_48(DisasContext *ctx, arg_movz_48 *a) {
+    ctx->instr = strformat(
+        "movz %s, 0x%04x, 48",
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_movk_0(DisasContext *ctx, arg_movk_0 *a) {
+    ctx->instr = strformat(
+        "movk %s, 0x%04x",
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_movk_16(DisasContext *ctx, arg_movk_16 *a) {
+    ctx->instr = strformat(
+        "movk %s, 0x%04x, 16",
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_movk_32(DisasContext *ctx, arg_movk_32 *a) {
+    ctx->instr = strformat(
+        "movk %s, 0x%04x, 32",
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_movk_48(DisasContext *ctx, arg_movk_48 *a) {
+    ctx->instr = strformat(
+        "movk %s, 0x%04x, 48",
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_ldr_reg(DisasContext *ctx, arg_ldr_reg *a) {
+    ctx->instr = strformat(
+        "ldr %s, [%s, %s shl %d]",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT),
+        a->shift
+    );
+    return true;
+}
+bool dis_ldr_reg_update(DisasContext *ctx, arg_ldr_reg_update *a) {
+    ctx->instr = strformat(
+        "ldr %s, [%s, %s shl %d]!",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT),
+        a->shift
+    );
+    return true;
+}
+bool dis_ldr_imm(DisasContext *ctx, arg_ldr_imm *a) {
+    ctx->instr = strformat(
+        "ldr %s, [%s, %d]",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_ldr_imm_update(DisasContext *ctx, arg_ldr_imm_update *a) {
+    ctx->instr = strformat(
+        "ldr %s, [%s, %d]!",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_str_reg(DisasContext *ctx, arg_str_reg *a) {
+    ctx->instr = strformat(
+        "str %s, [%s, %s shl %d]",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT),
+        a->shift
+    );
+    return true;
+}
+bool dis_str_reg_update(DisasContext *ctx, arg_str_reg_update *a) {
+    ctx->instr = strformat(
+        "str %s, [%s, %s shl %d]!",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, SIZE_64BIT),
+        register_to_string(a->r3, SIZE_64BIT),
+        a->shift
+    );
+    return true;
+}
+bool dis_str_imm(DisasContext *ctx, arg_str_imm *a) {
+    ctx->instr = strformat(
+        "str %s, [%s, %d]",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_str_imm_update(DisasContext *ctx, arg_str_imm_update *a) {
+    ctx->instr = strformat(
+        "str %s, [%s, %d]!",
+        register_to_string(a->r1, a->size),
+        register_to_string(a->r2, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_ldr_pc_rel(DisasContext *ctx, arg_ldr_pc_rel *a) {
+    ctx->instr = strformat(
+        "ldr %s, [0x%016llx]",
+        register_to_string(a->r1, a->size),
+        ctx->addr + a->rel
+    );
+    return true;
+}
+bool dis_str_pc_rel(DisasContext *ctx, arg_str_pc_rel *a) {
+    ctx->instr = strformat(
+        "str %s, [0x%016llx]",
+        register_to_string(a->r1, a->size),
+        ctx->addr + a->rel
+    );
+    return true;
+}
+bool dis_ubxt(DisasContext *ctx, arg_ubxt *a) {
+    ctx->instr = strformat(
+        "ubxt %s, %s, %d, %d",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        a->start,
+        a->count + 1
+    );
+    return true;
+}
+bool dis_sbxt(DisasContext *ctx, arg_sbxt *a) {
+    ctx->instr = strformat(
+        "sbxt %s, %s, %d, %d",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        a->start,
+        a->count + 1
+    );
+    return true;
+}
+bool dis_ubdp(DisasContext *ctx, arg_ubdp *a) {
+    ctx->instr = strformat(
+        "ubdp %s, %s, %d, %d",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        a->start,
+        a->count + 1
+    );
+    return true;
+}
+bool dis_sbdp(DisasContext *ctx, arg_sbdp *a) {
+    ctx->instr = strformat(
+        "sbdp %s, %s, %d, %d",
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT),
+        a->start,
+        a->count + 1
+    );
+    return true;
+}
+char vector_modes[] = {
+    [0] = 'o',
+    [1] = 'b',
+    [2] = 'w',
+    [3] = 'd',
+    [4] = 'q',
+    [5] = 'l',
+    [6] = 's',
+    [7] = 'f',
+};
+bool dis_vadd(DisasContext *ctx, arg_vadd *a) {
+    ctx->instr = strformat(
+        "vadd%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vsub(DisasContext *ctx, arg_vsub *a) {
+    ctx->instr = strformat(
+        "vsub%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vmul(DisasContext *ctx, arg_vmul *a) {
+    ctx->instr = strformat(
+        "vmul%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vdiv(DisasContext *ctx, arg_vdiv *a) {
+    ctx->instr = strformat(
+        "vdiv%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vaddsub(DisasContext *ctx, arg_vaddsub *a) {
+    ctx->instr = strformat(
+        "vaddsub%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vmadd(DisasContext *ctx, arg_vmadd *a) {
+    ctx->instr = strformat(
+        "vmadd%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vmov_reg(DisasContext *ctx, arg_vmov_reg *a) {
+    ctx->instr = strformat(
+        "vmov%c v%d, %s, %d",
+        vector_modes[a->type],
+        a->v1,
+        register_to_string(a->r2, SIZE_64BIT),
+        a->slot
+    );
+    return true;
+}
+bool dis_vmov_reg2(DisasContext *ctx, arg_vmov_reg2 *a) {
+    ctx->instr = strformat(
+        "vmov%c %s, v%d, %d",
+        vector_modes[a->type],
+        register_to_string(a->r2, SIZE_64BIT),
+        a->v1,
+        a->slot
+    );
+    return true;
+}
+bool dis_vmov(DisasContext *ctx, arg_vmov *a) {
+    ctx->instr = strformat(
+        "vmov v%d, v%d",
+        a->v1,
+        a->v2
+    );
+    return true;
+}
+bool dis_vconv(DisasContext *ctx, arg_vconv *a) {
+    ctx->instr = strformat(
+        "vconv%c%c v%d, v%d",
+        vector_modes[a->type],
+        vector_modes[a->target],
+        a->v1,
+        a->v2
+    );
+    return true;
+}
+bool dis_vlen(DisasContext *ctx, arg_vlen *a) {
+    ctx->instr = strformat(
+        "vlen%c v%d, %s",
+        vector_modes[a->type],
+        a->v1,
+        register_to_string(a->r1, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_vldr_imm(DisasContext *ctx, arg_vldr_imm *a) {
+    ctx->instr = strformat(
+        "vldr v%d, [%s, %d]",
+        a->v1,
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_vldr_imm_update(DisasContext *ctx, arg_vldr_imm_update *a) {
+    ctx->instr = strformat(
+        "vldr v%d, [%s, %d]!",
+        a->v1,
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_vstr_imm(DisasContext *ctx, arg_vstr_imm *a) {
+    ctx->instr = strformat(
+        "vstr v%d, [%s, %d]",
+        a->v1,
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_vstr_imm_update(DisasContext *ctx, arg_vstr_imm_update *a) {
+    ctx->instr = strformat(
+        "vstr v%d, [%s, %d]!",
+        a->v1,
+        register_to_string(a->r1, SIZE_64BIT),
+        a->imm
+    );
+    return true;
+}
+bool dis_vldr_reg(DisasContext *ctx, arg_vldr_reg *a) {
+    ctx->instr = strformat(
+        "vldr v%d, [%s, %s]",
+        a->v1,
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_vldr_reg_update(DisasContext *ctx, arg_vldr_reg_update *a) {
+    ctx->instr = strformat(
+        "vldr v%d, [%s, %s]!",
+        a->v1,
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_vstr_reg(DisasContext *ctx, arg_vstr_reg *a) {
+    ctx->instr = strformat(
+        "vstr v%d, [%s, %s]",
+        a->v1,
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_vstr_reg_update(DisasContext *ctx, arg_vstr_reg_update *a) {
+    ctx->instr = strformat(
+        "vstr v%d, [%s, %s]!",
+        a->v1,
+        register_to_string(a->r1, SIZE_64BIT),
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_vand(DisasContext *ctx, arg_vand *a) {
+    ctx->instr = strformat(
+        "vand%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vor(DisasContext *ctx, arg_vor *a) {
+    ctx->instr = strformat(
+        "vor%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vxor(DisasContext *ctx, arg_vxor *a) {
+    ctx->instr = strformat(
+        "vxor%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vcmp(DisasContext *ctx, arg_vcmp *a) {
+    ctx->instr = strformat(
+        "vcmp%c v%d, v%d, v%d, %s",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3,
+        condition_to_string0(a->cond)
+    );
+    return true;
+}
+bool dis_vminmax(DisasContext *ctx, arg_vminmax *a) {
+    ctx->instr = strformat(
+        "vminmax%c%c v%d, v%d",
+        a->check_sign ? 's' : 'u',
+        vector_modes[a->type],
+        a->v1,
+        a->v2
+    );
+    return true;
+}
+bool dis_vabs(DisasContext *ctx, arg_vabs *a) {
+    ctx->instr = strformat(
+        "vabs%c v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2
+    );
+    return true;
+}
+bool dis_vshl(DisasContext *ctx, arg_vshl *a) {
+    ctx->instr = strformat(
+        "vshl%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vshr(DisasContext *ctx, arg_vshr *a) {
+    ctx->instr = strformat(
+        "vshr%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vsqrt(DisasContext *ctx, arg_vsqrt *a) {
+    ctx->instr = strformat(
+        "vsqrt%c v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2
+    );
+    return true;
+}
+bool dis_vmod(DisasContext *ctx, arg_vmod *a) {
+    ctx->instr = strformat(
+        "vmod%c v%d, v%d, v%d",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3
+    );
+    return true;
+}
+bool dis_vmovall(DisasContext *ctx, arg_vmovall *a) {
+    ctx->instr = strformat(
+        "vmovall%c v%d, %s",
+        vector_modes[a->type],
+        a->v1,
+        register_to_string(a->r2, SIZE_64BIT)
+    );
+    return true;
+}
+bool dis_vtst(DisasContext *ctx, arg_vtst *a) {
+    ctx->instr = strformat(
+        "vtst%c v%d, v%d, v%d, %s",
+        vector_modes[a->type],
+        a->v1,
+        a->v2,
+        a->v3,
+        condition_to_string0(a->cond)
+    );
+    return true;
+}
+
+char* dis(hive_instruction_t ins, uint64_t addr) {
+    DisasContext x = {
+        .addr = addr,
+        .instr = NULL,
     };
-    if (ins.type_data_vpu.op == OP_DATA_VPU_ldr || ins.type_data_vpu.op == OP_DATA_VPU_str) {
-        char* s = NULL;
-        if (ins.type_data_vpu_ls_imm.update_ptr && ins.type_data_vpu_ls_imm.r1 == REG_SP) {
-            if (ins.type_data_vpu_ls_imm.op == OP_DATA_VPU_str && ins.type_data_vpu_ls_imm.imm == -32) {
-                return strformat("psh%s v%d", condition_to_string(ins), ins.type_data_vpu_ls_imm.v1);
-            } else if (ins.type_data_vpu_ls_imm.op != OP_DATA_VPU_str && ins.type_data_vpu_ls_imm.imm == 32) {
-                return strformat("pp%s v%d", condition_to_string(ins), ins.type_data_vpu_ls_imm.v1);
-            }
-        }
-        if (ins.type_data_vpu.op == OP_DATA_VPU_ldr) {
-            s = strformat("vldr%s", condition_to_string(ins));
-        } else {
-            s = strformat("vstr%s", condition_to_string(ins));
-        }
-        s = strformat("%s v%d, [%s", s, ins.type_data_vpu_ls.v1, register_to_string(ins.type_data_vpu_ls.r1, REG_DEST));
-        if (ins.type_data_vpu_ls.use_imm) {
-            if (ins.type_data_vpu_ls_imm.imm) {
-                s = strformat("%s, %d", s, ins.type_data_vpu_ls_imm.imm);
-            }
-        } else {
-            s = strformat("%s, %s", s, register_to_string(ins.type_data_vpu_ls.r2, REG_SRC1));
-        }
-        s = strformat("%s]", s);
-        if (ins.type_data_vpu_ls.update_ptr) {
-            s = strformat("%s!", s);
-        }
-        return s;
-    }
-    char* s = strformat("v%c", modes[ins.type_data_vpu.mode]);
-    char* opc[] = {
-        [OP_DATA_VPU_add] = "add",
-        [OP_DATA_VPU_sub] = "sub",
-        [OP_DATA_VPU_mul] = "mul",
-        [OP_DATA_VPU_div] = "div",
-        [OP_DATA_VPU_addsub] = "addsub",
-        [OP_DATA_VPU_madd] = "madd",
-        [OP_DATA_VPU_mov] = "mov",
-        [OP_DATA_VPU_mov_vec] = "mov",
-        [OP_DATA_VPU_conv] = "conv",
-        [OP_DATA_VPU_len] = "len",
-        [OP_DATA_VPU_and] = "and",
-        [OP_DATA_VPU_or] = "or",
-        [OP_DATA_VPU_xor] = "xor",
-        [OP_DATA_VPU_cmp] = "cmp",
-    };
-    switch (ins.type_data_vpu.op) {
-        case OP_DATA_VPU_add: case_fallthrough;
-        case OP_DATA_VPU_sub: case_fallthrough;
-        case OP_DATA_VPU_mul: case_fallthrough;
-        case OP_DATA_VPU_div: case_fallthrough;
-        case OP_DATA_VPU_addsub: case_fallthrough;
-        case OP_DATA_VPU_and: case_fallthrough;
-        case OP_DATA_VPU_or: case_fallthrough;
-        case OP_DATA_VPU_xor: case_fallthrough;
-        case OP_DATA_VPU_madd: return strformat("%s%s%s v%d, v%d, v%d", s, opc[ins.type_data_vpu.op], condition_to_string(ins), ins.type_data_vpu.v1, ins.type_data_vpu.v2, ins.type_data_vpu.v3);
-        case OP_DATA_VPU_mov: return strformat("%smov%s v%d, %s, %d", s, condition_to_string(ins), ins.type_data_vpu_mov.v1, register_to_string(ins.type_data_vpu_mov.r2, REG_SRC1), (ins.type_data_vpu_mov.slot_hi << 3) | ins.type_data_vpu_mov.slot_lo);
-        case OP_DATA_VPU_mov_vec: return strformat("%smov%s v%d, v%d", s, condition_to_string(ins), ins.type_data_vpu.v1, ins.type_data_vpu.v2);
-        case OP_DATA_VPU_conv: return strformat("%sconv%c%s v%d, v%d", s, modes[ins.type_data_vpu_conv.target_mode], condition_to_string(ins), ins.type_data_vpu_conv.v1, ins.type_data_vpu_conv.v2);
-        case OP_DATA_VPU_len:  return strformat("%slen%s %s, v%d", s, condition_to_string(ins), register_to_string(ins.type_data_vpu_len.r1, REG_DEST), ins.type_data_vpu_len.v1);
-        case OP_DATA_VPU_cmp: return strformat("%scmp%s %s v%d, v%d", s, condition_to_string(ins), condition_to_string0(ins.type_data_vpu_cmp.cond), ins.type_data_vpu.v1, ins.type_data_vpu.v2);
-    }
-    return NULL;
-}
-char* dis_data_vpu2(hive_instruction_t ins, uint64_t addr) {
-    uint8_t modes[] = {
-        [0] = 'o',
-        [1] = 'b',
-        [2] = 'w',
-        [3] = 'd',
-        [4] = 'q',
-        [5] = 'l',
-        [6] = 's',
-        [7] = 'f',
-    };
-    uint8_t max_slots[] = {
-        [0] = 1,
-        [1] = 32,
-        [2] = 16,
-        [3] = 8,
-        [4] = 4,
-        [5] = 2,
-        [6] = 8,
-        [7] = 4,
-    };
-    char* s = strformat("v%c", modes[ins.type_data_vpu.mode]);
-    char* opc[] = {
-        [OP_DATA_VPU_minmax] = "minmax",
-        [OP_DATA_VPU_abs] = "abs",
-        [OP_DATA_VPU_shl] = "shl",
-        [OP_DATA_VPU_shr] = "shr",
-        [OP_DATA_VPU_sqrt] = "sqrt",
-        [OP_DATA_VPU_mod] = "mod",
-        [OP_DATA_VPU_movall] = "movall",
-        [OP_DATA_VPU_tst] = "tst",
-    };
-    switch (ins.type_data_vpu.op) {
-        case OP_DATA_VPU_tst: return strformat("%stst%s %s v%d, v%d", s, condition_to_string(ins), condition_to_string0(ins.type_data_vpu_cmp.cond), ins.type_data_vpu_cmp.v1, ins.type_data_vpu_cmp.v2);
-        case OP_DATA_VPU_minmax: return strformat("%sminmax%s v%d, v%d", s, condition_to_string(ins), ins.type_data_vpu.v1, ins.type_data_vpu.v2);
-        case OP_DATA_VPU_abs: return strformat("%sabs%s v%d, v%d", s, condition_to_string(ins), ins.type_data_vpu_conv.v1, ins.type_data_vpu_conv.v2);
-        case OP_DATA_VPU_shl: case_fallthrough;
-        case OP_DATA_VPU_shr: case_fallthrough;
-        case OP_DATA_VPU_mod: return strformat("%s%s%s v%d, v%d, v%d", s, opc[ins.type_data_vpu.op], condition_to_string(ins), ins.type_data_vpu.v1, ins.type_data_vpu.v2, ins.type_data_vpu.v3);
-        case OP_DATA_VPU_sqrt: return strformat("%ssqrt%s v%d, v%d", s, condition_to_string(ins), ins.type_data_vpu.v1, ins.type_data_vpu.v2);
-        case OP_DATA_VPU_movall: return strformat("%smovall%s %s, v%d", s, condition_to_string(ins), register_to_string(ins.type_data_vpu_len.r1, REG_DEST), ins.type_data_vpu_len.v1);
-    }
-    return NULL;
-}
-
-char* dis_data_bit(hive_instruction_t ins, uint64_t addr) {
-    char* bit_len = strformat("%d, %d", ins.type_data_bit.start, (ins.type_data_bit.count_hi << 1 | ins.type_data_bit.count_lo) + 1);
-    char* s = ins.type_data_bit.extend ? "s" : "u";
-    if (ins.type_data_bit.is_dep) {
-        s = strformat("%sbdp%s %s, %s, %s", s, condition_to_string(ins), register_to_string(ins.type_data_bit.r1, REG_DEST), register_to_string(ins.type_data_bit.r2, REG_SRC1), bit_len);
-    } else {
-        s = strformat("%sbxt%s %s, %s, %s", s, condition_to_string(ins), register_to_string(ins.type_data_bit.r1, REG_DEST), register_to_string(ins.type_data_bit.r2, REG_SRC1), bit_len);
-    }
-    return s;
-}
-
-char* dis_data(hive_instruction_t ins, uint64_t addr) {
-    char* s = NULL;
-    switch (ins.type_data.data_op) {
-        case SUBOP_DATA_ALU_R:  case_fallthrough;
-        case SUBOP_DATA_ALU_I:  case_fallthrough;
-        case SUBOP_DATA_SALU_R: case_fallthrough;
-        case SUBOP_DATA_SALU_I: s = dis_data_alu(ins, addr); break;
-        case SUBOP_DATA_BDEP:   case_fallthrough;
-        case SUBOP_DATA_BEXT:   s = dis_data_bit(ins, addr); break;
-        case SUBOP_DATA_FPU:    s = dis_data_fpu(ins, addr); break;
-        case SUBOP_DATA_CSWAP:  s = strformat("cswp%s %s, %s, %s, %s", condition_to_string(ins), register_to_string(ins.type_data_cswap.r1, REG_DEST), register_to_string(ins.type_data_cswap.r2, REG_SRC1), register_to_string(ins.type_data_cswap.r3, REG_SRC2), condition_to_string0(ins.type_data_cswap.cond)); break;
-        case SUBOP_DATA_XCHG:   s = strformat("xchg%s %s, %s", condition_to_string(ins), register_to_string(ins.type_data_xchg.r1, REG_DEST), register_to_string(ins.type_data_xchg.r2, REG_SRC1)); break;
-        case SUBOP_DATA_VPU:    s = dis_data_vpu(ins, addr); break;
-        case SUBOP_DATA_VPU2:   s = dis_data_vpu2(ins, addr); break;
-    }
-    return s;
-}
-
-char* dis_load_movzk(hive_instruction_t ins, uint64_t addr) {
-    char* s = ins.type_load_mov.no_zero ? "movk" : "movz";
-    s = strformat("%s%s %s, 0x%x", s, condition_to_string(ins), register_to_string(ins.type_load_mov.r1, REG_DEST), ins.type_load_mov.imm);
-    if (ins.type_load_mov.shift) {
-        s = strformat("%s, shl %d", s, ins.type_load_mov.shift * 16);
-    }
-    return s;
-}
-
-char* dis_load_ls(hive_instruction_t ins, uint64_t addr) {
-    char* s = ins.type_load_ls.is_store ? "str" : "ldr";
-    char* last_arg = NULL;
-    if (ins.type_load_ls.use_imm) {
-        if (ins.type_load_ls_imm.update_ptr && ins.type_load_ls_imm.r2 == REG_SP) {
-            if (ins.type_load_ls_imm.is_store && ins.type_load_ls_imm.imm == -16) {
-                return strformat("psh%s %s", condition_to_string(ins), register_to_string(ins.type_load_ls_imm.r1, REG_DEST));
-            } else if (!ins.type_load_ls_imm.is_store && ins.type_load_ls_imm.imm == 16) {
-                return strformat("pp%s %s", condition_to_string(ins), register_to_string(ins.type_load_ls_imm.r1, REG_DEST));
-            }
-        }
-        last_arg = strformat("%d", ins.type_load_ls_imm.imm);
-    } else {
-        last_arg = strformat("%s", register_to_string_ptr(ins.type_load_ls.r3, REG_SRC2));
-        if (ins.type_load_ls.shift) {
-            last_arg = strformat("%s shl %d", last_arg, ins.type_load_ls.shift);
-        }
-    }
-
-    s = strformat("%s%s %s, [%s, %s]", s, condition_to_string(ins), register_to_string(ins.type_load_ls_imm.r1, REG_DEST), register_to_string_ptr(ins.type_load_ls_imm.r2, REG_SRC1), last_arg);
-
-    if (ins.type_load_ls_imm.update_ptr) {
-        s = strformat("%s!", s);
-    }
-    return s;
-}
-
-char* dis_load_ls_off(hive_instruction_t ins, uint64_t addr) {
-    char* s = NULL;
-    if (ins.type_load_ls_off.is_store) {
-        s = strformat("str%s", condition_to_string(ins));
-    } else {
-        s = strformat("ldr%s", condition_to_string(ins));
-    }
-    s = strformat("%s %s, [0x%llx]", s, register_to_string(ins.type_load_ls_off.r1, REG_DEST), addr + ins.type_load_ls_off.imm * sizeof(hive_instruction_t));
-    return s;
-}
-
-char* dis_load(hive_instruction_t ins, uint64_t addr) {
-    switch (ins.type_load.op) {
-        case OP_LOAD_lea:    return strformat("lea%s %s, 0x%llx", condition_to_string(ins), register_to_string(ins.type_load_signed.r1, REG_DEST), addr + ins.type_load_signed.imm * sizeof(hive_instruction_t));
-        case OP_LOAD_movzk:  return dis_load_movzk(ins, addr);
-        case OP_LOAD_ls:     return dis_load_ls(ins, addr);
-        case OP_LOAD_ls_off: return dis_load_ls_off(ins, addr);
-    }
-    return NULL;
-}
-
-char* dis_other(hive_instruction_t ins, uint64_t addr) {
-    switch (ins.type_other.op) {
-        case OP_OTHER_cpuid:     return strformat("cpuid%s", condition_to_string(ins));
-        case OP_OTHER_zeroupper: return strformat("zeroupper%s %s", condition_to_string(ins), register_to_string(ins.type_other_zeroupper.r1, REG_DEST));
-        case OP_OTHER_hret:      return strformat("hret%s", condition_to_string(ins));
-        case OP_OTHER_sret:      return strformat("sret%s", condition_to_string(ins));
-        case OP_OTHER_iret:      return strformat("iret%s", condition_to_string(ins));
-        case OP_OTHER_svc:       return strformat("svc%s", condition_to_string(ins));
-        case OP_OTHER_storecr:   return strformat("mov%s cr%d, %s", condition_to_string(ins), ins.type_other_mov_cr.cr2, register_to_string(ins.type_other_mov_cr.r1, REG_SRC1));
-        case OP_OTHER_loadcr:    return strformat("mov%s %s, cr%d", condition_to_string(ins), register_to_string(ins.type_other_mov_cr.r1, REG_DEST), ins.type_other_mov_cr.cr2);
-        case OP_OTHER_hexit:     return strformat("hexit%s", condition_to_string(ins));
-        case OP_OTHER_sexit:     return strformat("sexit%s", condition_to_string(ins));
-    }
-    return NULL;
-}
-
-char* dis(hive_instruction_t** insp, uint64_t addr) {
-    char* instr = NULL;
-    hive_instruction_t ins = **insp;
     if (ins.generic.condition == COND_NEVER) {
-        instr = strformat("nop");
+        x.instr = strformat("nop");
     } else {
-        if (ins.generic.type == MODE_OTHER && ins.type_other_prefix.op == OP_OTHER_prefix) {
-            register_override = ins.type_other_prefix.reg_override;
-            size = ins.type_other_prefix.size;
-            (*insp)++;
-            char* s = dis(insp, *(uint64_t*) insp);
-            size = SIZE_64BIT;
-            register_override = 0;
-            return s;
-        }
-        switch (ins.generic.type) {
-            case MODE_BRANCH:   instr = dis_branch(ins, addr); break;
-            case MODE_DATA:     instr = dis_data(ins, addr); break;
-            case MODE_LOAD:     instr = dis_load(ins, addr); break;
-            case MODE_OTHER:    instr = dis_other(ins, addr); break;
+        if (!decode(&x, ins.word)) {
+            return NULL;
         }
     }
-    return instr;
+    if (ins.generic.condition != COND_ALWAYS) {
+        char* old = x.instr;
+        x.instr = strformat("if%s %s", condition_to_string(ins), old);
+        free(old);
+    }
+    return x.instr;
 }
 
 char* get_symbol_at(Symbol_Array syms, uint64_t addr) {
@@ -487,15 +1399,14 @@ char* get_relocation_at(Relocation_Array relocations, uint64_t addr) {
 }
 
 void disassemble(Section code_sect, Symbol_Array syms, Relocation_Array relocations) {
-    for (hive_instruction_t* p = (hive_instruction_t*) code_sect.data; p < (hive_instruction_t*) (code_sect.data + code_sect.len);) {
-        hive_instruction_t* ins = p;
-        char* s = dis(&p, (uint64_t) ins);
+    for (hive_instruction_t* ins = (hive_instruction_t*) code_sect.data; ins < (hive_instruction_t*) (code_sect.data + code_sect.len);) {
+        char* s = dis(*ins, (uint64_t) ins);
         char* symbol_here = get_symbol_at(syms, (uint64_t) ins);
         if (symbol_here) {
             printf("%s:\n", symbol_here);
         }
         if (s == NULL) {
-            printf("    .dword 0x%08x\n", *(uint32_t*) ins);
+            printf("    .dword 0x%08x\n", ins->word);
         } else {
             printf("    %s", s);
             uint64_t address = (uint64_t) ins;
@@ -525,5 +1436,6 @@ void disassemble(Section code_sect, Symbol_Array syms, Relocation_Array relocati
             printf("\n");
             free(s);
         }
+        ins++;
     }
 }

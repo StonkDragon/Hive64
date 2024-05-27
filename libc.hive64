@@ -3,10 +3,9 @@
 _start:
     lea r0, global_idt
     mov cr5, r0
-    mov r0, 0
-    cpuid
-    cmp r0, 0
     hexit # go into supervisor mode
+
+    mov r0, cr0
 $loop:
     b.nz $loop
 
@@ -28,15 +27,16 @@ $loop:
 
     sexit # go into user mode
     bl _main
-    mov r2, r0
+    mov b2, b0
 
     # destroy the stack
     movz r8, 6              # munmap
-    mov r0, sp              # stack
     movz r1, 0x100, shl 16  # size
+    sub r0, sp, r1          # stack
     svc
 
-    mov r0, r2
+    xor r0, r0
+    mov b0, b2
     b _exit
 
 int_ud:
@@ -59,6 +59,12 @@ int_gp:
 
 int_ip:
     lea r0, int_ip_msg
+    bl _puts
+    mov r0, 4
+    b _exit
+
+int_brk:
+    lea r0, int_brk_msg
     bl _puts
     mov r0, 4
     b _exit
@@ -348,8 +354,10 @@ global_idt:
     .qword int_pf
     .qword int_gp
     .qword int_ip
+    .qword int_brk
 
 int_ud_msg: .asciz "Undefined opcode"
 int_pf_msg: .asciz "Page fault"
 int_gp_msg: .asciz "Segmentation Fault"
 int_ip_msg: .asciz "Privileged instruction"
+int_brk_msg: .asciz "Break"

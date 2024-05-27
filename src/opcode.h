@@ -1,5 +1,5 @@
 #define MODE_BRANCH             0b00
-#define MODE_DATA               0b01
+#define MODE_ARITH              0b01
 #define MODE_LOAD               0b10
 #define MODE_OTHER              0b11
 
@@ -8,22 +8,10 @@
 #define OP_BRANCH_br            0b10
 #define OP_BRANCH_blr           0b11
 
-#define SUBOP_DATA_ALU_R        0b0000
-#define SUBOP_DATA_ALU_I        0b0001
-#define SUBOP_DATA_SALU_R       0b0010
-#define SUBOP_DATA_SALU_I       0b0011
-#define SUBOP_DATA_BEXT         0b0100
-#define SUBOP_DATA_BDEP         0b0101
-#define SUBOP_DATA_FPU          0b0110
-#define SUBOP_DATA_CSWAP        0b0111
-#define SUBOP_DATA_XCHG         0b1000
-#define SUBOP_DATA_0            0b1001
-#define SUBOP_DATA_1            0b1010
-#define SUBOP_DATA_2            0b1011
-#define SUBOP_DATA_VPU          0b1100
-#define SUBOP_DATA_VPU2         0b1101
-#define SUBOP_DATA_3            0b1110
-#define SUBOP_DATA_4            0b1111
+#define SUBOP_DATA_ALU_R        0b00
+#define SUBOP_DATA_ALU_I        0b01
+#define SUBOP_DATA_SALU_R       0b10
+#define SUBOP_DATA_SALU_I       0b11
 
 #define OP_DATA_ALU_add         0x0
 #define OP_DATA_ALU_sub         0x1
@@ -42,50 +30,13 @@
 #define OP_DATA_ALU_sext        0xE
 #define OP_DATA_ALU_swe         0xF
 
-#define OP_DATA_FLOAT_add       0x0
-#define OP_DATA_FLOAT_sub       0x1
-#define OP_DATA_FLOAT_mul       0x2
-#define OP_DATA_FLOAT_div       0x3
-#define OP_DATA_FLOAT_mod       0x4
-#define OP_DATA_FLOAT_f2i       0x5
-#define OP_DATA_FLOAT_sin       0x6
-#define OP_DATA_FLOAT_sqrt      0x7
-#define OP_DATA_FLOAT_s2f       0x8
-
-#define OP_DATA_VPU_add         0x0
-#define OP_DATA_VPU_sub         0x1
-#define OP_DATA_VPU_mul         0x2
-#define OP_DATA_VPU_div         0x3
-#define OP_DATA_VPU_addsub      0x4
-#define OP_DATA_VPU_madd        0x5
-#define OP_DATA_VPU_mov         0x6
-#define OP_DATA_VPU_mov_vec     0x7
-#define OP_DATA_VPU_conv        0x8
-#define OP_DATA_VPU_len         0x9
-#define OP_DATA_VPU_ldr         0xA
-#define OP_DATA_VPU_str         0xB
-#define OP_DATA_VPU_and         0xC
-#define OP_DATA_VPU_or          0xD
-#define OP_DATA_VPU_xor         0xE
-#define OP_DATA_VPU_cmp         0xF
-
-#define OP_DATA_VPU_minmax      0x0
-#define OP_DATA_VPU_abs         0x1
-#define OP_DATA_VPU_shl         0x2
-#define OP_DATA_VPU_shr         0x3
-#define OP_DATA_VPU_sqrt        0x4
-#define OP_DATA_VPU_mod         0x5
-#define OP_DATA_VPU_movall      0x6
-
-#define OP_DATA_VPU_tst         0xF
-
 #define OP_LOAD_lea             0b00
 #define OP_LOAD_movzk           0b01
 #define OP_LOAD_ls              0b10
 #define OP_LOAD_ls_off          0b11
 
 #define OP_OTHER_cpuid          0b00000
-#define OP_OTHER_prefix         0b00001
+#define OP_OTHER_brk            0b00001
 #define OP_OTHER_zeroupper      0b00010
 #define OP_OTHER_sret           0b00011
 #define OP_OTHER_hret           0b00100
@@ -95,3 +46,63 @@
 #define OP_OTHER_loadcr         0b01000
 #define OP_OTHER_hexit          0b01001
 #define OP_OTHER_sexit          0b01010
+
+#define OP_OTHER_FPU64          0b01100
+#define OP_OTHER_FPU32          0b01101
+#define OP_OTHER_CSWAP          0b01110
+#define OP_OTHER_XCHG           0b01111
+#define OP_OTHER_UBXT           0b10000
+#define OP_OTHER_SBXT           0b10001
+#define OP_OTHER_UDEP           0b10010
+#define OP_OTHER_SDEP           0b10011
+// #define OP_OTHER_               0b10000
+// #define OP_OTHER_               0b10001
+// #define OP_OTHER_               0b10010
+// #define OP_OTHER_               0b10011
+// #define OP_OTHER_               0b10100
+// #define OP_OTHER_               0b10101
+// #define OP_OTHER_               0b10110
+// #define OP_OTHER_               0b10111
+// #define OP_OTHER_               0b11000
+// #define OP_OTHER_               0b11001
+// #define OP_OTHER_               0b11010
+// #define OP_OTHER_               0b11011
+#define OP_OTHER_VPU0           0b11100
+#define OP_OTHER_VPU1           0b11101
+#define OP_OTHER_VPU2           0b11110
+#define OP_OTHER_VPU3           0b11111
+
+#define OP_OTHER_FPU_add        0x0
+#define OP_OTHER_FPU_sub        0x1
+#define OP_OTHER_FPU_mul        0x2
+#define OP_OTHER_FPU_div        0x3
+#define OP_OTHER_FPU_mod        0x4
+#define OP_OTHER_FPU_f2i        0x5
+#define OP_OTHER_FPU_sin        0x6
+#define OP_OTHER_FPU_sqrt       0x7
+#define OP_OTHER_FPU_s2f        0x8
+
+#define OP_OTHER_VPU_add        0b00000 // 00
+#define OP_OTHER_VPU_sub        0b00001 // 01
+#define OP_OTHER_VPU_mul        0b00010 // 02
+#define OP_OTHER_VPU_div        0b00011 // 03
+#define OP_OTHER_VPU_addsub     0b00100 // 04
+#define OP_OTHER_VPU_madd       0b00101 // 05
+#define OP_OTHER_VPU_mov        0b00110 // 06
+#define OP_OTHER_VPU_mov_vec    0b00111 // 07
+#define OP_OTHER_VPU_conv       0b01000 // 08
+#define OP_OTHER_VPU_len        0b01001 // 09
+#define OP_OTHER_VPU_ldr        0b01010 // 0A
+#define OP_OTHER_VPU_str        0b01011 // 0B
+#define OP_OTHER_VPU_and        0b01100 // 0C
+#define OP_OTHER_VPU_or         0b01101 // 0D
+#define OP_OTHER_VPU_xor        0b01110 // 0E
+#define OP_OTHER_VPU_cmp        0b01111 // 0F
+#define OP_OTHER_VPU_minmax     0b10000 // 10
+#define OP_OTHER_VPU_abs        0b10001 // 11
+#define OP_OTHER_VPU_shl        0b10010 // 12
+#define OP_OTHER_VPU_shr        0b10011 // 13
+#define OP_OTHER_VPU_sqrt       0b10100 // 14
+#define OP_OTHER_VPU_mod        0b10101 // 15
+#define OP_OTHER_VPU_movall     0b10110 // 16
+#define OP_OTHER_VPU_tst        0b11111 // 1F

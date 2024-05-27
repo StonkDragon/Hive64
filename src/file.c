@@ -268,7 +268,7 @@ void relocate(LoadCommand_Array sects, Relocation_Array relocs, Symbol_Array sym
                     int32_t diff = target_address - (uint64_t) pc;
                     check_align();
                     diff /= sizeof(hive_instruction_t);
-                    relative_check(POW2(18));
+                    relative_check(POW2(16));
                     pc->type_load_ls_off.imm = diff;
                 }
                 break;
