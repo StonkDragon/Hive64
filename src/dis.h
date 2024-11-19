@@ -512,8 +512,8 @@ static void decode_extract_decode_Fmt_1(DisasContext *ctx, arg_decode1 *a, uint3
 static void decode_extract_decode_Fmt_10(DisasContext *ctx, arg_decode10 *a, uint32_t insn)
 {
     a->r2 = extract32(insn, 6, 5);
-    a->r1 = extract32(insn, 11, 5);
     a->r3 = extract32(insn, 0, 5);
+    a->r1 = extract32(insn, 11, 5);
 }
 
 static void decode_extract_decode_Fmt_11(DisasContext *ctx, arg_decode11 *a, uint32_t insn)
@@ -553,86 +553,86 @@ static void decode_extract_decode_Fmt_16(DisasContext *ctx, arg_decode16 *a, uin
 
 static void decode_extract_decode_Fmt_17(DisasContext *ctx, arg_decode17 *a, uint32_t insn)
 {
-    a->r1 = extract32(insn, 20, 5);
     a->imm = extract32(insn, 0, 16);
+    a->r1 = extract32(insn, 20, 5);
 }
 
 static void decode_extract_decode_Fmt_18(DisasContext *ctx, arg_decode18 *a, uint32_t insn)
 {
-    a->r1 = extract32(insn, 20, 5);
-    a->shift = extract32(insn, 5, 3);
     a->r3 = extract32(insn, 0, 5);
     a->size = extract32(insn, 18, 2);
     a->r2 = extract32(insn, 10, 5);
+    a->shift = extract32(insn, 5, 3);
+    a->r1 = extract32(insn, 20, 5);
 }
 
 static void decode_extract_decode_Fmt_19(DisasContext *ctx, arg_decode19 *a, uint32_t insn)
 {
     a->size = extract32(insn, 18, 2);
     a->r2 = extract32(insn, 10, 5);
-    a->r1 = extract32(insn, 20, 5);
     a->imm = sextract32(insn, 0, 10);
+    a->r1 = extract32(insn, 20, 5);
 }
 
 static void decode_extract_decode_Fmt_2(DisasContext *ctx, arg_decode2 *a, uint32_t insn)
 {
     a->size = extract32(insn, 10, 2);
     a->r2 = extract32(insn, 12, 5);
-    a->r1 = extract32(insn, 17, 5);
     a->r3 = extract32(insn, 0, 5);
+    a->r1 = extract32(insn, 17, 5);
 }
 
 static void decode_extract_decode_Fmt_20(DisasContext *ctx, arg_decode20 *a, uint32_t insn)
 {
     a->size = extract32(insn, 18, 2);
-    a->r1 = extract32(insn, 20, 5);
     a->rel = sextract32(insn, 0, 17);
+    a->r1 = extract32(insn, 20, 5);
 }
 
 static void decode_extract_decode_Fmt_21(DisasContext *ctx, arg_decode21 *a, uint32_t insn)
 {
+    a->count = extract32(insn, 6, 6);
     a->start = extract32(insn, 0, 6);
     a->r2 = extract32(insn, 12, 5);
-    a->count = extract32(insn, 6, 6);
     a->r1 = extract32(insn, 17, 5);
 }
 
 static void decode_extract_decode_Fmt_22(DisasContext *ctx, arg_decode22 *a, uint32_t insn)
 {
-    a->v1 = extract32(insn, 12, 4);
-    a->v3 = extract32(insn, 0, 4);
-    a->v2 = extract32(insn, 8, 4);
     a->type = extract32(insn, 16, 3);
+    a->v1 = extract32(insn, 12, 4);
+    a->v2 = extract32(insn, 8, 4);
+    a->v3 = extract32(insn, 0, 4);
 }
 
 static void decode_extract_decode_Fmt_23(DisasContext *ctx, arg_decode23 *a, uint32_t insn)
 {
-    a->v1 = extract32(insn, 12, 4);
-    a->slot = extract32(insn, 5, 6);
-    a->r2 = extract32(insn, 0, 5);
     a->type = extract32(insn, 16, 3);
+    a->r2 = extract32(insn, 0, 5);
+    a->slot = extract32(insn, 5, 6);
+    a->v1 = extract32(insn, 12, 4);
 }
 
 static void decode_extract_decode_Fmt_24(DisasContext *ctx, arg_decode24 *a, uint32_t insn)
 {
+    a->type = extract32(insn, 16, 3);
     a->v1 = extract32(insn, 12, 4);
     a->v2 = extract32(insn, 8, 4);
-    a->type = extract32(insn, 16, 3);
 }
 
 static void decode_extract_decode_Fmt_25(DisasContext *ctx, arg_decode25 *a, uint32_t insn)
 {
-    a->v1 = extract32(insn, 12, 4);
-    a->target = extract32(insn, 0, 3);
-    a->v2 = extract32(insn, 8, 4);
     a->type = extract32(insn, 16, 3);
+    a->target = extract32(insn, 0, 3);
+    a->v1 = extract32(insn, 12, 4);
+    a->v2 = extract32(insn, 8, 4);
 }
 
 static void decode_extract_decode_Fmt_26(DisasContext *ctx, arg_decode26 *a, uint32_t insn)
 {
+    a->type = extract32(insn, 16, 3);
     a->v1 = extract32(insn, 12, 4);
     a->r1 = extract32(insn, 0, 5);
-    a->type = extract32(insn, 16, 3);
 }
 
 static void decode_extract_decode_Fmt_27(DisasContext *ctx, arg_decode27 *a, uint32_t insn)
@@ -644,18 +644,18 @@ static void decode_extract_decode_Fmt_27(DisasContext *ctx, arg_decode27 *a, uin
 
 static void decode_extract_decode_Fmt_28(DisasContext *ctx, arg_decode28 *a, uint32_t insn)
 {
-    a->v1 = extract32(insn, 8, 4);
     a->r2 = extract32(insn, 0, 5);
+    a->v1 = extract32(insn, 8, 4);
     a->r1 = extract32(insn, 12, 5);
 }
 
 static void decode_extract_decode_Fmt_29(DisasContext *ctx, arg_decode29 *a, uint32_t insn)
 {
-    a->cond = extract32(insn, 4, 3);
     a->type = extract32(insn, 16, 3);
-    a->v1 = extract32(insn, 12, 4);
-    a->v3 = extract32(insn, 0, 4);
     a->v2 = extract32(insn, 8, 4);
+    a->v1 = extract32(insn, 12, 4);
+    a->cond = extract32(insn, 4, 3);
+    a->v3 = extract32(insn, 0, 4);
 }
 
 static void decode_extract_decode_Fmt_3(DisasContext *ctx, arg_decode3 *a, uint32_t insn)
@@ -667,34 +667,34 @@ static void decode_extract_decode_Fmt_3(DisasContext *ctx, arg_decode3 *a, uint3
 
 static void decode_extract_decode_Fmt_30(DisasContext *ctx, arg_decode30 *a, uint32_t insn)
 {
-    a->v1 = extract32(insn, 12, 4);
-    a->check_sign = extract32(insn, 0, 1);
-    a->v2 = extract32(insn, 8, 4);
     a->type = extract32(insn, 16, 3);
+    a->check_sign = extract32(insn, 0, 1);
+    a->v1 = extract32(insn, 12, 4);
+    a->v2 = extract32(insn, 8, 4);
 }
 
 static void decode_extract_decode_Fmt_31(DisasContext *ctx, arg_decode31 *a, uint32_t insn)
 {
     a->type = extract32(insn, 16, 3);
     a->is_signed = extract32(insn, 4, 1);
+    a->v2 = extract32(insn, 8, 4);
     a->v1 = extract32(insn, 12, 4);
     a->v3 = extract32(insn, 0, 4);
-    a->v2 = extract32(insn, 8, 4);
 }
 
 static void decode_extract_decode_Fmt_32(DisasContext *ctx, arg_decode32 *a, uint32_t insn)
 {
-    a->v1 = extract32(insn, 12, 4);
-    a->r2 = extract32(insn, 0, 5);
     a->type = extract32(insn, 16, 3);
+    a->r2 = extract32(insn, 0, 5);
+    a->v1 = extract32(insn, 12, 4);
 }
 
 static void decode_extract_decode_Fmt_4(DisasContext *ctx, arg_decode4 *a, uint32_t insn)
 {
     a->size = extract32(insn, 10, 2);
     a->r2 = extract32(insn, 12, 5);
-    a->r1 = extract32(insn, 17, 5);
     a->imm8 = extract32(insn, 0, 8);
+    a->r1 = extract32(insn, 17, 5);
 }
 
 static void decode_extract_decode_Fmt_5(DisasContext *ctx, arg_decode5 *a, uint32_t insn)
@@ -725,11 +725,11 @@ static void decode_extract_decode_Fmt_8(DisasContext *ctx, arg_decode8 *a, uint3
 
 static void decode_extract_decode_Fmt_9(DisasContext *ctx, arg_decode9 *a, uint32_t insn)
 {
-    a->cond = extract32(insn, 5, 3);
-    a->r1 = extract32(insn, 17, 5);
     a->r3 = extract32(insn, 0, 5);
+    a->cond = extract32(insn, 5, 3);
     a->size = extract32(insn, 10, 2);
     a->r2 = extract32(insn, 12, 5);
+    a->r1 = extract32(insn, 17, 5);
 }
 
 static bool decode(DisasContext *ctx, uint32_t insn)

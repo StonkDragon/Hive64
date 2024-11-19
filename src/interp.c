@@ -1578,6 +1578,15 @@ char* dis(hive_instruction_t** ins, uint64_t addr);
 
 void exec_instr(struct cpu_state* ctx, uint32_t ins) {
     if (!check_condition(*(hive_instruction_t*) &ins, ctx->cr[CR_FLAGS].asFlags)) return;
+    hive_instruction_t* old_x = ctx->r[REG_PC].asInstrPtr;
+    hive_instruction_t* x = old_x;
+    // char* s = dis(&x, (uint64_t) x);
+    // if (s) {
+    //     printf("%016llx: %s\n", (uint64_t) old_x, s);
+    // } else {
+    //     printf("%016llx: .dword 0x%08x\n", (uint64_t) old_x, *(uint32_t*) old_x);
+    // }
+    // free(s);
     if (!decode(ctx, ins)) {
         interrupt(SIGILL);
     }

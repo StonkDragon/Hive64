@@ -1359,6 +1359,13 @@ bool dis_vtst(DisasContext *ctx, arg_vtst *a) {
     );
     return true;
 }
+bool dis_brk(DisasContext *ctx, arg_brk *a) {
+    ctx->instr = strformat(
+        "brk 0x%x",
+        a->what
+    );
+    return true;
+}
 
 char* dis(hive_instruction_t ins, uint64_t addr) {
     DisasContext x = {
