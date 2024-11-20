@@ -1,112 +1,97 @@
 # QEMU instruction decode file
 
+# branches:             --- 00 bb -------------------------
+#                              |
+#                              +-- 00: b
+#                              +-- 01: bl
+#                              +-- 10: br
+#                              +-- 11: blr
+
 branch                  --- 00 00 rel:s25
 branch_link             --- 00 01 rel:s25
 branch_reg              --- 00 10 r1:5 --------------------
 branch_reg_link         --- 00 11 r1:5 --------------------
 
-add_reg                 --- 01 0000 - r1:5 r2:5 size:2 00 --- r3:5
-sub_reg                 --- 01 0001 0 r1:5 r2:5 size:2 00 --- r3:5
-cmp_reg                 --- 01 0001 1 ----- r2:5 size:2 00 --- r3:5
-mul_reg                 --- 01 0010 - r1:5 r2:5 size:2 00 --- r3:5
-div_reg                 --- 01 0011 - r1:5 r2:5 size:2 00 --- r3:5
-mod_reg                 --- 01 0100 - r1:5 r2:5 size:2 00 --- r3:5
-divs_reg                --- 01 0011 - r1:5 r2:5 size:2 10 --- r3:5
-mods_reg                --- 01 0100 - r1:5 r2:5 size:2 10 --- r3:5
-and_reg                 --- 01 0101 0 r1:5 r2:5 size:2 00 --- r3:5
-tst_reg                 --- 01 0101 1 ----- r2:5 size:2 00 --- r3:5
-or_reg                  --- 01 0110 - r1:5 r2:5 size:2 00 --- r3:5
-xor_reg                 --- 01 0111 - r1:5 r2:5 size:2 00 --- r3:5
-shl_reg                 --- 01 1000 - r1:5 r2:5 size:2 00 --- r3:5
-shr_reg                 --- 01 1001 - r1:5 r2:5 size:2 00 --- r3:5
-sar_reg                 --- 01 1001 - r1:5 r2:5 size:2 10 --- r3:5
-rol_reg                 --- 01 1010 - r1:5 r2:5 size:2 00 --- r3:5
-ror_reg                 --- 01 1011 - r1:5 r2:5 size:2 00 --- r3:5
+# data processing:      --- 01 wwww f ddddd aaaaa ss S 0 --- bbbbb
+#                              |    | |     |     |  |       |
+#                              |    | |     |     |  |       +---- Source register 2
+#                              |    | |     |     |  +------------ Signed bit
+#                              |    | |     |     +--------------- Size
+#                              |    | |     +--------------------- Source register 1
+#                              |    | +--------------------------- Destination register
+#                              |    +----------------------------- Ignore result
+#                              +---------------------------------- Function
 
-add_imm                 --- 01 0000 - r1:5 r2:5 size:2 01 imm8:8
-sub_imm                 --- 01 0001 0 r1:5 r2:5 size:2 01 imm8:8
-cmp_imm                 --- 01 0001 1 ----- r2:5 size:2 01 imm8:8
-mul_imm                 --- 01 0010 - r1:5 r2:5 size:2 01 imm8:8
-div_imm                 --- 01 0011 - r1:5 r2:5 size:2 01 imm8:8
-mod_imm                 --- 01 0100 - r1:5 r2:5 size:2 01 imm8:8
-divs_imm                --- 01 0011 - r1:5 r2:5 size:2 11 imm8:8
-mods_imm                --- 01 0100 - r1:5 r2:5 size:2 11 imm8:8
-and_imm                 --- 01 0101 0 r1:5 r2:5 size:2 01 imm8:8
-tst_imm                 --- 01 0101 1 ----- r2:5 size:2 01 imm8:8
-or_imm                  --- 01 0110 - r1:5 r2:5 size:2 01 imm8:8
-xor_imm                 --- 01 0111 - r1:5 r2:5 size:2 01 imm8:8
-{
-  {
-    ret                 --- 01 1000 - 11111 11101 11 01 00000000
-    mov                 --- 01 1000 - r1:5  r2:5  size:2 01 00000000
-  }
-  shl_imm               --- 01 1000 - r1:5  r2:5  size:2 01 imm8:8
-}
-shr_imm                 --- 01 1001 - r1:5 r2:5 size:2 01 imm8:8
-sar_imm                 --- 01 1001 - r1:5 r2:5 size:2 11 imm8:8
-rol_imm                 --- 01 1010 - r1:5 r2:5 size:2 01 imm8:8
-ror_imm                 --- 01 1011 - r1:5 r2:5 size:2 01 imm8:8
+add_reg                 --- 01 0000 0 r1:5  r2:5  size:2 0 0 --- r3:5
+sub_reg                 --- 01 0001 0 r1:5  r2:5  size:2 0 0 --- r3:5
+cmp_reg                 --- 01 0001 1 ----- r2:5  size:2 0 0 --- r3:5
+mul_reg                 --- 01 0010 0 r1:5  r2:5  size:2 0 0 --- r3:5
+div_reg                 --- 01 0011 0 r1:5  r2:5  size:2 0 0 --- r3:5
+mod_reg                 --- 01 0100 0 r1:5  r2:5  size:2 0 0 --- r3:5
+divs_reg                --- 01 0011 0 r1:5  r2:5  size:2 1 0 --- r3:5
+mods_reg                --- 01 0100 0 r1:5  r2:5  size:2 1 0 --- r3:5
+and_reg                 --- 01 0101 0 r1:5  r2:5  size:2 0 0 --- r3:5
+tst_reg                 --- 01 0101 1 ----- r2:5  size:2 0 0 --- r3:5
+or_reg                  --- 01 0110 0 r1:5  r2:5  size:2 0 0 --- r3:5
+xor_reg                 --- 01 0111 0 r1:5  r2:5  size:2 0 0 --- r3:5
+shl_reg                 --- 01 1000 0 r1:5  r2:5  size:2 0 0 --- r3:5
+shr_reg                 --- 01 1001 0 r1:5  r2:5  size:2 0 0 --- r3:5
+sar_reg                 --- 01 1001 0 r1:5  r2:5  size:2 1 0 --- r3:5
+rol_reg                 --- 01 1010 0 r1:5  r2:5  size:2 0 0 --- r3:5
+ror_reg                 --- 01 1011 0 r1:5  r2:5  size:2 0 0 --- r3:5
 
-neg                     --- 01 1100 - r1:5 r2:5 size:2 0- --------
-not                     --- 01 1101 - r1:5 r2:5 size:2 0- --------
-extend                  --- 01 1110 - r1:5 r2:5 size:2 -- ------ to:2
-swe                     --- 01 1111 - r1:5 r2:5 size:2 0- --------
+# data processing (imm):--- 01 wwww f ddddd aaaaa ss S 1 iiiiiiii
+#                              |    | |     |     |  |   |
+#                              |    | |     |     |  |   +-------- Immediate value
+#                              |    | |     |     |  +------------ Signed bit
+#                              |    | |     |     +--------------- Size
+#                              |    | |     +--------------------- Source register 1
+#                              |    | +--------------------------- Destination register
+#                              |    +----------------------------- Ignore result
+#                              +---------------------------------- Function
 
-cswap                   --- 11 01110 r1:5 r2:5 size:2 -- cond:3 r3:5
-xchg                    --- 11 01111 r1:5 r2:5 size:2 -- --------
+add_imm                 --- 01 0000 0 r1:5  r2:5  size:2 0 1 imm8:8
+sub_imm                 --- 01 0001 0 r1:5  r2:5  size:2 0 1 imm8:8
+cmp_imm                 --- 01 0001 1 ----- r2:5  size:2 0 1 imm8:8
+mul_imm                 --- 01 0010 0 r1:5  r2:5  size:2 0 1 imm8:8
+div_imm                 --- 01 0011 0 r1:5  r2:5  size:2 0 1 imm8:8
+mod_imm                 --- 01 0100 0 r1:5  r2:5  size:2 0 1 imm8:8
+divs_imm                --- 01 0011 0 r1:5  r2:5  size:2 1 1 imm8:8
+mods_imm                --- 01 0100 0 r1:5  r2:5  size:2 1 1 imm8:8
+and_imm                 --- 01 0101 0 r1:5  r2:5  size:2 0 1 imm8:8
+tst_imm                 --- 01 0101 1 ----- r2:5  size:2 0 1 imm8:8
+or_imm                  --- 01 0110 0 r1:5  r2:5  size:2 0 1 imm8:8
+xor_imm                 --- 01 0111 0 r1:5  r2:5  size:2 0 1 imm8:8
+shl_imm                 --- 01 1000 0 r1:5  r2:5  size:2 0 1 imm8:8
+shr_imm                 --- 01 1001 0 r1:5  r2:5  size:2 0 1 imm8:8
+sar_imm                 --- 01 1001 0 r1:5  r2:5  size:2 1 1 imm8:8
+rol_imm                 --- 01 1010 0 r1:5  r2:5  size:2 0 1 imm8:8
+ror_imm                 --- 01 1011 0 r1:5  r2:5  size:2 0 1 imm8:8
 
-fadd                    --- 11 01100 0000 0 - r1:5 r2:5  - r3:5
-faddi                   --- 11 01100 0000 1 - r1:5 r2:5  - r3:5
-fsub                    --- 11 01100 0001 0 0 r1:5 r2:5  - r3:5
-fsubi                   --- 11 01100 0001 1 0 r1:5 r2:5  - r3:5
-fcmp                    --- 11 01100 0001 0 1 ----- r2:5 - r3:5
-fcmpi                   --- 11 01100 0001 1 1 ----- r2:5 - r3:5
-fmul                    --- 11 01100 0010 0 - r1:5 r2:5  - r3:5
-fmuli                   --- 11 01100 0010 1 - r1:5 r2:5  - r3:5
-fdiv                    --- 11 01100 0011 0 - r1:5 r2:5  - r3:5
-fdivi                   --- 11 01100 0011 1 - r1:5 r2:5  - r3:5
-fmod                    --- 11 01100 0100 0 - r1:5 r2:5  - r3:5
-fmodi                   --- 11 01100 0100 1 - r1:5 r2:5  - r3:5
-f2i                     --- 11 01100 0101 0 - r1:5 r2:5  - -----
-i2f                     --- 11 01100 0101 1 - r1:5 r2:5  - -----
-fsin                    --- 11 01100 0110 0 - r1:5 r2:5  - -----
-fsini                   --- 11 01100 0110 1 - r1:5 r2:5  - -----
-fsqrt                   --- 11 01100 0111 0 - r1:5 r2:5  - -----
-fsqrti                  --- 11 01100 0111 1 - r1:5 r2:5  - -----
-sadd                    --- 11 01101 0000 0 - r1:5 r2:5  - r3:5
-saddi                   --- 11 01101 0000 1 - r1:5 r2:5  - r3:5
-ssub                    --- 11 01101 0001 0 0 r1:5 r2:5  - r3:5
-ssubi                   --- 11 01101 0001 1 0 r1:5 r2:5  - r3:5
-scmp                    --- 11 01101 0001 0 1 ----- r2:5 - r3:5
-scmpi                   --- 11 01101 0001 1 1 ----- r2:5 - r3:5
-smul                    --- 11 01101 0010 0 - r1:5 r2:5  - r3:5
-smuli                   --- 11 01101 0010 1 - r1:5 r2:5  - r3:5
-sdiv                    --- 11 01101 0011 0 - r1:5 r2:5  - r3:5
-sdivi                   --- 11 01101 0011 1 - r1:5 r2:5  - r3:5
-smod                    --- 11 01101 0100 0 - r1:5 r2:5  - r3:5
-smodi                   --- 11 01101 0100 1 - r1:5 r2:5  - r3:5
-s2i                     --- 11 01101 0101 0 - r1:5 r2:5  - -----
-i2s                     --- 11 01101 0101 1 - r1:5 r2:5  - -----
-ssin                    --- 11 01101 0110 0 - r1:5 r2:5  - -----
-ssini                   --- 11 01101 0110 1 - r1:5 r2:5  - -----
-ssqrt                   --- 11 01101 0111 0 - r1:5 r2:5  - -----
-ssqrti                  --- 11 01101 0111 1 - r1:5 r2:5  - -----
-s2f                     --- 11 01100 1000 0 - r1:5 r2:5  - -----
-f2s                     --- 11 01101 1000 0 - r1:5 r2:5  - -----
+neg                     --- 01 1100 0 r1:5  r2:5  size:2 0 0 --------
+not                     --- 01 1101 0 r1:5  r2:5  size:2 0 0 --------
+extend                  --- 01 1110 0 r1:5  r2:5  size:2 0 1 ------ to:2
+swe                     --- 01 1111 0 r1:5  r2:5  size:2 0 0 --------
 
-cpuid                   --- 11 00000 ----------------------
-brk                     --- 11 00001 ------ what:16
-zeroupper               --- 11 00010 --------------- size:2 r1:5
-sret                    --- 11 00011 ----------------------
-hret                    --- 11 00100 ----------------------
-iret                    --- 11 00101 ----------------------
-svc                     --- 11 00110 ----------------------
-mov_cr_r                --- 11 00111 ------------ cr1:5 r1:5
-mov_r_cr                --- 11 01000 ------------ cr1:5 r1:5
-hexit                   --- 11 01001 ----------------------
-sexit                   --- 11 01010 ----------------------
+# load effective addr:  --- 10 00 ddddd rrrrrrrrrrrrrrrrrrrr
+#                                 |     |
+#                                 |     +----------------------- PC-relative offset
+#                                 +----------------------------- Destination register
 
 lea                     --- 10 00 r1:5 rel:s20
+
+# movz:                 --- 10 01 ddddd - 0 SS iiiiiiiiiiiiiiii
+#                                 |         |  |
+#                                 |         |  +------------------ Immediate value
+#                                 |         +--------------------- Shift
+#                                 +------------------------------- Destination register
+
+# movk:                 --- 10 01 ddddd - 1 SS iiiiiiiiiiiiiiii
+#                                 |         |  |
+#                                 |         |  +------------------ Immediate value
+#                                 |         +--------------------- Shift
+#                                 +------------------------------- Destination register
+
 movz_0                  --- 10 01 r1:5 - 0 00 imm:16
 movz_16                 --- 10 01 r1:5 - 0 01 imm:16
 movz_32                 --- 10 01 r1:5 - 0 10 imm:16
@@ -115,6 +100,32 @@ movk_0                  --- 10 01 r1:5 - 1 00 imm:16
 movk_16                 --- 10 01 r1:5 - 1 01 imm:16
 movk_32                 --- 10 01 r1:5 - 1 10 imm:16
 movk_48                 --- 10 01 r1:5 - 1 11 imm:16
+
+# load/store (imm):     --- 10 10 ddddd ss L 0 U aaaaa iiiiiiiiii
+#                                 |     |  |   | |     |
+#                                 |     |  |   | |     +----------- Immediate Offset
+#                                 |     |  |   | +----------------- Address register
+#                                 |     |  |   +------------------- Update base register
+#                                 |     |  +----------------------- Load/store
+#                                 |     +-------------------------- Size
+#                                 +-------------------------------- Target/Source register
+
+# load/store (reg):     --- 10 10 ddddd ss L 1 U aaaaa -- SSS rrrrr
+#                                 |     |  |   | |        |   |
+#                                 |     |  |   | |        |   +----- Offset register
+#                                 |     |  |   | |        +--------- Offset shift
+#                                 |     |  |   | +------------------ Address register
+#                                 |     |  |   +-------------------- Update base register
+#                                 |     |  +------------------------ Load/store
+#                                 |     +--------------------------- Size
+#                                 +--------------------------------- Target/Source register
+
+# load/store (pc_rel):  --- 10 11 ddddd ss L ooooooooooooooooo
+#                                 |     |  | |
+#                                 |     |  | +----------------- Offset
+#                                 |     |  +------------------- Load/store
+#                                 |     +---------------------- Size
+#                                 +---------------------------- Target/Source register
 
 ldr_reg                 --- 10 10 r1:5 size:2 0 0 0 r2:5 -- shift:3 r3:5
 ldr_reg_update          --- 10 10 r1:5 size:2 0 0 1 r2:5 -- shift:3 r3:5
@@ -127,10 +138,53 @@ str_imm_update          --- 10 10 r1:5 size:2 1 1 1 r2:5 imm:s10
 ldr_pc_rel              --- 10 11 r1:5 size:2 0 rel:s17
 str_pc_rel              --- 10 11 r1:5 size:2 1 rel:s17
 
-ubxt                    --- 11 10000 r1:5 r2:5 count:6 start:6
-sbxt                    --- 11 10001 r1:5 r2:5 count:6 start:6
-ubdp                    --- 11 10010 r1:5 r2:5 count:6 start:6
-sbdp                    --- 11 10011 r1:5 r2:5 count:6 start:6
+# utility:              --- 11 000 wwww --------------------
+#                                  |
+#                                  +------------------------- Function
+
+cpuid                   --- 11 000 0000 --------------------
+brk                     --- 11 000 0001 ---- what:16
+zeroupper               --- 11 000 0010 ------------- size:2 r1:5
+sret                    --- 11 000 0011 --------------------
+hret                    --- 11 000 0100 --------------------
+iret                    --- 11 000 0101 --------------------
+svc                     --- 11 000 0110 --------------------
+mov_cr_r                --- 11 000 0111 ---------- cr1:5 r1:5
+mov_r_cr                --- 11 000 1000 ---------- cr1:5 r1:5
+hexit                   --- 11 000 1001 --------------------
+sexit                   --- 11 000 1010 --------------------
+
+fadd                    --- 11 001 00000 0 - - 0 r1:5 r2:5 r3:5
+fsub                    --- 11 001 00001 0 - - 0 r1:5 r2:5 r3:5
+fcmp                    --- 11 001 00001 0 - - 1 r1:5 r2:5 r3:5
+fmul                    --- 11 001 00010 0 - - 0 r1:5 r2:5 r3:5
+fdiv                    --- 11 001 00011 0 - - 0 r1:5 r2:5 r3:5
+fmod                    --- 11 001 00100 0 - - 0 r1:5 r2:5 r3:5
+i2f                     --- 11 001 00101 0 - 0 0 r1:5 r2:5 -----
+f2i                     --- 11 001 00101 0 - 1 0 r1:5 r2:5 -----
+fsin                    --- 11 001 00110 0 - - 0 r1:5 r2:5 -----
+fsqrt                   --- 11 001 00111 0 - - 0 r1:5 r2:5 -----
+f2d                     --- 11 001 01000 0 - - 0 r1:5 r2:5 -----
+
+dadd                    --- 11 001 00000 1 - - 0 r1:5 r2:5 r3:5
+dsub                    --- 11 001 00001 1 - - 0 r1:5 r2:5 r3:5
+dcmp                    --- 11 001 00001 1 - - 1 r1:5 r2:5 r3:5
+dmul                    --- 11 001 00010 1 - - 0 r1:5 r2:5 r3:5
+ddiv                    --- 11 001 00011 1 - - 0 r1:5 r2:5 r3:5
+dmod                    --- 11 001 00100 1 - - 0 r1:5 r2:5 r3:5
+i2d                     --- 11 001 00101 1 - 0 0 r1:5 r2:5 -----
+d2i                     --- 11 001 00101 1 - 1 0 r1:5 r2:5 -----
+dsin                    --- 11 001 00110 1 - - 0 r1:5 r2:5 -----
+dsqrt                   --- 11 001 00111 1 - - 0 r1:5 r2:5 -----
+d2f                     --- 11 001 01000 1 - - 0 r1:5 r2:5 -----
+
+cswap                   --- 11 010 10 r1:5 r2:5 size:2 -- cond:3 r3:5
+xchg                    --- 11 010 11 r1:5 r2:5 size:2 -- --------
+
+ubxt                    --- 11 100 00 r1:5 r2:5 count:6 start:6
+sbxt                    --- 11 100 01 r1:5 r2:5 count:6 start:6
+ubdp                    --- 11 100 10 r1:5 r2:5 count:6 start:6
+sbdp                    --- 11 100 11 r1:5 r2:5 count:6 start:6
 
 %vmov_reg_slot 12:3 5:3
 vadd                    --- 11 111 00000 type:3 v1:4 v2:4 ---- v3:4
@@ -163,4 +217,4 @@ vshr                    --- 11 111 10011 type:3 v1:4 v2:4 --- is_signed:1 v3:4
 vsqrt                   --- 11 111 10100 type:3 v1:4 v2:4 --------
 vmod                    --- 11 111 10101 type:3 v1:4 v2:4 ---- v3:4
 vmovall                 --- 11 111 10110 type:3 v1:4 ---- --- r2:5
-vtst                    --- 11 111 11111 type:3 v1:4 v2:4 - cond:3 v3:4
+vtst                    --- 11 111 10111 type:3 v1:4 v2:4 - cond:3 v3:4

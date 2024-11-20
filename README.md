@@ -31,7 +31,7 @@ Of the 32 registers 3 are reserved for special use:
 ### Register Mnemonics
 - `bX`: A byte-sized register where `X` is the register number
 - `wX`: A word-sized register where `X` is the register number
-- `dX`: A doubleword-sized register where `X` is the register number
+- `dX`: A doubleword-sized register where `X` is the register number 
 - `qX`: A quadword-sized register where `X` is the register number
 - `rX`: A quadword-sized register where `X` is the register number
 

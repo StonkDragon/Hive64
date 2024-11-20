@@ -16,19 +16,35 @@
 #define HIVE64_FILE_MAGIC 0x1337C0DE
 #define HIVE_FAT_FILE_MAGIC 0xFEEDFACF
 
-typedef __uint128_t LWord_t;    // long word
-typedef __int128_t SLWord_t;    // signed long word
-typedef uint64_t QWord_t;       // quad word
-typedef uint32_t DWord_t;       // double word
-typedef uint16_t Word_t;        // word
-typedef uint8_t Byte_t;         // byte
-typedef int64_t SQWord_t;       // signed quad word
-typedef int32_t SDWord_t;       // signed double word
-typedef int16_t SWord_t;        // signed word
-typedef int8_t SByte_t;         // signed byte
-typedef void* Pointer_t;        // pointer
-typedef double Float64_t;       // double precision floating point
-typedef float Float32_t;        // single precision floating point
+typedef __uint128_t LWord_t;            // long word
+typedef __int128_t SLWord_t;            // signed long word
+typedef unsigned long long QWord_t;     // quad word
+#define QWord_t_HEX_FMT                 "0x%016llx"
+#define QWord_t_FMT                     "%llu"
+typedef uint32_t DWord_t;               // double word
+#define DWord_t_HEX_FMT                 "0x%08x"
+#define DWord_t_FMT                     "%u"
+typedef uint16_t Word_t;                // word
+#define Word_t_HEX_FMT                  "0x%04x"
+#define Word_t_FMT                      "%u"
+typedef uint8_t Byte_t;                 // byte
+#define Byte_t_HEX_FMT                  "0x%02x"
+#define Byte_t_FMT                      "%u"
+typedef long long SQWord_t;             // signed quad word
+#define SQWord_t_HEX_FMT                "0x%016llx"
+#define SQWord_t_FMT                    "%lld"
+typedef int32_t SDWord_t;               // signed double word
+#define SDWord_t_HEX_FMT                "0x%08x"
+#define SDWord_t_FMT                    "%d"
+typedef int16_t SWord_t;                // signed word
+#define SWord_t_HEX_FMT                 "0x%04x"
+#define SWord_t_FMT                     "%d"
+typedef int8_t SByte_t;                 // signed byte
+#define SByte_t_HEX_FMT                 "0x%02x"
+#define SByte_t_FMT                     "%d"
+typedef void* Pointer_t;                // pointer
+typedef double Float64_t;               // double precision floating point
+typedef float Float32_t;                // single precision floating point
 
 #define CONCAT_(a, b) a ## b
 #define CONCAT(a, b) CONCAT_(a, b)
@@ -390,6 +406,19 @@ typedef union hive_register_t {
     hive_flag_register_t    asFlags;
 } hive_register_t;
 
+typedef union hive_register16_t {
+    Word_t                  asU16;
+    Byte_t                  asU8;
+    SWord_t                 asI16;
+    SByte_t                 asI8;
+
+    Word_t                  asWord;
+    Byte_t                  asByte;
+    SWord_t                 asSWord;
+    SByte_t                 asSByte;
+    hive_flag_register_t    asFlags;
+} hive_register16_t;
+
 #ifdef static_assert
 static_assert(sizeof(hive_flag_register_t) <= sizeof(QWord_t), "hive_flag_register_t is wrong size");
 #endif
@@ -467,8 +496,8 @@ void* sys_mmap(void* addr, size_t sz, int prot, int map, int fd, long long off);
 
 struct cpu_state {
     hive_register_t r[32];
+    hive_register_t cr[32];
     hive_vector_register_t v[16];
-    hive_register_t cr[12];
     void* idt;
 };
 

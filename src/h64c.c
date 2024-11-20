@@ -712,7 +712,9 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     char* str = tokens.items[i].value;
                     str = unquote(str);
                     if (last_global_symbol && str[0] == '$') {
+                        printf("last_global_symbol: %s\n", last_global_symbol);
                         str = strformat("%s%s", last_global_symbol, str);
+                        printf("str: %s\n", str);
                     }
                     Relocation off = {
                         .data.name = str,
@@ -792,7 +794,9 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     char* str = tokens.items[i].value;
                     str = unquote(str);
                     if (last_global_symbol && str[0] == '$') {
+                        printf("last_global_symbol: %s\n", last_global_symbol);
                         str = strformat("%s%s", last_global_symbol, str);
+                        printf("str: %s\n", str);
                     }
                     Relocation off = {
                         .data.name = str,
@@ -1645,7 +1649,9 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     char* str = tokens.items[i].value;
                     str = unquote(str);
                     if (last_global_symbol && str[0] == '$') {
+                        printf("last_global_symbol: %s\n", last_global_symbol);
                         str = strformat("%s%s", last_global_symbol, str);
+                        printf("str: %s\n", str);
                     }
                     Relocation off = {
                         .data.name = str,
@@ -1660,7 +1666,9 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     char* str = tokens.items[i].value;
                     str = unquote(str);
                     if (last_global_symbol && str[0] == '$') {
+                        printf("last_global_symbol: %s\n", last_global_symbol);
                         str = strformat("%s%s", last_global_symbol, str);
+                        printf("str: %s\n", str);
                     }
                     Relocation off = {
                         .data.name = str,
@@ -1745,7 +1753,9 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                     char* str = tokens.items[i].value;
                     str = unquote(str);
                     if (last_global_symbol && str[0] == '$') {
+                        printf("last_global_symbol: %s\n", last_global_symbol);
                         str = strformat("%s%s", last_global_symbol, str);
+                        printf("str: %s\n", str);
                     }
                     Relocation off = {
                         .data.name = str,
@@ -1774,7 +1784,9 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
                 char* str = tokens.items[i].value;
                 str = unquote(str);
                 if (last_global_symbol && str[0] == '$') {
+                        printf("last_global_symbol: %s\n", last_global_symbol);
                     str = strformat("%s%s", last_global_symbol, str);
+                        printf("str: %s\n", str);
                 }
                 Relocation off = {
                     .data.name = str,
@@ -1820,7 +1832,9 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             char* str = tokens.items[i].value;
             str = unquote(str);
             if (last_global_symbol && str[0] == '$') {
+                        printf("last_global_symbol: %s\n", last_global_symbol);
                 str = strformat("%s%s", last_global_symbol, str);
+                        printf("str: %s\n", str);
             }
             Symbol off = {
                 .name = str,
@@ -1883,7 +1897,7 @@ SB_Array compile(Token_Array tokens, Symbol_Array* syms, Relocation_Array* reloc
             }
         #define relative_check(_dist) \
             if (diff >= _dist || diff < -_dist) { \
-                fprintf(stderr, "Relative address too far: %d > %d (%llx -> %llx)\n", diff, _dist, (QWord_t) &sect.items[current_address], target_address); \
+                fprintf(stderr, "Relative address too far: %d > %d (" QWord_t_HEX_FMT " -> " QWord_t_HEX_FMT ")\n", diff, _dist, (QWord_t) &sect.items[current_address], (QWord_t) target_address); \
                 exit(1); \
             }
 

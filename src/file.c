@@ -203,10 +203,10 @@ void relocate(LoadCommand_Array sects, Relocation_Array relocs, Symbol_Array sym
     bool has_errors = false;
     for (size_t i = 0; i < relocs.count; i++) {
         Relocation reloc = relocs.items[i];
-        uint64_t current_address = reloc.source_offset;
-        uint64_t target_address;
+        QWord_t current_address = reloc.source_offset;
+        QWord_t target_address;
         if (reloc.is_local) {
-            target_address = (uint64_t) sects.items[reloc.data.local.target_section].data + reloc.data.local.target_offset;
+            target_address = (QWord_t) sects.items[reloc.data.local.target_section].data + reloc.data.local.target_offset;
         } else {
             Symbol target = find_symbol(symbols, reloc.data.name);
             target_address = target.offset;
@@ -214,7 +214,7 @@ void relocate(LoadCommand_Array sects, Relocation_Array relocs, Symbol_Array sym
 
         LoadCommand lc = sects.items[reloc.source_section];
         if (lc.data == NULL) {
-            fprintf(stderr, "Section %llu does not exist\n", reloc.source_section);
+            fprintf(stderr, "Section " QWord_t_FMT " does not exist\n", (QWord_t) reloc.source_section);
             continue;
         }
 
@@ -237,7 +237,7 @@ void relocate(LoadCommand_Array sects, Relocation_Array relocs, Symbol_Array sym
             }
         #define relative_check(_dist) \
             if (diff >= _dist || diff < -_dist) { \
-                fprintf(stderr, "Relative address too far: %d > %d (%llx -> %llx)\n", diff, _dist, (QWord_t) (lc.data + current_address), target_address); \
+                fprintf(stderr, "Relative address too far: %d > %d (" QWord_t_HEX_FMT " -> " QWord_t_HEX_FMT ")\n", diff, _dist, (QWord_t) (lc.data + current_address), target_address); \
                 exit(1); \
             }
 
@@ -287,7 +287,7 @@ void prepare(Hive64File_Array hf, bool try_relocate, Symbol_Array* all_syms) {
         for (size_t j = 0; j < syms.count; j++) {
             Section sect = hf.items[i].load_commands.items[syms.items[j].section];
             if (sect.data == NULL) {
-                fprintf(stderr, "Section %llu does not exist (max is %zu)\n", syms.items[j].section, hf.items[i].load_commands.count);
+                fprintf(stderr, "Section " QWord_t_FMT " does not exist (max is %zu)\n", (QWord_t) syms.items[j].section, hf.items[i].load_commands.count);
                 continue;
             }
             syms.items[j].offset += (uint64_t) sect.data;

@@ -44,7 +44,7 @@ void coredump(struct cpu_state* state) {
         printf("}\n");
         printf("    .q = { ");
         for (size_t j = 0; j < 4; j++) {
-            printf("0x%016llx ", state->v[i].asQWords[j]);
+            printf("" QWord_t_HEX_FMT " ", state->v[i].asQWords[j]);
         }
         
         printf("}\n");
@@ -87,12 +87,14 @@ char* strformat(const char* fmt, ...) {
     #pragma clang diagnostic ignored "-Wformat-security"
     va_list l;
     va_start(l, fmt);
-    size_t len = vsnprintf(NULL, 0, fmt, l) + 1;
+    size_t len = vsnprintf(NULL, 0, fmt, l);
     if (len == 0) {
         va_end(l);
-        return NULL;
+        printf("Failed to format string\n");
+        vprintf(fmt, l);
+        exit(1);
     }
-    char* data = malloc(len);
+    char* data = malloc(len + 1);
     vsnprintf(data, len, fmt, l);
     va_end(l);
     return data;
@@ -219,7 +221,7 @@ int main(int argc, char **argv) {
                 char* dlib = NULL;
                 if (argv[i][2] == 0) {
                     i++;
-                    if (i >= argc) {
+                    if (i >= argc || argv[i] == NULL) {
                         fprintf(stderr, "-o expects one argument!\n");
                         return 1;
                     }
@@ -227,10 +229,13 @@ int main(int argc, char **argv) {
                 } else {
                     dlib = argv[i] + 2;
                 }
+                printf("dlib: %s\n", dlib);
                 if (dlib[0] == ':') {
                     nob_da_append(&dlibs, dlib + 1);
                 } else {
-                    nob_da_append(&dlibs, strformat("lib%s.dll", dlib));
+                    char* lib = strformat("lib%s.dll", dlib);
+                    printf("lib: %s\n", lib);
+                    nob_da_append(&dlibs, lib);
                 }
             } else if (strends(argv[i], ".rcx")) {
                 nob_da_append(&link_with, argv[i]);

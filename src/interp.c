@@ -64,6 +64,7 @@ static inline Float32_t set_flagsf32(struct cpu_state* ctx, Float32_t res) {
 #define set_flags(state, res) _Generic((res), \
     SLWord_t: set_flags128, LWord_t: set_flags128, \
     uint64_t: set_flags64, int64_t: set_flags64, \
+    QWord_t: set_flags64, SQWord_t: set_flags64, \
     uint32_t: set_flags32, int32_t: set_flags32, \
     uint16_t: set_flags16, int16_t: set_flags16, \
     uint8_t: set_flags8, int8_t: set_flags8, \
@@ -88,6 +89,7 @@ def_ror(Word_t, 16)
 def_ror(Byte_t, 8)
 
 #define ROR(_a, _b) _Generic((_a), \
+    QWord_t: ror64, SQWord_t: ror64, \
     uint64_t: ror64, int64_t: ror64, \
     uint32_t: ror32, int32_t: ror32, \
     uint16_t: ror16, int16_t: ror16, \
@@ -140,7 +142,13 @@ static inline uint8_t swap_bytes_8(uint8_t x) {
     return x;
 }
 
-#define swap_bytes(x) _Generic((x), int64_t: swap_bytes_64, uint64_t: swap_bytes_64, int32_t: swap_bytes_32, uint32_t: swap_bytes_32, int16_t: swap_bytes_16, uint16_t: swap_bytes_16, int8_t: swap_bytes_8, uint8_t: swap_bytes_8)((x))
+#define swap_bytes(x) _Generic((x), \
+    QWord_t: swap_bytes_64, SQWord_t: swap_bytes_64, \
+    uint64_t: swap_bytes_64, int64_t: swap_bytes_64, \
+    uint32_t: swap_bytes_32, int32_t: swap_bytes_32, \
+    uint16_t: swap_bytes_16, int16_t: swap_bytes_16, \
+    uint8_t: swap_bytes_8, int8_t: swap_bytes_8 \
+)(x)
 
 #define INTENT_WRITE 1
 #define INTENT_READ 0

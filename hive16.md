@@ -1,3 +1,4 @@
+# Instructions
 ```
 add             00000 Rd:3 Rn:3 Rm:3 -- # 1 clock cycle
 sub             00001 Rd:3 Rn:3 Rm:3 -- # 1 clock cycle
@@ -34,6 +35,7 @@ nop             11001 ---  ---  ---  -- # 1 clock cycle
 halt            11010 ---  ---  ---  -- # 1 clock cycle
 ```
 
+# Registers
 ```
 r0              000
 r1              001
@@ -45,6 +47,7 @@ sp              110
 pc              111
 ```
 
+# Conditions
 ```
 eq              00 ; check zero flag
 lt              01 ; check negative flag
