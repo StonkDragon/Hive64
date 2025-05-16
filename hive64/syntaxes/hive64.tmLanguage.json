@@ -66,13 +66,13 @@
 		"generic_mnemonics": {
 			"patterns": [{
 				"name": "keyword.control",
-				"match": "\\b(nop|zeroupper|[shi]?ret|(s|h)exit|ldr|str|mov(z|k)?|lea|svc|cpuid|(s|u)b(xt|dp)|psh|pp)\\b"
+				"match": "\\b(nop|zeroupper|[shi]?ret|(s|h)exit|ldr|str|mov(z|k)?|lea|svc|cpuid|brk|(s|u)b(xt|dp)|psh|pp)\\b"
 			}]
 		},
 		"float_mnemonics": {
 			"patterns": [{
 				"name": "keyword.control",
-				"match": "\\b((f|d)(add|sub|mul|div|mod|cmp)i?|i2(f|s)|(f|s)2i|f2s|s2f|(f|s)(sqrt|sin))\\b"
+				"match": "\\b((f|d)(add|sub|mul|div|mod|cmp)|i2(f|d)|(f|d)2i|f2d|d2f|(f|d)(sqrt|sin))\\b"
 			}]
 		},
 		"branch_mnemonics": {

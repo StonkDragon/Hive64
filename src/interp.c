@@ -316,20 +316,20 @@ static inline int32_t sextract32(uint32_t value, int start, int length) {
 int check_condition0(uint8_t ins, hive_flag_register_t fr);
 int check_condition1(uint8_t cond, hive_flag_register_t fr);
 
-static bool trans_branch(DisasContext *ctx, arg_branch *a) {
+bool hive64_branch(DisasContext *ctx, arg_branch *a) {
     BRANCH_RELATIVE(a->rel);
     return true;
 }
-static bool trans_branch_link(DisasContext *ctx, arg_branch_link *a) {
+bool hive64_branch_link(DisasContext *ctx, arg_branch_link *a) {
     LINK();
     BRANCH_RELATIVE(a->rel);
     return true;
 }
-static bool trans_branch_reg(DisasContext *ctx, arg_branch_reg *a) {
+bool hive64_branch_reg(DisasContext *ctx, arg_branch_reg *a) {
     BRANCH(readQWord(ctx, a->r1));
     return true;
 }
-static bool trans_branch_reg_link(DisasContext *ctx, arg_branch_reg_link *a) {
+bool hive64_branch_reg_link(DisasContext *ctx, arg_branch_reg_link *a) {
     LINK();
     BRANCH(readQWord(ctx, a->r1));
     return true;
@@ -384,156 +384,143 @@ static bool trans_branch_reg_link(DisasContext *ctx, arg_branch_reg_link *a) {
         case SIZE_64BIT: writeSQWord(ctx, a->r1, set_flags(ctx, readSQWord(ctx, a->r2) _op (SQWord_t) a->imm8)); break; \
     }
 
-static bool trans_add_reg(DisasContext *ctx, arg_add_reg *a) {
+bool hive64_add_reg(DisasContext *ctx, arg_add_reg *a) {
     ALU_R(+);
     return true;
 }
-static bool trans_sub_reg(DisasContext *ctx, arg_sub_reg *a) {
+bool hive64_sub_reg(DisasContext *ctx, arg_sub_reg *a) {
     ALU_R(-);
     return true;
 }
-static bool trans_cmp_reg(DisasContext *ctx, arg_cmp_reg *a) {
+bool hive64_cmp_reg(DisasContext *ctx, arg_cmp_reg *a) {
     ALU_R_DISC(-);
     return true;
 }
-static bool trans_mul_reg(DisasContext *ctx, arg_mul_reg *a) {
+bool hive64_mul_reg(DisasContext *ctx, arg_mul_reg *a) {
     ALU_R(*);
     return true;
 }
-static bool trans_div_reg(DisasContext *ctx, arg_div_reg *a) {
+bool hive64_div_reg(DisasContext *ctx, arg_div_reg *a) {
     ALU_R(/);
     return true;
 }
-static bool trans_mod_reg(DisasContext *ctx, arg_mod_reg *a) {
+bool hive64_mod_reg(DisasContext *ctx, arg_mod_reg *a) {
     ALU_R(%);
     return true;
 }
-static bool trans_divs_reg(DisasContext *ctx, arg_divs_reg *a) {
+bool hive64_divs_reg(DisasContext *ctx, arg_divs_reg *a) {
     SALU_R(/);
     return true;
 }
-static bool trans_mods_reg(DisasContext *ctx, arg_mods_reg *a) {
+bool hive64_mods_reg(DisasContext *ctx, arg_mods_reg *a) {
     SALU_R(%);
     return true;
 }
-static bool trans_and_reg(DisasContext *ctx, arg_and_reg *a) {
+bool hive64_and_reg(DisasContext *ctx, arg_and_reg *a) {
     ALU_R(&)
     return true;
 }
-static bool trans_tst_reg(DisasContext *ctx, arg_tst_reg *a) {
+bool hive64_tst_reg(DisasContext *ctx, arg_tst_reg *a) {
     ALU_R_DISC(&)
     return true;
 }
-static bool trans_or_reg(DisasContext *ctx, arg_or_reg *a) {
+bool hive64_or_reg(DisasContext *ctx, arg_or_reg *a) {
     ALU_R(|)
     return true;
 }
-static bool trans_xor_reg(DisasContext *ctx, arg_xor_reg *a) {
+bool hive64_xor_reg(DisasContext *ctx, arg_xor_reg *a) {
     ALU_R(^)
     return true;
 }
-static bool trans_shl_reg(DisasContext *ctx, arg_shl_reg *a) {
+bool hive64_shl_reg(DisasContext *ctx, arg_shl_reg *a) {
     ALU_R(<<)
     return true;
 }
-static bool trans_shr_reg(DisasContext *ctx, arg_shr_reg *a) {
+bool hive64_shr_reg(DisasContext *ctx, arg_shr_reg *a) {
     ALU_R(>>)
     return true;
 }
-static bool trans_sar_reg(DisasContext *ctx, arg_sar_reg *a) {
+bool hive64_sar_reg(DisasContext *ctx, arg_sar_reg *a) {
     SALU_R(>>)
     return true;
 }
-static bool trans_rol_reg(DisasContext *ctx, arg_rol_reg *a) {
+bool hive64_rol_reg(DisasContext *ctx, arg_rol_reg *a) {
     ALU_R_ROT(ROL);
     return true;
 }
-static bool trans_ror_reg(DisasContext *ctx, arg_ror_reg *a) {
+bool hive64_ror_reg(DisasContext *ctx, arg_ror_reg *a) {
     ALU_R_ROT(ROR);
     return true;
 }
-static bool trans_add_imm(DisasContext *ctx, arg_add_imm *a) {
+bool hive64_add_imm(DisasContext *ctx, arg_add_imm *a) {
     ALU_I(+);
     return true;
 }
-static bool trans_sub_imm(DisasContext *ctx, arg_sub_imm *a) {
+bool hive64_sub_imm(DisasContext *ctx, arg_sub_imm *a) {
     ALU_I(-);
     return true;
 }
-static bool trans_cmp_imm(DisasContext *ctx, arg_cmp_imm *a) {
+bool hive64_cmp_imm(DisasContext *ctx, arg_cmp_imm *a) {
     ALU_I_DISC(-);
     return true;
 }
-static bool trans_mul_imm(DisasContext *ctx, arg_mul_imm *a) {
+bool hive64_mul_imm(DisasContext *ctx, arg_mul_imm *a) {
     ALU_I(*);
     return true;
 }
-static bool trans_div_imm(DisasContext *ctx, arg_div_imm *a) {
+bool hive64_div_imm(DisasContext *ctx, arg_div_imm *a) {
     ALU_I(/);
     return true;
 }
-static bool trans_mod_imm(DisasContext *ctx, arg_mod_imm *a) {
+bool hive64_mod_imm(DisasContext *ctx, arg_mod_imm *a) {
     ALU_I(%);
     return true;
 }
-static bool trans_divs_imm(DisasContext *ctx, arg_divs_imm *a) {
+bool hive64_divs_imm(DisasContext *ctx, arg_divs_imm *a) {
     SALU_I(/);
     return true;
 }
-static bool trans_mods_imm(DisasContext *ctx, arg_mods_imm *a) {
+bool hive64_mods_imm(DisasContext *ctx, arg_mods_imm *a) {
     SALU_I(%);
     return true;
 }
-static bool trans_and_imm(DisasContext *ctx, arg_and_imm *a) {
+bool hive64_and_imm(DisasContext *ctx, arg_and_imm *a) {
     ALU_I(&)
     return true;
 }
-static bool trans_tst_imm(DisasContext *ctx, arg_tst_imm *a) {
+bool hive64_tst_imm(DisasContext *ctx, arg_tst_imm *a) {
     ALU_I_DISC(&)
     return true;
 }
-static bool trans_or_imm(DisasContext *ctx, arg_or_imm *a) {
+bool hive64_or_imm(DisasContext *ctx, arg_or_imm *a) {
     ALU_I(|)
     return true;
 }
-static bool trans_xor_imm(DisasContext *ctx, arg_xor_imm *a) {
+bool hive64_xor_imm(DisasContext *ctx, arg_xor_imm *a) {
     ALU_I(^)
     return true;
 }
-static bool trans_ret(DisasContext *ctx, arg_ret *a) {
-    ctx->r[REG_PC].asQWord = set_flags(ctx, ctx->r[REG_LR].asQWord);
-    return true;
-}
-static bool trans_mov(DisasContext *ctx, arg_mov *a) {
-    switch (a->size) {
-        case SIZE_8BIT: writeByte(ctx, a->r1, set_flags(ctx, readByte(ctx, a->r2))); break;
-        case SIZE_16BIT: writeWord(ctx, a->r1, set_flags(ctx, readWord(ctx, a->r2))); break;
-        case SIZE_32BIT: writeDWord(ctx, a->r1, set_flags(ctx, readDWord(ctx, a->r2))); break;
-        case SIZE_64BIT: writeQWord(ctx, a->r1, set_flags(ctx, readQWord(ctx, a->r2))); break;
-    }
-    return true;
-}
-static bool trans_shl_imm(DisasContext *ctx, arg_shl_imm *a) {
+bool hive64_shl_imm(DisasContext *ctx, arg_shl_imm *a) {
     ALU_I(<<)
     return true;
 }
-static bool trans_shr_imm(DisasContext *ctx, arg_shr_imm *a) {
+bool hive64_shr_imm(DisasContext *ctx, arg_shr_imm *a) {
     ALU_I(>>)
     return true;
 }
-static bool trans_sar_imm(DisasContext *ctx, arg_sar_imm *a) {
+bool hive64_sar_imm(DisasContext *ctx, arg_sar_imm *a) {
     SALU_I(>>)
     return true;
 }
-static bool trans_rol_imm(DisasContext *ctx, arg_rol_imm *a) {
+bool hive64_rol_imm(DisasContext *ctx, arg_rol_imm *a) {
     ALU_I_ROT(ROL);
     return true;
 }
-static bool trans_ror_imm(DisasContext *ctx, arg_ror_imm *a) {
+bool hive64_ror_imm(DisasContext *ctx, arg_ror_imm *a) {
     ALU_I_ROT(ROR);
     return true;
 }
-static bool trans_neg(DisasContext *ctx, arg_neg *a) {
+bool hive64_neg(DisasContext *ctx, arg_neg *a) {
     switch (a->size) {
         case SIZE_8BIT: writeSByte(ctx, a->r1, -readSByte(ctx, a->r2)); break;
         case SIZE_16BIT: writeSWord(ctx, a->r1, -readSWord(ctx, a->r2)); break;
@@ -542,7 +529,7 @@ static bool trans_neg(DisasContext *ctx, arg_neg *a) {
     }
     return true;
 }
-static bool trans_not(DisasContext *ctx, arg_not *a) {
+bool hive64_not(DisasContext *ctx, arg_not *a) {
     switch (a->size) {
         case SIZE_8BIT: writeByte(ctx, a->r1, ~readByte(ctx, a->r2)); break;
         case SIZE_16BIT: writeWord(ctx, a->r1, ~readWord(ctx, a->r2)); break;
@@ -551,7 +538,7 @@ static bool trans_not(DisasContext *ctx, arg_not *a) {
     }
     return true;
 }
-static bool trans_extend(DisasContext *ctx, arg_extend *a) {
+bool hive64_extend(DisasContext *ctx, arg_extend *a) {
     if (a->to <= a->size) {
         return false;
     }
@@ -571,7 +558,7 @@ static bool trans_extend(DisasContext *ctx, arg_extend *a) {
 
     return true;
 }
-static bool trans_swe(DisasContext *ctx, arg_swe *a) {
+bool hive64_swe(DisasContext *ctx, arg_swe *a) {
     switch (a->size) {
         case SIZE_8BIT: writeByte(ctx, a->r1, swap_bytes(readByte(ctx, a->r2))); break;
         case SIZE_16BIT: writeWord(ctx, a->r1, swap_bytes(readWord(ctx, a->r2))); break;
@@ -580,7 +567,7 @@ static bool trans_swe(DisasContext *ctx, arg_swe *a) {
     }
     return true;
 }
-static bool trans_cswap(DisasContext *ctx, arg_cswap *a) {
+bool hive64_cswp(DisasContext *ctx, arg_cswp *a) {
     uint8_t reg = a->r3;
     int check_condition1(uint8_t cond, hive_flag_register_t fr);
     if (check_condition1(a->cond, ctx->cr[CR_FLAGS].asFlags)) {
@@ -594,7 +581,7 @@ static bool trans_cswap(DisasContext *ctx, arg_cswap *a) {
     }
     return true;
 }
-static bool trans_xchg(DisasContext *ctx, arg_xchg *a) {
+bool hive64_xchg(DisasContext *ctx, arg_xchg *a) {
     switch (a->size) {
         case SIZE_8BIT: {
                 Byte_t tmp = readByte(ctx, a->r1);
@@ -623,159 +610,103 @@ static bool trans_xchg(DisasContext *ctx, arg_xchg *a) {
     }
     return true;
 }
-static bool trans_fadd(DisasContext *ctx, arg_fadd *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) + readFloat64(ctx, a->r3)));
-    return true;
-}
-static bool trans_faddi(DisasContext *ctx, arg_faddi *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) + readSQWord(ctx, a->r3)));
-    return true;
-}
-static bool trans_fsub(DisasContext *ctx, arg_fsub *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) - readFloat64(ctx, a->r3)));
-    return true;
-}
-static bool trans_fsubi(DisasContext *ctx, arg_fsubi *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) - readSQWord(ctx, a->r3)));
-    return true;
-}
-static bool trans_fcmp(DisasContext *ctx, arg_fcmp *a) {
-    set_flags(ctx, readFloat64(ctx, a->r2) - readFloat64(ctx, a->r3));
-    return true;
-}
-static bool trans_fcmpi(DisasContext *ctx, arg_fcmpi *a) {
-    set_flags(ctx, readFloat64(ctx, a->r2) - readSQWord(ctx, a->r3));
-    return true;
-}
-static bool trans_fmul(DisasContext *ctx, arg_fmul *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) * readFloat64(ctx, a->r3)));
-    return true;
-}
-static bool trans_fmuli(DisasContext *ctx, arg_fmuli *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) * readSQWord(ctx, a->r3)));
-    return true;
-}
-static bool trans_fdiv(DisasContext *ctx, arg_fdiv *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) / readFloat64(ctx, a->r3)));
-    return true;
-}
-static bool trans_fdivi(DisasContext *ctx, arg_fdivi *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) / readSQWord(ctx, a->r3)));
-    return true;
-}
-static bool trans_fmod(DisasContext *ctx, arg_fmod *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, fmod(readFloat64(ctx, a->r2), readFloat64(ctx, a->r3))));
-    return true;
-}
-static bool trans_fmodi(DisasContext *ctx, arg_fmodi *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, fmod(readFloat64(ctx, a->r2), readSQWord(ctx, a->r3))));
-    return true;
-}
-static bool trans_f2i(DisasContext *ctx, arg_f2i *a) {
-    writeSQWord(ctx, a->r1, readFloat64(ctx, a->r2));
-    return true;
-}
-static bool trans_i2f(DisasContext *ctx, arg_i2f *a) {
-    writeFloat64(ctx, a->r1, readSQWord(ctx, a->r2));
-    return true;
-}
-static bool trans_fsin(DisasContext *ctx, arg_fsin *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, sin(readFloat64(ctx, a->r2))));
-    return true;
-}
-static bool trans_fsini(DisasContext *ctx, arg_fsini *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, sin(readSQWord(ctx, a->r2))));
-    return true;
-}
-static bool trans_fsqrt(DisasContext *ctx, arg_fsqrt *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, sqrt(readFloat64(ctx, a->r2))));
-    return true;
-}
-static bool trans_fsqrti(DisasContext *ctx, arg_fsqrti *a) {
-    writeFloat64(ctx, a->r1, set_flags(ctx, sqrt(readSQWord(ctx, a->r2))));
-    return true;
-}
-static bool trans_sadd(DisasContext *ctx, arg_sadd *a) {
+bool hive64_fadd(DisasContext *ctx, arg_fadd *a) {
     writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) + readFloat32(ctx, a->r3)));
     return true;
 }
-static bool trans_saddi(DisasContext *ctx, arg_saddi *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) + readSDWord(ctx, a->r3)));
-    return true;
-}
-static bool trans_ssub(DisasContext *ctx, arg_ssub *a) {
+bool hive64_fsub(DisasContext *ctx, arg_fsub *a) {
     writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) - readFloat32(ctx, a->r3)));
     return true;
 }
-static bool trans_ssubi(DisasContext *ctx, arg_ssubi *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) - readSDWord(ctx, a->r3)));
-    return true;
-}
-static bool trans_scmp(DisasContext *ctx, arg_scmp *a) {
+bool hive64_fcmp(DisasContext *ctx, arg_fcmp *a) {
     set_flags(ctx, readFloat32(ctx, a->r2) - readFloat32(ctx, a->r3));
     return true;
 }
-static bool trans_scmpi(DisasContext *ctx, arg_scmpi *a) {
-    set_flags(ctx, readFloat32(ctx, a->r2) - readSDWord(ctx, a->r3));
-    return true;
-}
-static bool trans_smul(DisasContext *ctx, arg_smul *a) {
+bool hive64_fmul(DisasContext *ctx, arg_fmul *a) {
     writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) * readFloat32(ctx, a->r3)));
     return true;
 }
-static bool trans_smuli(DisasContext *ctx, arg_smuli *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) * readSDWord(ctx, a->r3)));
-    return true;
-}
-static bool trans_sdiv(DisasContext *ctx, arg_sdiv *a) {
+bool hive64_fdiv(DisasContext *ctx, arg_fdiv *a) {
     writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) / readFloat32(ctx, a->r3)));
     return true;
 }
-static bool trans_sdivi(DisasContext *ctx, arg_sdivi *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2) / readSDWord(ctx, a->r3)));
+bool hive64_fmod(DisasContext *ctx, arg_fmod *a) {
+    writeFloat32(ctx, a->r1, set_flags(ctx, fmodf(readFloat32(ctx, a->r2), readFloat32(ctx, a->r3))));
     return true;
 }
-static bool trans_smod(DisasContext *ctx, arg_smod *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, fmod(readFloat32(ctx, a->r2), readFloat32(ctx, a->r3))));
+bool hive64_i2f(DisasContext *ctx, arg_i2f *a) {
+    writeFloat32(ctx, a->r1, set_flags(ctx, readSDWord(ctx, a->r2)));
     return true;
 }
-static bool trans_smodi(DisasContext *ctx, arg_smodi *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, fmod(readFloat32(ctx, a->r2), readSDWord(ctx, a->r3))));
+bool hive64_fsin(DisasContext *ctx, arg_fsin *a) {
+    writeFloat32(ctx, a->r1, set_flags(ctx, sinf(readFloat32(ctx, a->r2))));
     return true;
 }
-static bool trans_s2i(DisasContext *ctx, arg_s2i *a) {
-    writeSQWord(ctx, a->r1, readFloat32(ctx, a->r2));
+bool hive64_fsqrt(DisasContext *ctx, arg_fsqrt *a) {
+    writeFloat32(ctx, a->r1, set_flags(ctx, sqrtf(readFloat32(ctx, a->r2))));
     return true;
 }
-static bool trans_i2s(DisasContext *ctx, arg_i2s *a) {
-    writeFloat32(ctx, a->r1, readSDWord(ctx, a->r2));
-    return true;
-}
-static bool trans_ssin(DisasContext *ctx, arg_ssin *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, sin(readFloat32(ctx, a->r2))));
-    return true;
-}
-static bool trans_ssini(DisasContext *ctx, arg_ssini *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, sin(readSDWord(ctx, a->r2))));
-    return true;
-}
-static bool trans_ssqrt(DisasContext *ctx, arg_ssqrt *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, sqrt(readFloat32(ctx, a->r2))));
-    return true;
-}
-static bool trans_ssqrti(DisasContext *ctx, arg_ssqrti *a) {
-    writeFloat32(ctx, a->r1, set_flags(ctx, sqrt(readSDWord(ctx, a->r2))));
-    return true;
-}
-static bool trans_s2f(DisasContext *ctx, arg_s2f *a) {
+bool hive64_f2d(DisasContext *ctx, arg_f2d *a) {
     writeFloat64(ctx, a->r1, set_flags(ctx, readFloat32(ctx, a->r2)));
     return true;
 }
-static bool trans_f2s(DisasContext *ctx, arg_f2s *a) {
+
+bool hive64_dadd(DisasContext *ctx, arg_dadd *a) {
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) + readFloat64(ctx, a->r3)));
+    return true;
+}
+
+bool hive64_dsub(DisasContext *ctx, arg_dsub *a) {
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) - readFloat64(ctx, a->r3)));
+    return true;
+}
+
+bool hive64_dcmp(DisasContext *ctx, arg_dcmp *a) {
+    set_flags(ctx, readFloat64(ctx, a->r2) - readFloat64(ctx, a->r3));
+    return true;
+}
+
+bool hive64_dmul(DisasContext *ctx, arg_dmul *a) {
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) * readFloat64(ctx, a->r3)));
+    return true;
+}
+
+bool hive64_ddiv(DisasContext *ctx, arg_ddiv *a) {
+    writeFloat64(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2) / readFloat64(ctx, a->r3)));
+    return true;
+}
+
+bool hive64_dmod(DisasContext *ctx, arg_dmod *a) {
+    writeFloat64(ctx, a->r1, set_flags(ctx, fmod(readFloat64(ctx, a->r2), readFloat64(ctx, a->r3))));
+    return true;
+}
+
+bool hive64_i2d(DisasContext *ctx, arg_i2d *a) {
+    writeFloat64(ctx, a->r1, set_flags(ctx, readSDWord(ctx, a->r2)));
+    return true;
+}
+
+bool hive64_d2i(DisasContext *ctx, arg_d2i *a) {
+    writeSQWord(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2)));
+    return true;
+}
+
+bool hive64_dsin(DisasContext *ctx, arg_dsin *a) {
+    writeFloat64(ctx, a->r1, set_flags(ctx, sin(readFloat64(ctx, a->r2))));
+    return true;
+}
+
+bool hive64_dsqrt(DisasContext *ctx, arg_dsqrt *a) {
+    writeFloat64(ctx, a->r1, set_flags(ctx, sqrt(readFloat64(ctx, a->r2))));
+    return true;
+}
+
+bool hive64_d2f(DisasContext *ctx, arg_d2f *a) {
     writeFloat32(ctx, a->r1, set_flags(ctx, readFloat64(ctx, a->r2)));
     return true;
 }
-static bool trans_cpuid(DisasContext *ctx, arg_cpuid *a) {
+
+bool hive64_cpuid(DisasContext *ctx, arg_cpuid *a) {
     check_permissions(ctx, EM_SUPERVISOR);
     switch (ctx->r[0].asQWord) {
         case 0:
@@ -790,12 +721,12 @@ static bool trans_cpuid(DisasContext *ctx, arg_cpuid *a) {
     }
     return true;
 }
-static bool trans_brk(DisasContext *ctx, arg_brk *a) {
+bool hive64_brk(DisasContext *ctx, arg_brk *a) {
     ctx->cr[CR_BREAK].asWord = a->what;
     raise(SIGTRAP);
     return true;
 }
-static bool trans_zeroupper(DisasContext *ctx, arg_zeroupper *a) {
+bool hive64_zeroupper(DisasContext *ctx, arg_zeroupper *a) {
     switch (a->size) {
         case SIZE_8BIT: {
             Byte_t value = readByte(ctx, a->r1);
@@ -819,19 +750,19 @@ static bool trans_zeroupper(DisasContext *ctx, arg_zeroupper *a) {
     }
     return true;
 }
-static bool trans_sret(DisasContext *ctx, arg_sret *a) {
+bool hive64_sret(DisasContext *ctx, arg_sret *a) {
     check_permissions(ctx, EM_SUPERVISOR);
     ctx->r[REG_PC].asQWord = ctx->r[REG_LR].asQWord;
     ctx->cr[CR_RUNLEVEL].asQWord = EM_USER;
     return true;
 }
-static bool trans_hret(DisasContext *ctx, arg_hret *a) {
+bool hive64_hret(DisasContext *ctx, arg_hret *a) {
     check_permissions(ctx, EM_HYPERVISOR);
     ctx->r[REG_PC].asQWord = ctx->r[REG_LR].asQWord;
     ctx->cr[CR_RUNLEVEL].asQWord = EM_SUPERVISOR;
     return true;
 }
-static bool trans_iret(DisasContext *ctx, arg_iret *a) {
+bool hive64_iret(DisasContext *ctx, arg_iret *a) {
     check_permissions(ctx, EM_HYPERVISOR);
     ctx->cr[CR_RUNLEVEL].asQWord = ctx->r[REG_SP].asQWordPtr[1];
     BRANCH(ctx->r[REG_SP].asQWordPtr[0]);
@@ -839,7 +770,7 @@ static bool trans_iret(DisasContext *ctx, arg_iret *a) {
     handling_interrupt = false;
     return true;
 }
-static bool trans_svc(DisasContext *ctx, arg_svc *a) {
+bool hive64_svc(DisasContext *ctx, arg_svc *a) {
     ctx->r[0].asQWord = svcs[ctx->r[8].asQWord](
         ctx->r[0].asQWord,
         ctx->r[1].asQWord,
@@ -852,74 +783,74 @@ static bool trans_svc(DisasContext *ctx, arg_svc *a) {
     );
     return true;
 }
-static bool trans_mov_cr_r(DisasContext *ctx, arg_mov_cr_r *a) {
+bool hive64_mov_cr_r(DisasContext *ctx, arg_mov_cr_r *a) {
     check_permissions(ctx, EM_HYPERVISOR);
     ctx->cr[a->cr1].asQWord = set_flags(ctx, ctx->r[a->r1].asQWord);
     return true;
 }
-static bool trans_mov_r_cr(DisasContext *ctx, arg_mov_r_cr *a) {
+bool hive64_mov_r_cr(DisasContext *ctx, arg_mov_r_cr *a) {
     ctx->r[a->r1].asQWord = set_flags(ctx, ctx->cr[a->cr1].asQWord);
     return true;
 }
-static bool trans_hexit(DisasContext *ctx, arg_hexit *a) {
+bool hive64_hexit(DisasContext *ctx, arg_hexit *a) {
     check_permissions(ctx, EM_HYPERVISOR);
     ctx->cr[CR_RUNLEVEL].asQWord = EM_SUPERVISOR;
     return true;
 }
-static bool trans_sexit(DisasContext *ctx, arg_sexit *a) {
+bool hive64_sexit(DisasContext *ctx, arg_sexit *a) {
     check_permissions(ctx, EM_SUPERVISOR);
     ctx->cr[CR_RUNLEVEL].asQWord = EM_USER;
     return true;
 }
-static bool trans_lea(DisasContext *ctx, arg_lea *a) {
+bool hive64_lea(DisasContext *ctx, arg_lea *a) {
     writeQWord(ctx, a->r1, PC_REL(a->rel));
     return true;
 }
-static bool trans_movz_0(DisasContext *ctx, arg_movz_0 *a) {
+bool hive64_movz_0(DisasContext *ctx, arg_movz_0 *a) {
     writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 0));
     return true;
 }
-static bool trans_movz_16(DisasContext *ctx, arg_movz_16 *a) {
+bool hive64_movz_16(DisasContext *ctx, arg_movz_16 *a) {
     writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 16));
     return true;
 }
-static bool trans_movz_32(DisasContext *ctx, arg_movz_32 *a) {
+bool hive64_movz_32(DisasContext *ctx, arg_movz_32 *a) {
     writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 32));
     return true;
 }
-static bool trans_movz_48(DisasContext *ctx, arg_movz_48 *a) {
+bool hive64_movz_48(DisasContext *ctx, arg_movz_48 *a) {
     writeQWord(ctx, a->r1, set_flags(ctx, ((QWord_t) a->imm) << 48));
     return true;
 }
-static bool trans_movk_0(DisasContext *ctx, arg_movk_0 *a) {
+bool hive64_movk_0(DisasContext *ctx, arg_movk_0 *a) {
     QWord_t val = readQWord(ctx, a->r1);
     val &= 0xFFFFFFFFFFFF0000;
     val |= ((QWord_t) a->imm) << 0;
     writeQWord(ctx, a->r1, set_flags(ctx, val));
     return true;
 }
-static bool trans_movk_16(DisasContext *ctx, arg_movk_16 *a) {
+bool hive64_movk_16(DisasContext *ctx, arg_movk_16 *a) {
     QWord_t val = readQWord(ctx, a->r1);
     val &= 0xFFFFFFFF0000FFFF;
     val |= ((QWord_t) a->imm) << 16;
     writeQWord(ctx, a->r1, set_flags(ctx, val));
     return true;
 }
-static bool trans_movk_32(DisasContext *ctx, arg_movk_32 *a) {
+bool hive64_movk_32(DisasContext *ctx, arg_movk_32 *a) {
     QWord_t val = readQWord(ctx, a->r1);
     val &= 0xFFFF0000FFFFFFFF;
     val |= ((QWord_t) a->imm) << 32;
     writeQWord(ctx, a->r1, set_flags(ctx, val));
     return true;
 }
-static bool trans_movk_48(DisasContext *ctx, arg_movk_48 *a) {
+bool hive64_movk_48(DisasContext *ctx, arg_movk_48 *a) {
     QWord_t val = readQWord(ctx, a->r1);
     val &= 0x0000FFFFFFFFFFFF;
     val |= ((QWord_t) a->imm) << 48;
     writeQWord(ctx, a->r1, set_flags(ctx, val));
     return true;
 }
-static bool trans_ldr_reg(DisasContext *ctx, arg_ldr_reg *a) {
+bool hive64_ldr_reg(DisasContext *ctx, arg_ldr_reg *a) {
     QWord_t addr = readQWord(ctx, a->r2) + (readQWord(ctx, a->r3) << a->shift);
     switch (a->size) {
         case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr)); break;
@@ -929,7 +860,7 @@ static bool trans_ldr_reg(DisasContext *ctx, arg_ldr_reg *a) {
     }
     return true;
 }
-static bool trans_ldr_reg_update(DisasContext *ctx, arg_ldr_reg_update *a) {
+bool hive64_ldr_reg_update(DisasContext *ctx, arg_ldr_reg_update *a) {
     QWord_t addr = readQWord(ctx, a->r2);
     writeQWord(ctx, a->r2, addr + (readQWord(ctx, a->r3) << a->shift));
     switch (a->size) {
@@ -940,7 +871,7 @@ static bool trans_ldr_reg_update(DisasContext *ctx, arg_ldr_reg_update *a) {
     }
     return true;
 }
-static bool trans_ldr_imm(DisasContext *ctx, arg_ldr_imm *a) {
+bool hive64_ldr_imm(DisasContext *ctx, arg_ldr_imm *a) {
     QWord_t addr = readQWord(ctx, a->r2) + a->imm;
     switch (a->size) {
         case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr)); break;
@@ -950,7 +881,7 @@ static bool trans_ldr_imm(DisasContext *ctx, arg_ldr_imm *a) {
     }
     return true;
 }
-static bool trans_ldr_imm_update(DisasContext *ctx, arg_ldr_imm_update *a) {
+bool hive64_ldr_imm_update(DisasContext *ctx, arg_ldr_imm_update *a) {
     QWord_t addr = readQWord(ctx, a->r2);
     writeQWord(ctx, a->r2, addr + a->imm);
     switch (a->size) {
@@ -961,7 +892,7 @@ static bool trans_ldr_imm_update(DisasContext *ctx, arg_ldr_imm_update *a) {
     }
     return true;
 }
-static bool trans_str_reg(DisasContext *ctx, arg_str_reg *a) {
+bool hive64_str_reg(DisasContext *ctx, arg_str_reg *a) {
     QWord_t addr = readQWord(ctx, a->r2) + (readQWord(ctx, a->r3) << a->shift);
     switch (a->size) {
         case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1)); break;
@@ -971,7 +902,7 @@ static bool trans_str_reg(DisasContext *ctx, arg_str_reg *a) {
     }
     return true;
 }
-static bool trans_str_reg_update(DisasContext *ctx, arg_str_reg_update *a) {
+bool hive64_str_reg_update(DisasContext *ctx, arg_str_reg_update *a) {
     QWord_t addr = readQWord(ctx, a->r2);
     writeQWord(ctx, a->r2, addr += (readQWord(ctx, a->r3) << a->shift));
     switch (a->size) {
@@ -982,7 +913,7 @@ static bool trans_str_reg_update(DisasContext *ctx, arg_str_reg_update *a) {
     }
     return true;
 }
-static bool trans_str_imm(DisasContext *ctx, arg_str_imm *a) {
+bool hive64_str_imm(DisasContext *ctx, arg_str_imm *a) {
     QWord_t addr = readQWord(ctx, a->r2) + a->imm;
     switch (a->size) {
         case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1)); break;
@@ -992,7 +923,7 @@ static bool trans_str_imm(DisasContext *ctx, arg_str_imm *a) {
     }
     return true;
 }
-static bool trans_str_imm_update(DisasContext *ctx, arg_str_imm_update *a) {
+bool hive64_str_imm_update(DisasContext *ctx, arg_str_imm_update *a) {
     QWord_t addr = readQWord(ctx, a->r2);
     writeQWord(ctx, a->r2, addr += a->imm);
     switch (a->size) {
@@ -1003,7 +934,7 @@ static bool trans_str_imm_update(DisasContext *ctx, arg_str_imm_update *a) {
     }
     return true;
 }
-static bool trans_ldr_pc_rel(DisasContext *ctx, arg_ldr_pc_rel *a) {
+bool hive64_ldr_pc_rel(DisasContext *ctx, arg_ldr_pc_rel *a) {
     QWord_t addr = PC_REL(a->rel);
     switch (a->size) {
         case SIZE_8BIT: writeByte(ctx, a->r1, memReadByte(ctx, (void*) addr)); break;
@@ -1013,7 +944,7 @@ static bool trans_ldr_pc_rel(DisasContext *ctx, arg_ldr_pc_rel *a) {
     }
     return true;
 }
-static bool trans_str_pc_rel(DisasContext *ctx, arg_str_pc_rel *a) {
+bool hive64_str_pc_rel(DisasContext *ctx, arg_str_pc_rel *a) {
     QWord_t addr = PC_REL(a->rel);
     switch (a->size) {
         case SIZE_8BIT: memWriteByte(ctx, (void*) addr, readByte(ctx, a->r1)); break;
@@ -1023,22 +954,22 @@ static bool trans_str_pc_rel(DisasContext *ctx, arg_str_pc_rel *a) {
     }
     return true;
 }
-static bool trans_ubxt(DisasContext *ctx, arg_ubxt *a) {
+bool hive64_ubxt(DisasContext *ctx, arg_ubxt *a) {
     writeQWord(ctx, a->r1, extract64(readQWord(ctx, a->r2), a->start, a->count + 1));
     return true;
 }
-static bool trans_sbxt(DisasContext *ctx, arg_sbxt *a) {
+bool hive64_sbxt(DisasContext *ctx, arg_sbxt *a) {
     writeSQWord(ctx, a->r1, sextract64(readQWord(ctx, a->r2), a->start, a->count + 1));
     return true;
 }
-static bool trans_ubdp(DisasContext *ctx, arg_ubdp *a) {
+bool hive64_ubdp(DisasContext *ctx, arg_ubdp *a) {
     QWord_t val = readQWord(ctx, a->r1);
     QWord_t ins = readQWord(ctx, a->r2);
     val = deposit64(val, a->start, a->count + 1, ins);
     writeQWord(ctx, a->r1, val);
     return true;
 }
-static bool trans_sbdp(DisasContext *ctx, arg_sbdp *a) {
+bool hive64_sbdp(DisasContext *ctx, arg_sbdp *a) {
     QWord_t val = readQWord(ctx, a->r1);
     QWord_t ins = readQWord(ctx, a->r2);
     val = deposit64(val, a->start, a->count + 1, ins);
@@ -1217,7 +1148,7 @@ VABSFUNC(Float64_t, f64)
 #define vpus_s Float32s
 #define vpus_f Float64s
 
-static bool trans_vadd(DisasContext *ctx, arg_vadd *a) {
+bool hive64_vadd(DisasContext *ctx, arg_vadd *a) {
     switch (a->type) {
         case 0: vop(vpu_o, +); break;
         case 1: vop(vpu_b, +); break;
@@ -1230,7 +1161,7 @@ static bool trans_vadd(DisasContext *ctx, arg_vadd *a) {
     }
     return true;
 }
-static bool trans_vsub(DisasContext *ctx, arg_vsub *a) {
+bool hive64_vsub(DisasContext *ctx, arg_vsub *a) {
     switch (a->type) {
         case 0: vop(vpu_o, -); break;
         case 1: vop(vpu_b, -); break;
@@ -1243,7 +1174,7 @@ static bool trans_vsub(DisasContext *ctx, arg_vsub *a) {
     }
     return true;
 }
-static bool trans_vmul(DisasContext *ctx, arg_vmul *a) {
+bool hive64_vmul(DisasContext *ctx, arg_vmul *a) {
     switch (a->type) {
         case 0: vop(vpu_o, *); break;
         case 1: vop(vpu_b, *); break;
@@ -1256,7 +1187,7 @@ static bool trans_vmul(DisasContext *ctx, arg_vmul *a) {
     }
     return true;
 }
-static bool trans_vdiv(DisasContext *ctx, arg_vdiv *a) {
+bool hive64_vdiv(DisasContext *ctx, arg_vdiv *a) {
     switch (a->type) {
         case 0: vop(vpu_o, /); break;
         case 1: vop(vpu_b, /); break;
@@ -1269,7 +1200,7 @@ static bool trans_vdiv(DisasContext *ctx, arg_vdiv *a) {
     }
     return true;
 }
-static bool trans_vaddsub(DisasContext *ctx, arg_vaddsub *a) {
+bool hive64_vaddsub(DisasContext *ctx, arg_vaddsub *a) {
     switch (a->type) {
         case 0: raise(SIGILL); break;
         case 1: vop_as(vpu_b); break;
@@ -1282,7 +1213,7 @@ static bool trans_vaddsub(DisasContext *ctx, arg_vaddsub *a) {
     }
     return true;
 }
-static bool trans_vmadd(DisasContext *ctx, arg_vmadd *a) {
+bool hive64_vmadd(DisasContext *ctx, arg_vmadd *a) {
     switch (a->type) {
         case 0: raise(SIGILL); break;
         case 1: vop_madd(vpu_b); break;
@@ -1295,7 +1226,7 @@ static bool trans_vmadd(DisasContext *ctx, arg_vmadd *a) {
     }
     return true;
 }
-static bool trans_vmov_reg(DisasContext *ctx, arg_vmov_reg *a) {
+bool hive64_vmov_reg(DisasContext *ctx, arg_vmov_reg *a) {
     switch (a->type) {
         case 0: ctx->v[a->v1].asQWord[0] = readQWord(ctx, a->r2); break;
         case 1: ctx->v[a->v1].asBytes[a->slot] = readByte(ctx, a->r2); break;
@@ -1304,11 +1235,11 @@ static bool trans_vmov_reg(DisasContext *ctx, arg_vmov_reg *a) {
         case 4: ctx->v[a->v1].asQWords[a->slot] = readQWord(ctx, a->r2); break;
         case 5: ctx->v[a->v1].asLWords[a->slot] = readQWord(ctx, a->r2); break;
         case 6: ctx->v[a->v1].asFloat32s[a->slot] = readFloat32(ctx, a->r2); break;
-        case 7: ctx->v[a->v1].asFloat64s[a->slot] = readFloat64(ctx, a->r2); break;
+        case 7: ctx->v[a->v1].asFloat64s[a->slot] = readFloat32(ctx, a->r2); break;
     }
     return true;
 }
-static bool trans_vmov_reg2(DisasContext *ctx, arg_vmov_reg2 *a) {
+bool hive64_vmov_reg2(DisasContext *ctx, arg_vmov_reg2 *a) {
     switch (a->type) {
         case 0: writeQWord(ctx, a->r2, ctx->v[a->v1].asQWord[0]); break;
         case 1: writeByte(ctx, a->r2, ctx->v[a->v1].asBytes[a->slot]); break;
@@ -1321,11 +1252,11 @@ static bool trans_vmov_reg2(DisasContext *ctx, arg_vmov_reg2 *a) {
     }
     return true;
 }
-static bool trans_vmov(DisasContext *ctx, arg_vmov *a) {
+bool hive64_vmov(DisasContext *ctx, arg_vmov *a) {
     ctx->v[a->v1] = ctx->v[a->v2];
     return true;
 }
-static bool trans_vconv(DisasContext *ctx, arg_vconv *a) {
+bool hive64_vconv(DisasContext *ctx, arg_vconv *a) {
     switch (a->type) {
         case 0: vpu_conv(vpu_o); break;
         case 1: vpu_conv(vpu_b); break;
@@ -1338,7 +1269,7 @@ static bool trans_vconv(DisasContext *ctx, arg_vconv *a) {
     }
     return true;
 }
-static bool trans_vlen(DisasContext *ctx, arg_vlen *a) {
+bool hive64_vlen(DisasContext *ctx, arg_vlen *a) {
     switch (a->type) {
         case 0: vpu_len(vpu_o); break;
         case 1: vpu_len(vpu_b); break;
@@ -1351,14 +1282,14 @@ static bool trans_vlen(DisasContext *ctx, arg_vlen *a) {
     }
     return true;
 }
-static bool trans_vldr_imm(DisasContext *ctx, arg_vldr_imm *a) {
+bool hive64_vldr_imm(DisasContext *ctx, arg_vldr_imm *a) {
     QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + a->imm);
     for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
         ctx->v[a->v1].asQWords[i] = memReadQWord(ctx, &addr[i]);
     }
     return true;
 }
-static bool trans_vldr_imm_update(DisasContext *ctx, arg_vldr_imm_update *a) {
+bool hive64_vldr_imm_update(DisasContext *ctx, arg_vldr_imm_update *a) {
     QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1));
     writeQWord(ctx, a->r1, (QWord_t) (addr + a->imm));
     for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
@@ -1366,14 +1297,14 @@ static bool trans_vldr_imm_update(DisasContext *ctx, arg_vldr_imm_update *a) {
     }
     return true;
 }
-static bool trans_vstr_imm(DisasContext *ctx, arg_vstr_imm *a) {
+bool hive64_vstr_imm(DisasContext *ctx, arg_vstr_imm *a) {
     QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + a->imm);
     for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
         memWriteQWord(ctx, &addr[i], ctx->v[a->v1].asQWords[i]);
     }
     return true;
 }
-static bool trans_vstr_imm_update(DisasContext *ctx, arg_vstr_imm_update *a) {
+bool hive64_vstr_imm_update(DisasContext *ctx, arg_vstr_imm_update *a) {
     QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + a->imm);
     writeQWord(ctx, a->r1, (QWord_t) (addr));
     for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
@@ -1381,14 +1312,14 @@ static bool trans_vstr_imm_update(DisasContext *ctx, arg_vstr_imm_update *a) {
     }
     return true;
 }
-static bool trans_vldr_reg(DisasContext *ctx, arg_vldr_reg *a) {
+bool hive64_vldr_reg(DisasContext *ctx, arg_vldr_reg *a) {
     QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + readQWord(ctx, a->r2));
     for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
         ctx->v[a->v1].asQWords[i] = memReadQWord(ctx, &addr[i]);
     }
     return true;
 }
-static bool trans_vldr_reg_update(DisasContext *ctx, arg_vldr_reg_update *a) {
+bool hive64_vldr_reg_update(DisasContext *ctx, arg_vldr_reg_update *a) {
     QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1));
     writeQWord(ctx, a->r1, (QWord_t) (addr + readQWord(ctx, a->r2)));
     for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
@@ -1396,14 +1327,14 @@ static bool trans_vldr_reg_update(DisasContext *ctx, arg_vldr_reg_update *a) {
     }
     return true;
 }
-static bool trans_vstr_reg(DisasContext *ctx, arg_vstr_reg *a) {
+bool hive64_vstr_reg(DisasContext *ctx, arg_vstr_reg *a) {
     QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + readQWord(ctx, a->r2));
     for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
         memWriteQWord(ctx, &addr[i], ctx->v[a->v1].asQWords[i]);
     }
     return true;
 }
-static bool trans_vstr_reg_update(DisasContext *ctx, arg_vstr_reg_update *a) {
+bool hive64_vstr_reg_update(DisasContext *ctx, arg_vstr_reg_update *a) {
     QWord_t* addr = (QWord_t*) (readQWord(ctx, a->r1) + readQWord(ctx, a->r2));
     writeQWord(ctx, a->r1, (QWord_t) (addr));
     for (size_t i = 0; i < sizeof(ctx->v[a->v1].asQWords) / sizeof(ctx->v[a->v1].asQWords[0]); i++) {
@@ -1411,7 +1342,7 @@ static bool trans_vstr_reg_update(DisasContext *ctx, arg_vstr_reg_update *a) {
     }
     return true;
 }
-static bool trans_vand(DisasContext *ctx, arg_vand *a) {
+bool hive64_vand(DisasContext *ctx, arg_vand *a) {
     switch (a->type) {
         case 0: vop(vpu_o, &); break;
         case 1: vop(vpu_b, &); break;
@@ -1424,7 +1355,7 @@ static bool trans_vand(DisasContext *ctx, arg_vand *a) {
     }
     return true;
 }
-static bool trans_vor(DisasContext *ctx, arg_vor *a) {
+bool hive64_vor(DisasContext *ctx, arg_vor *a) {
     switch (a->type) {
         case 0: vop(vpu_o, |); break;
         case 1: vop(vpu_b, |); break;
@@ -1437,7 +1368,7 @@ static bool trans_vor(DisasContext *ctx, arg_vor *a) {
     }
     return true;
 }
-static bool trans_vxor(DisasContext *ctx, arg_vxor *a) {
+bool hive64_vxor(DisasContext *ctx, arg_vxor *a) {
     switch (a->type) {
         case 0: vop(vpu_o, ^); break;
         case 1: vop(vpu_b, ^); break;
@@ -1450,7 +1381,7 @@ static bool trans_vxor(DisasContext *ctx, arg_vxor *a) {
     }
     return true;
 }
-static bool trans_vcmp(DisasContext *ctx, arg_vcmp *a) {
+bool hive64_vcmp(DisasContext *ctx, arg_vcmp *a) {
     switch (a->type) {
         case 0: vpu_cmp(vpu_o); break;
         case 1: vpu_cmp(vpu_b); break;
@@ -1463,7 +1394,7 @@ static bool trans_vcmp(DisasContext *ctx, arg_vcmp *a) {
     }
     return true;
 }
-static bool trans_vtst(DisasContext *ctx, arg_vtst *a) {
+bool hive64_vtst(DisasContext *ctx, arg_vtst *a) {
     switch (a->type) {
         case 0: vpu_tst(vpu_o); break;
         case 1: vpu_tst(vpu_b); break;
@@ -1476,7 +1407,7 @@ static bool trans_vtst(DisasContext *ctx, arg_vtst *a) {
     }
     return true;
 }
-static bool trans_vminmax(DisasContext *ctx, arg_vminmax *a) {
+bool hive64_vminmax(DisasContext *ctx, arg_vminmax *a) {
     switch (a->type) {
         case 0: vop_minmax(vpu_o); break;
         case 1: vop_minmax(vpu_b); break;
@@ -1489,7 +1420,7 @@ static bool trans_vminmax(DisasContext *ctx, arg_vminmax *a) {
     }
     return true;
 }
-static bool trans_vabs(DisasContext *ctx, arg_vabs *a) {
+bool hive64_vabs(DisasContext *ctx, arg_vabs *a) {
     switch (a->type) {
         case 0: vpu_abs(vpu_o); break;
         case 1: vpu_abs(vpu_b); break;
@@ -1502,7 +1433,7 @@ static bool trans_vabs(DisasContext *ctx, arg_vabs *a) {
     }
     return true;
 }
-static bool trans_vshl(DisasContext *ctx, arg_vshl *a) {
+bool hive64_vshl(DisasContext *ctx, arg_vshl *a) {
     switch (a->type) {
         case 0: vop(vpu_o, <<); break;
         case 1: vop(vpu_b, <<); break;
@@ -1515,7 +1446,7 @@ static bool trans_vshl(DisasContext *ctx, arg_vshl *a) {
     }
     return true;
 }
-static bool trans_vshr(DisasContext *ctx, arg_vshr *a) {
+bool hive64_vshr(DisasContext *ctx, arg_vshr *a) {
     if (a->is_signed) {
         switch (a->type) {
             case 0: vop(vpus_o, >>); break;
@@ -1541,7 +1472,7 @@ static bool trans_vshr(DisasContext *ctx, arg_vshr *a) {
     }
     return true;
 }
-static bool trans_vsqrt(DisasContext *ctx, arg_vsqrt *a) {
+bool hive64_vsqrt(DisasContext *ctx, arg_vsqrt *a) {
     switch (a->type) {
         case 0: vop_sqrt(vpu_o); break;
         case 1: vop_sqrt(vpu_b); break;
@@ -1554,7 +1485,7 @@ static bool trans_vsqrt(DisasContext *ctx, arg_vsqrt *a) {
     }
     return true;
 }
-static bool trans_vmod(DisasContext *ctx, arg_vmod *a) {
+bool hive64_vmod(DisasContext *ctx, arg_vmod *a) {
     switch (a->type) {
         case 0: vop(vpu_o, %); break;
         case 1: vop(vpu_b, %); break;
@@ -1567,7 +1498,7 @@ static bool trans_vmod(DisasContext *ctx, arg_vmod *a) {
     }
     return true;
 }
-static bool trans_vmovall(DisasContext *ctx, arg_vmovall *a) {
+bool hive64_vmovall(DisasContext *ctx, arg_vmovall *a) {
     switch (a->type) {
         case 0: vop_movall(vpu_o, QWord); break;
         case 1: vop_movall(vpu_b, Byte); break;

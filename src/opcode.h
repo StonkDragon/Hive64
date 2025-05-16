@@ -49,7 +49,7 @@
 
 #define OP_OTHER_FPU64          0b01100
 #define OP_OTHER_FPU32          0b01101
-#define OP_OTHER_CSWAP          0b01110
+#define OP_OTHER_cswp          0b01110
 #define OP_OTHER_XCHG           0b01111
 #define OP_OTHER_UBXT           0b10000
 #define OP_OTHER_SBXT           0b10001

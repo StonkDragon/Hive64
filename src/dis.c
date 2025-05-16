@@ -368,19 +368,19 @@ bool dis_xor_imm(DisasContext *ctx, arg_xor_imm *a) {
     );
     return true;
 }
-bool dis_ret(DisasContext *ctx, arg_ret *a) {
-    ctx->instr = strformat("ret");
-    return true;
-}
-bool dis_mov(DisasContext *ctx, arg_mov *a) {
-    ctx->instr = strformat(
-        "mov %s, %s",
-        register_to_string(a->r1, a->size),
-        register_to_string(a->r2, a->size)
-    );
-    return true;
-}
 bool dis_shl_imm(DisasContext *ctx, arg_shl_imm *a) {
+    if (a->imm8 == 0) {
+        if (a->r1 == REG_PC && a->r2 == REG_LR) {
+            ctx->instr = strformat("ret");
+            return true;
+        }
+        ctx->instr = strformat(
+            "mov %s, %s",
+            register_to_string(a->r1, a->size),
+            register_to_string(a->r2, a->size)
+        );
+        return true;
+    }
     ctx->instr = strformat(
         "shl %s, %s, %d",
         register_to_string(a->r1, a->size),
@@ -465,9 +465,9 @@ bool dis_swe(DisasContext *ctx, arg_swe *a) {
     );
     return true;
 }
-bool dis_cswap(DisasContext *ctx, arg_cswap *a) {
+bool dis_cswp(DisasContext *ctx, arg_cswp *a) {
     ctx->instr = strformat(
-        "cswap %s, %s, %s, %s",
+        "cswp %s, %s, %s, %s",
         register_to_string(a->r1, a->size),
         register_to_string(a->r2, a->size),
         register_to_string(a->r3, a->size),
@@ -492,27 +492,9 @@ bool dis_fadd(DisasContext *ctx, arg_fadd *a) {
     );
     return true;
 }
-bool dis_faddi(DisasContext *ctx, arg_faddi *a) {
-    ctx->instr = strformat(
-        "faddi %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
 bool dis_fsub(DisasContext *ctx, arg_fsub *a) {
     ctx->instr = strformat(
         "fsub %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_fsubi(DisasContext *ctx, arg_fsubi *a) {
-    ctx->instr = strformat(
-        "fsubi %s, %s, %s",
         register_to_string(a->r1, SIZE_64BIT),
         register_to_string(a->r2, SIZE_64BIT),
         register_to_string(a->r3, SIZE_64BIT)
@@ -527,26 +509,9 @@ bool dis_fcmp(DisasContext *ctx, arg_fcmp *a) {
     );
     return true;
 }
-bool dis_fcmpi(DisasContext *ctx, arg_fcmpi *a) {
-    ctx->instr = strformat(
-        "fcmpi %s, %s",
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
 bool dis_fmul(DisasContext *ctx, arg_fmul *a) {
     ctx->instr = strformat(
         "fmul %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_fmuli(DisasContext *ctx, arg_fmuli *a) {
-    ctx->instr = strformat(
-        "fmuli %s, %s, %s",
         register_to_string(a->r1, SIZE_64BIT),
         register_to_string(a->r2, SIZE_64BIT),
         register_to_string(a->r3, SIZE_64BIT)
@@ -562,38 +527,12 @@ bool dis_fdiv(DisasContext *ctx, arg_fdiv *a) {
     );
     return true;
 }
-bool dis_fdivi(DisasContext *ctx, arg_fdivi *a) {
-    ctx->instr = strformat(
-        "fdivi %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
 bool dis_fmod(DisasContext *ctx, arg_fmod *a) {
     ctx->instr = strformat(
         "fmod %s, %s, %s",
         register_to_string(a->r1, SIZE_64BIT),
         register_to_string(a->r2, SIZE_64BIT),
         register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_fmodi(DisasContext *ctx, arg_fmodi *a) {
-    ctx->instr = strformat(
-        "fmodi %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_f2i(DisasContext *ctx, arg_f2i *a) {
-    ctx->instr = strformat(
-        "f2i %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
     );
     return true;
 }
@@ -613,195 +552,9 @@ bool dis_fsin(DisasContext *ctx, arg_fsin *a) {
     );
     return true;
 }
-bool dis_fsini(DisasContext *ctx, arg_fsini *a) {
-    ctx->instr = strformat(
-        "fsini %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
-    );
-    return true;
-}
 bool dis_fsqrt(DisasContext *ctx, arg_fsqrt *a) {
     ctx->instr = strformat(
         "fsqrt %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_fsqrti(DisasContext *ctx, arg_fsqrti *a) {
-    ctx->instr = strformat(
-        "fsqrti %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_sadd(DisasContext *ctx, arg_sadd *a) {
-    ctx->instr = strformat(
-        "fadd %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_saddi(DisasContext *ctx, arg_saddi *a) {
-    ctx->instr = strformat(
-        "saddi %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_ssub(DisasContext *ctx, arg_ssub *a) {
-    ctx->instr = strformat(
-        "ssub %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_ssubi(DisasContext *ctx, arg_ssubi *a) {
-    ctx->instr = strformat(
-        "ssubi %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_scmp(DisasContext *ctx, arg_scmp *a) {
-    ctx->instr = strformat(
-        "scmp %s, %s",
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_scmpi(DisasContext *ctx, arg_scmpi *a) {
-    ctx->instr = strformat(
-        "scmpi %s, %s",
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_smul(DisasContext *ctx, arg_smul *a) {
-    ctx->instr = strformat(
-        "smul %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_smuli(DisasContext *ctx, arg_smuli *a) {
-    ctx->instr = strformat(
-        "smuli %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_sdiv(DisasContext *ctx, arg_sdiv *a) {
-    ctx->instr = strformat(
-        "sdiv %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_sdivi(DisasContext *ctx, arg_sdivi *a) {
-    ctx->instr = strformat(
-        "sdivi %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_smod(DisasContext *ctx, arg_smod *a) {
-    ctx->instr = strformat(
-        "smod %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_smodi(DisasContext *ctx, arg_smodi *a) {
-    ctx->instr = strformat(
-        "smodi %s, %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT),
-        register_to_string(a->r3, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_s2i(DisasContext *ctx, arg_s2i *a) {
-    ctx->instr = strformat(
-        "s2i %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_i2s(DisasContext *ctx, arg_i2s *a) {
-    ctx->instr = strformat(
-        "i2s %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_ssin(DisasContext *ctx, arg_ssin *a) {
-    ctx->instr = strformat(
-        "ssin %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_ssini(DisasContext *ctx, arg_ssini *a) {
-    ctx->instr = strformat(
-        "ssini %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_ssqrt(DisasContext *ctx, arg_ssqrt *a) {
-    ctx->instr = strformat(
-        "ssqrt %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_ssqrti(DisasContext *ctx, arg_ssqrti *a) {
-    ctx->instr = strformat(
-        "ssqrti %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_s2f(DisasContext *ctx, arg_s2f *a) {
-    ctx->instr = strformat(
-        "s2f %s, %s",
-        register_to_string(a->r1, SIZE_64BIT),
-        register_to_string(a->r2, SIZE_64BIT)
-    );
-    return true;
-}
-bool dis_f2s(DisasContext *ctx, arg_f2s *a) {
-    ctx->instr = strformat(
-        "f2s %s, %s",
         register_to_string(a->r1, SIZE_64BIT),
         register_to_string(a->r2, SIZE_64BIT)
     );

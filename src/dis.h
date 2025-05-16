@@ -10,57 +10,59 @@ typedef struct {
 
 typedef struct {
     int r1;
-    int r2;
-    int r3;
-} arg_decode10;
-
-typedef struct {
-    int r2;
-    int r3;
-} arg_decode11;
-
-typedef struct {
-    int r1;
-    int r2;
-} arg_decode12;
-
-typedef struct {
-    int what;
-} arg_decode13;
-
-typedef struct {
-    int size;
-    int r1;
-} arg_decode14;
-
-typedef struct {
-    int cr1;
-    int r1;
-} arg_decode15;
-
-typedef struct {
-    int r1;
-    int rel;
-} arg_decode16;
-
-typedef struct {
-    int r1;
-    int imm;
-} arg_decode17;
-
-typedef struct {
-    int r1;
     int size;
     int r2;
     int shift;
     int r3;
-} arg_decode18;
+} arg_decode10;
 
 typedef struct {
     int r1;
     int size;
     int r2;
     int imm;
+} arg_decode11;
+
+typedef struct {
+    int r1;
+    int size;
+    int rel;
+} arg_decode12;
+
+typedef struct {
+} arg_decode13;
+
+typedef struct {
+    int what;
+} arg_decode14;
+
+typedef struct {
+    int size;
+    int r1;
+} arg_decode15;
+
+typedef struct {
+    int cr1;
+    int r1;
+} arg_decode16;
+
+typedef struct {
+    int r1;
+    int r2;
+    int r3;
+} arg_decode17;
+
+typedef struct {
+    int r1;
+    int r2;
+} arg_decode18;
+
+typedef struct {
+    int r1;
+    int r2;
+    int size;
+    int cond;
+    int r3;
 } arg_decode19;
 
 typedef struct {
@@ -72,61 +74,55 @@ typedef struct {
 
 typedef struct {
     int r1;
-    int size;
-    int rel;
-} arg_decode20;
-
-typedef struct {
-    int r1;
     int r2;
     int count;
     int start;
-} arg_decode21;
+} arg_decode20;
 
 typedef struct {
     int type;
     int v1;
     int v2;
     int v3;
-} arg_decode22;
+} arg_decode21;
 
 typedef struct {
     int type;
     int v1;
     int slot;
     int r2;
+} arg_decode22;
+
+typedef struct {
+    int type;
+    int v1;
+    int v2;
 } arg_decode23;
 
 typedef struct {
     int type;
     int v1;
     int v2;
+    int target;
 } arg_decode24;
 
 typedef struct {
     int type;
     int v1;
-    int v2;
-    int target;
-} arg_decode25;
-
-typedef struct {
-    int type;
-    int v1;
     int r1;
-} arg_decode26;
+} arg_decode25;
 
 typedef struct {
     int r1;
     int v1;
     int imm;
-} arg_decode27;
+} arg_decode26;
 
 typedef struct {
     int r1;
     int v1;
     int r2;
-} arg_decode28;
+} arg_decode27;
 
 typedef struct {
     int type;
@@ -134,6 +130,13 @@ typedef struct {
     int v2;
     int cond;
     int v3;
+} arg_decode28;
+
+typedef struct {
+    int type;
+    int v1;
+    int v2;
+    int check_sign;
 } arg_decode29;
 
 typedef struct {
@@ -146,22 +149,15 @@ typedef struct {
     int type;
     int v1;
     int v2;
-    int check_sign;
+    int is_signed;
+    int v3;
 } arg_decode30;
 
 typedef struct {
     int type;
     int v1;
-    int v2;
-    int is_signed;
-    int v3;
-} arg_decode31;
-
-typedef struct {
-    int type;
-    int v1;
     int r2;
-} arg_decode32;
+} arg_decode31;
 
 typedef struct {
     int r1;
@@ -177,27 +173,26 @@ typedef struct {
 } arg_decode5;
 
 typedef struct {
+    int r1;
+    int r2;
+    int size;
 } arg_decode6;
 
 typedef struct {
     int r1;
     int r2;
     int size;
+    int to;
 } arg_decode7;
 
 typedef struct {
     int r1;
-    int r2;
-    int size;
-    int to;
+    int rel;
 } arg_decode8;
 
 typedef struct {
     int r1;
-    int r2;
-    int size;
-    int cond;
-    int r3;
+    int imm;
 } arg_decode9;
 
 typedef arg_decode0 arg_branch;
@@ -266,10 +261,6 @@ typedef arg_decode4 arg_or_imm;
 bool dis_or_imm(DisasContext *ctx, arg_or_imm *a);
 typedef arg_decode4 arg_xor_imm;
 bool dis_xor_imm(DisasContext *ctx, arg_xor_imm *a);
-typedef arg_decode6 arg_ret;
-bool dis_ret(DisasContext *ctx, arg_ret *a);
-typedef arg_decode7 arg_mov;
-bool dis_mov(DisasContext *ctx, arg_mov *a);
 typedef arg_decode4 arg_shl_imm;
 bool dis_shl_imm(DisasContext *ctx, arg_shl_imm *a);
 typedef arg_decode4 arg_shr_imm;
@@ -280,223 +271,191 @@ typedef arg_decode4 arg_rol_imm;
 bool dis_rol_imm(DisasContext *ctx, arg_rol_imm *a);
 typedef arg_decode4 arg_ror_imm;
 bool dis_ror_imm(DisasContext *ctx, arg_ror_imm *a);
-typedef arg_decode7 arg_neg;
+typedef arg_decode6 arg_neg;
 bool dis_neg(DisasContext *ctx, arg_neg *a);
-typedef arg_decode7 arg_not;
+typedef arg_decode6 arg_not;
 bool dis_not(DisasContext *ctx, arg_not *a);
-typedef arg_decode8 arg_extend;
+typedef arg_decode7 arg_extend;
 bool dis_extend(DisasContext *ctx, arg_extend *a);
-typedef arg_decode7 arg_swe;
+typedef arg_decode6 arg_swe;
 bool dis_swe(DisasContext *ctx, arg_swe *a);
-typedef arg_decode9 arg_cswap;
-bool dis_cswap(DisasContext *ctx, arg_cswap *a);
-typedef arg_decode7 arg_xchg;
-bool dis_xchg(DisasContext *ctx, arg_xchg *a);
-typedef arg_decode10 arg_fadd;
-bool dis_fadd(DisasContext *ctx, arg_fadd *a);
-typedef arg_decode10 arg_faddi;
-bool dis_faddi(DisasContext *ctx, arg_faddi *a);
-typedef arg_decode10 arg_fsub;
-bool dis_fsub(DisasContext *ctx, arg_fsub *a);
-typedef arg_decode10 arg_fsubi;
-bool dis_fsubi(DisasContext *ctx, arg_fsubi *a);
-typedef arg_decode11 arg_fcmp;
-bool dis_fcmp(DisasContext *ctx, arg_fcmp *a);
-typedef arg_decode11 arg_fcmpi;
-bool dis_fcmpi(DisasContext *ctx, arg_fcmpi *a);
-typedef arg_decode10 arg_fmul;
-bool dis_fmul(DisasContext *ctx, arg_fmul *a);
-typedef arg_decode10 arg_fmuli;
-bool dis_fmuli(DisasContext *ctx, arg_fmuli *a);
-typedef arg_decode10 arg_fdiv;
-bool dis_fdiv(DisasContext *ctx, arg_fdiv *a);
-typedef arg_decode10 arg_fdivi;
-bool dis_fdivi(DisasContext *ctx, arg_fdivi *a);
-typedef arg_decode10 arg_fmod;
-bool dis_fmod(DisasContext *ctx, arg_fmod *a);
-typedef arg_decode10 arg_fmodi;
-bool dis_fmodi(DisasContext *ctx, arg_fmodi *a);
-typedef arg_decode12 arg_f2i;
-bool dis_f2i(DisasContext *ctx, arg_f2i *a);
-typedef arg_decode12 arg_i2f;
-bool dis_i2f(DisasContext *ctx, arg_i2f *a);
-typedef arg_decode12 arg_fsin;
-bool dis_fsin(DisasContext *ctx, arg_fsin *a);
-typedef arg_decode12 arg_fsini;
-bool dis_fsini(DisasContext *ctx, arg_fsini *a);
-typedef arg_decode12 arg_fsqrt;
-bool dis_fsqrt(DisasContext *ctx, arg_fsqrt *a);
-typedef arg_decode12 arg_fsqrti;
-bool dis_fsqrti(DisasContext *ctx, arg_fsqrti *a);
-typedef arg_decode10 arg_sadd;
-bool dis_sadd(DisasContext *ctx, arg_sadd *a);
-typedef arg_decode10 arg_saddi;
-bool dis_saddi(DisasContext *ctx, arg_saddi *a);
-typedef arg_decode10 arg_ssub;
-bool dis_ssub(DisasContext *ctx, arg_ssub *a);
-typedef arg_decode10 arg_ssubi;
-bool dis_ssubi(DisasContext *ctx, arg_ssubi *a);
-typedef arg_decode11 arg_scmp;
-bool dis_scmp(DisasContext *ctx, arg_scmp *a);
-typedef arg_decode11 arg_scmpi;
-bool dis_scmpi(DisasContext *ctx, arg_scmpi *a);
-typedef arg_decode10 arg_smul;
-bool dis_smul(DisasContext *ctx, arg_smul *a);
-typedef arg_decode10 arg_smuli;
-bool dis_smuli(DisasContext *ctx, arg_smuli *a);
-typedef arg_decode10 arg_sdiv;
-bool dis_sdiv(DisasContext *ctx, arg_sdiv *a);
-typedef arg_decode10 arg_sdivi;
-bool dis_sdivi(DisasContext *ctx, arg_sdivi *a);
-typedef arg_decode10 arg_smod;
-bool dis_smod(DisasContext *ctx, arg_smod *a);
-typedef arg_decode10 arg_smodi;
-bool dis_smodi(DisasContext *ctx, arg_smodi *a);
-typedef arg_decode12 arg_s2i;
-bool dis_s2i(DisasContext *ctx, arg_s2i *a);
-typedef arg_decode12 arg_i2s;
-bool dis_i2s(DisasContext *ctx, arg_i2s *a);
-typedef arg_decode12 arg_ssin;
-bool dis_ssin(DisasContext *ctx, arg_ssin *a);
-typedef arg_decode12 arg_ssini;
-bool dis_ssini(DisasContext *ctx, arg_ssini *a);
-typedef arg_decode12 arg_ssqrt;
-bool dis_ssqrt(DisasContext *ctx, arg_ssqrt *a);
-typedef arg_decode12 arg_ssqrti;
-bool dis_ssqrti(DisasContext *ctx, arg_ssqrti *a);
-typedef arg_decode12 arg_s2f;
-bool dis_s2f(DisasContext *ctx, arg_s2f *a);
-typedef arg_decode12 arg_f2s;
-bool dis_f2s(DisasContext *ctx, arg_f2s *a);
-typedef arg_decode6 arg_cpuid;
-bool dis_cpuid(DisasContext *ctx, arg_cpuid *a);
-typedef arg_decode13 arg_brk;
-bool dis_brk(DisasContext *ctx, arg_brk *a);
-typedef arg_decode14 arg_zeroupper;
-bool dis_zeroupper(DisasContext *ctx, arg_zeroupper *a);
-typedef arg_decode6 arg_sret;
-bool dis_sret(DisasContext *ctx, arg_sret *a);
-typedef arg_decode6 arg_hret;
-bool dis_hret(DisasContext *ctx, arg_hret *a);
-typedef arg_decode6 arg_iret;
-bool dis_iret(DisasContext *ctx, arg_iret *a);
-typedef arg_decode6 arg_svc;
-bool dis_svc(DisasContext *ctx, arg_svc *a);
-typedef arg_decode15 arg_mov_cr_r;
-bool dis_mov_cr_r(DisasContext *ctx, arg_mov_cr_r *a);
-typedef arg_decode15 arg_mov_r_cr;
-bool dis_mov_r_cr(DisasContext *ctx, arg_mov_r_cr *a);
-typedef arg_decode6 arg_hexit;
-bool dis_hexit(DisasContext *ctx, arg_hexit *a);
-typedef arg_decode6 arg_sexit;
-bool dis_sexit(DisasContext *ctx, arg_sexit *a);
-typedef arg_decode16 arg_lea;
+typedef arg_decode8 arg_lea;
 bool dis_lea(DisasContext *ctx, arg_lea *a);
-typedef arg_decode17 arg_movz_0;
+typedef arg_decode9 arg_movz_0;
 bool dis_movz_0(DisasContext *ctx, arg_movz_0 *a);
-typedef arg_decode17 arg_movz_16;
+typedef arg_decode9 arg_movz_16;
 bool dis_movz_16(DisasContext *ctx, arg_movz_16 *a);
-typedef arg_decode17 arg_movz_32;
+typedef arg_decode9 arg_movz_32;
 bool dis_movz_32(DisasContext *ctx, arg_movz_32 *a);
-typedef arg_decode17 arg_movz_48;
+typedef arg_decode9 arg_movz_48;
 bool dis_movz_48(DisasContext *ctx, arg_movz_48 *a);
-typedef arg_decode17 arg_movk_0;
+typedef arg_decode9 arg_movk_0;
 bool dis_movk_0(DisasContext *ctx, arg_movk_0 *a);
-typedef arg_decode17 arg_movk_16;
+typedef arg_decode9 arg_movk_16;
 bool dis_movk_16(DisasContext *ctx, arg_movk_16 *a);
-typedef arg_decode17 arg_movk_32;
+typedef arg_decode9 arg_movk_32;
 bool dis_movk_32(DisasContext *ctx, arg_movk_32 *a);
-typedef arg_decode17 arg_movk_48;
+typedef arg_decode9 arg_movk_48;
 bool dis_movk_48(DisasContext *ctx, arg_movk_48 *a);
-typedef arg_decode18 arg_ldr_reg;
+typedef arg_decode10 arg_ldr_reg;
 bool dis_ldr_reg(DisasContext *ctx, arg_ldr_reg *a);
-typedef arg_decode18 arg_ldr_reg_update;
+typedef arg_decode10 arg_ldr_reg_update;
 bool dis_ldr_reg_update(DisasContext *ctx, arg_ldr_reg_update *a);
-typedef arg_decode19 arg_ldr_imm;
+typedef arg_decode11 arg_ldr_imm;
 bool dis_ldr_imm(DisasContext *ctx, arg_ldr_imm *a);
-typedef arg_decode19 arg_ldr_imm_update;
+typedef arg_decode11 arg_ldr_imm_update;
 bool dis_ldr_imm_update(DisasContext *ctx, arg_ldr_imm_update *a);
-typedef arg_decode18 arg_str_reg;
+typedef arg_decode10 arg_str_reg;
 bool dis_str_reg(DisasContext *ctx, arg_str_reg *a);
-typedef arg_decode18 arg_str_reg_update;
+typedef arg_decode10 arg_str_reg_update;
 bool dis_str_reg_update(DisasContext *ctx, arg_str_reg_update *a);
-typedef arg_decode19 arg_str_imm;
+typedef arg_decode11 arg_str_imm;
 bool dis_str_imm(DisasContext *ctx, arg_str_imm *a);
-typedef arg_decode19 arg_str_imm_update;
+typedef arg_decode11 arg_str_imm_update;
 bool dis_str_imm_update(DisasContext *ctx, arg_str_imm_update *a);
-typedef arg_decode20 arg_ldr_pc_rel;
+typedef arg_decode12 arg_ldr_pc_rel;
 bool dis_ldr_pc_rel(DisasContext *ctx, arg_ldr_pc_rel *a);
-typedef arg_decode20 arg_str_pc_rel;
+typedef arg_decode12 arg_str_pc_rel;
 bool dis_str_pc_rel(DisasContext *ctx, arg_str_pc_rel *a);
-typedef arg_decode21 arg_ubxt;
+typedef arg_decode13 arg_cpuid;
+bool dis_cpuid(DisasContext *ctx, arg_cpuid *a);
+typedef arg_decode14 arg_brk;
+bool dis_brk(DisasContext *ctx, arg_brk *a);
+typedef arg_decode15 arg_zeroupper;
+bool dis_zeroupper(DisasContext *ctx, arg_zeroupper *a);
+typedef arg_decode13 arg_sret;
+bool dis_sret(DisasContext *ctx, arg_sret *a);
+typedef arg_decode13 arg_hret;
+bool dis_hret(DisasContext *ctx, arg_hret *a);
+typedef arg_decode13 arg_iret;
+bool dis_iret(DisasContext *ctx, arg_iret *a);
+typedef arg_decode13 arg_svc;
+bool dis_svc(DisasContext *ctx, arg_svc *a);
+typedef arg_decode16 arg_mov_cr_r;
+bool dis_mov_cr_r(DisasContext *ctx, arg_mov_cr_r *a);
+typedef arg_decode16 arg_mov_r_cr;
+bool dis_mov_r_cr(DisasContext *ctx, arg_mov_r_cr *a);
+typedef arg_decode13 arg_hexit;
+bool dis_hexit(DisasContext *ctx, arg_hexit *a);
+typedef arg_decode13 arg_sexit;
+bool dis_sexit(DisasContext *ctx, arg_sexit *a);
+typedef arg_decode17 arg_fadd;
+bool dis_fadd(DisasContext *ctx, arg_fadd *a);
+typedef arg_decode17 arg_fsub;
+bool dis_fsub(DisasContext *ctx, arg_fsub *a);
+typedef arg_decode17 arg_fcmp;
+bool dis_fcmp(DisasContext *ctx, arg_fcmp *a);
+typedef arg_decode17 arg_fmul;
+bool dis_fmul(DisasContext *ctx, arg_fmul *a);
+typedef arg_decode17 arg_fdiv;
+bool dis_fdiv(DisasContext *ctx, arg_fdiv *a);
+typedef arg_decode17 arg_fmod;
+bool dis_fmod(DisasContext *ctx, arg_fmod *a);
+typedef arg_decode18 arg_i2f;
+bool dis_i2f(DisasContext *ctx, arg_i2f *a);
+typedef arg_decode18 arg_f2i;
+bool dis_f2i(DisasContext *ctx, arg_f2i *a);
+typedef arg_decode18 arg_fsin;
+bool dis_fsin(DisasContext *ctx, arg_fsin *a);
+typedef arg_decode18 arg_fsqrt;
+bool dis_fsqrt(DisasContext *ctx, arg_fsqrt *a);
+typedef arg_decode18 arg_f2d;
+bool dis_f2d(DisasContext *ctx, arg_f2d *a);
+typedef arg_decode17 arg_dadd;
+bool dis_dadd(DisasContext *ctx, arg_dadd *a);
+typedef arg_decode17 arg_dsub;
+bool dis_dsub(DisasContext *ctx, arg_dsub *a);
+typedef arg_decode17 arg_dcmp;
+bool dis_dcmp(DisasContext *ctx, arg_dcmp *a);
+typedef arg_decode17 arg_dmul;
+bool dis_dmul(DisasContext *ctx, arg_dmul *a);
+typedef arg_decode17 arg_ddiv;
+bool dis_ddiv(DisasContext *ctx, arg_ddiv *a);
+typedef arg_decode17 arg_dmod;
+bool dis_dmod(DisasContext *ctx, arg_dmod *a);
+typedef arg_decode18 arg_i2d;
+bool dis_i2d(DisasContext *ctx, arg_i2d *a);
+typedef arg_decode18 arg_d2i;
+bool dis_d2i(DisasContext *ctx, arg_d2i *a);
+typedef arg_decode18 arg_dsin;
+bool dis_dsin(DisasContext *ctx, arg_dsin *a);
+typedef arg_decode18 arg_dsqrt;
+bool dis_dsqrt(DisasContext *ctx, arg_dsqrt *a);
+typedef arg_decode18 arg_d2f;
+bool dis_d2f(DisasContext *ctx, arg_d2f *a);
+typedef arg_decode19 arg_cswp;
+bool dis_cswp(DisasContext *ctx, arg_cswp *a);
+typedef arg_decode6 arg_xchg;
+bool dis_xchg(DisasContext *ctx, arg_xchg *a);
+typedef arg_decode20 arg_ubxt;
 bool dis_ubxt(DisasContext *ctx, arg_ubxt *a);
-typedef arg_decode21 arg_sbxt;
+typedef arg_decode20 arg_sbxt;
 bool dis_sbxt(DisasContext *ctx, arg_sbxt *a);
-typedef arg_decode21 arg_ubdp;
+typedef arg_decode20 arg_ubdp;
 bool dis_ubdp(DisasContext *ctx, arg_ubdp *a);
-typedef arg_decode21 arg_sbdp;
+typedef arg_decode20 arg_sbdp;
 bool dis_sbdp(DisasContext *ctx, arg_sbdp *a);
-typedef arg_decode22 arg_vadd;
+typedef arg_decode21 arg_vadd;
 bool dis_vadd(DisasContext *ctx, arg_vadd *a);
-typedef arg_decode22 arg_vsub;
+typedef arg_decode21 arg_vsub;
 bool dis_vsub(DisasContext *ctx, arg_vsub *a);
-typedef arg_decode22 arg_vmul;
+typedef arg_decode21 arg_vmul;
 bool dis_vmul(DisasContext *ctx, arg_vmul *a);
-typedef arg_decode22 arg_vdiv;
+typedef arg_decode21 arg_vdiv;
 bool dis_vdiv(DisasContext *ctx, arg_vdiv *a);
-typedef arg_decode22 arg_vaddsub;
+typedef arg_decode21 arg_vaddsub;
 bool dis_vaddsub(DisasContext *ctx, arg_vaddsub *a);
-typedef arg_decode22 arg_vmadd;
+typedef arg_decode21 arg_vmadd;
 bool dis_vmadd(DisasContext *ctx, arg_vmadd *a);
-typedef arg_decode23 arg_vmov_reg;
+typedef arg_decode22 arg_vmov_reg;
 bool dis_vmov_reg(DisasContext *ctx, arg_vmov_reg *a);
-typedef arg_decode23 arg_vmov_reg2;
+typedef arg_decode22 arg_vmov_reg2;
 bool dis_vmov_reg2(DisasContext *ctx, arg_vmov_reg2 *a);
-typedef arg_decode24 arg_vmov;
+typedef arg_decode23 arg_vmov;
 bool dis_vmov(DisasContext *ctx, arg_vmov *a);
-typedef arg_decode25 arg_vconv;
+typedef arg_decode24 arg_vconv;
 bool dis_vconv(DisasContext *ctx, arg_vconv *a);
-typedef arg_decode26 arg_vlen;
+typedef arg_decode25 arg_vlen;
 bool dis_vlen(DisasContext *ctx, arg_vlen *a);
-typedef arg_decode27 arg_vldr_imm;
+typedef arg_decode26 arg_vldr_imm;
 bool dis_vldr_imm(DisasContext *ctx, arg_vldr_imm *a);
-typedef arg_decode27 arg_vldr_imm_update;
+typedef arg_decode26 arg_vldr_imm_update;
 bool dis_vldr_imm_update(DisasContext *ctx, arg_vldr_imm_update *a);
-typedef arg_decode27 arg_vstr_imm;
+typedef arg_decode26 arg_vstr_imm;
 bool dis_vstr_imm(DisasContext *ctx, arg_vstr_imm *a);
-typedef arg_decode27 arg_vstr_imm_update;
+typedef arg_decode26 arg_vstr_imm_update;
 bool dis_vstr_imm_update(DisasContext *ctx, arg_vstr_imm_update *a);
-typedef arg_decode28 arg_vldr_reg;
+typedef arg_decode27 arg_vldr_reg;
 bool dis_vldr_reg(DisasContext *ctx, arg_vldr_reg *a);
-typedef arg_decode28 arg_vldr_reg_update;
+typedef arg_decode27 arg_vldr_reg_update;
 bool dis_vldr_reg_update(DisasContext *ctx, arg_vldr_reg_update *a);
-typedef arg_decode28 arg_vstr_reg;
+typedef arg_decode27 arg_vstr_reg;
 bool dis_vstr_reg(DisasContext *ctx, arg_vstr_reg *a);
-typedef arg_decode28 arg_vstr_reg_update;
+typedef arg_decode27 arg_vstr_reg_update;
 bool dis_vstr_reg_update(DisasContext *ctx, arg_vstr_reg_update *a);
-typedef arg_decode22 arg_vand;
+typedef arg_decode21 arg_vand;
 bool dis_vand(DisasContext *ctx, arg_vand *a);
-typedef arg_decode22 arg_vor;
+typedef arg_decode21 arg_vor;
 bool dis_vor(DisasContext *ctx, arg_vor *a);
-typedef arg_decode22 arg_vxor;
+typedef arg_decode21 arg_vxor;
 bool dis_vxor(DisasContext *ctx, arg_vxor *a);
-typedef arg_decode29 arg_vcmp;
+typedef arg_decode28 arg_vcmp;
 bool dis_vcmp(DisasContext *ctx, arg_vcmp *a);
-typedef arg_decode30 arg_vminmax;
+typedef arg_decode29 arg_vminmax;
 bool dis_vminmax(DisasContext *ctx, arg_vminmax *a);
-typedef arg_decode24 arg_vabs;
+typedef arg_decode23 arg_vabs;
 bool dis_vabs(DisasContext *ctx, arg_vabs *a);
-typedef arg_decode22 arg_vshl;
+typedef arg_decode21 arg_vshl;
 bool dis_vshl(DisasContext *ctx, arg_vshl *a);
-typedef arg_decode31 arg_vshr;
+typedef arg_decode30 arg_vshr;
 bool dis_vshr(DisasContext *ctx, arg_vshr *a);
-typedef arg_decode24 arg_vsqrt;
+typedef arg_decode23 arg_vsqrt;
 bool dis_vsqrt(DisasContext *ctx, arg_vsqrt *a);
-typedef arg_decode22 arg_vmod;
+typedef arg_decode21 arg_vmod;
 bool dis_vmod(DisasContext *ctx, arg_vmod *a);
-typedef arg_decode32 arg_vmovall;
+typedef arg_decode31 arg_vmovall;
 bool dis_vmovall(DisasContext *ctx, arg_vmovall *a);
-typedef arg_decode29 arg_vtst;
+typedef arg_decode28 arg_vtst;
 bool dis_vtst(DisasContext *ctx, arg_vtst *a);
 
 static void decode_extract_decode_Fmt_0(DisasContext *ctx, arg_decode0 *a, uint32_t insn)
@@ -511,225 +470,219 @@ static void decode_extract_decode_Fmt_1(DisasContext *ctx, arg_decode1 *a, uint3
 
 static void decode_extract_decode_Fmt_10(DisasContext *ctx, arg_decode10 *a, uint32_t insn)
 {
-    a->r2 = extract32(insn, 6, 5);
     a->r3 = extract32(insn, 0, 5);
-    a->r1 = extract32(insn, 11, 5);
+    a->shift = extract32(insn, 5, 3);
+    a->size = extract32(insn, 18, 2);
+    a->r2 = extract32(insn, 10, 5);
+    a->r1 = extract32(insn, 20, 5);
 }
 
 static void decode_extract_decode_Fmt_11(DisasContext *ctx, arg_decode11 *a, uint32_t insn)
 {
-    a->r2 = extract32(insn, 6, 5);
-    a->r3 = extract32(insn, 0, 5);
+    a->size = extract32(insn, 18, 2);
+    a->imm = sextract32(insn, 0, 10);
+    a->r1 = extract32(insn, 20, 5);
+    a->r2 = extract32(insn, 10, 5);
 }
 
 static void decode_extract_decode_Fmt_12(DisasContext *ctx, arg_decode12 *a, uint32_t insn)
-{
-    a->r2 = extract32(insn, 6, 5);
-    a->r1 = extract32(insn, 11, 5);
-}
-
-static void decode_extract_decode_Fmt_13(DisasContext *ctx, arg_decode13 *a, uint32_t insn)
-{
-    a->what = extract32(insn, 0, 16);
-}
-
-static void decode_extract_decode_Fmt_14(DisasContext *ctx, arg_decode14 *a, uint32_t insn)
-{
-    a->size = extract32(insn, 5, 2);
-    a->r1 = extract32(insn, 0, 5);
-}
-
-static void decode_extract_decode_Fmt_15(DisasContext *ctx, arg_decode15 *a, uint32_t insn)
-{
-    a->cr1 = extract32(insn, 5, 5);
-    a->r1 = extract32(insn, 0, 5);
-}
-
-static void decode_extract_decode_Fmt_16(DisasContext *ctx, arg_decode16 *a, uint32_t insn)
-{
-    a->rel = sextract32(insn, 0, 20);
-    a->r1 = extract32(insn, 20, 5);
-}
-
-static void decode_extract_decode_Fmt_17(DisasContext *ctx, arg_decode17 *a, uint32_t insn)
-{
-    a->imm = extract32(insn, 0, 16);
-    a->r1 = extract32(insn, 20, 5);
-}
-
-static void decode_extract_decode_Fmt_18(DisasContext *ctx, arg_decode18 *a, uint32_t insn)
-{
-    a->r3 = extract32(insn, 0, 5);
-    a->size = extract32(insn, 18, 2);
-    a->r2 = extract32(insn, 10, 5);
-    a->shift = extract32(insn, 5, 3);
-    a->r1 = extract32(insn, 20, 5);
-}
-
-static void decode_extract_decode_Fmt_19(DisasContext *ctx, arg_decode19 *a, uint32_t insn)
-{
-    a->size = extract32(insn, 18, 2);
-    a->r2 = extract32(insn, 10, 5);
-    a->imm = sextract32(insn, 0, 10);
-    a->r1 = extract32(insn, 20, 5);
-}
-
-static void decode_extract_decode_Fmt_2(DisasContext *ctx, arg_decode2 *a, uint32_t insn)
-{
-    a->size = extract32(insn, 10, 2);
-    a->r2 = extract32(insn, 12, 5);
-    a->r3 = extract32(insn, 0, 5);
-    a->r1 = extract32(insn, 17, 5);
-}
-
-static void decode_extract_decode_Fmt_20(DisasContext *ctx, arg_decode20 *a, uint32_t insn)
 {
     a->size = extract32(insn, 18, 2);
     a->rel = sextract32(insn, 0, 17);
     a->r1 = extract32(insn, 20, 5);
 }
 
-static void decode_extract_decode_Fmt_21(DisasContext *ctx, arg_decode21 *a, uint32_t insn)
+static void decode_extract_decode_Fmt_13(DisasContext *ctx, arg_decode13 *a, uint32_t insn)
 {
-    a->count = extract32(insn, 6, 6);
-    a->start = extract32(insn, 0, 6);
+}
+
+static void decode_extract_decode_Fmt_14(DisasContext *ctx, arg_decode14 *a, uint32_t insn)
+{
+    a->what = extract32(insn, 0, 16);
+}
+
+static void decode_extract_decode_Fmt_15(DisasContext *ctx, arg_decode15 *a, uint32_t insn)
+{
+    a->size = extract32(insn, 5, 2);
+    a->r1 = extract32(insn, 0, 5);
+}
+
+static void decode_extract_decode_Fmt_16(DisasContext *ctx, arg_decode16 *a, uint32_t insn)
+{
+    a->r1 = extract32(insn, 0, 5);
+    a->cr1 = extract32(insn, 5, 5);
+}
+
+static void decode_extract_decode_Fmt_17(DisasContext *ctx, arg_decode17 *a, uint32_t insn)
+{
+    a->r3 = extract32(insn, 0, 5);
+    a->r1 = extract32(insn, 10, 5);
+    a->r2 = extract32(insn, 5, 5);
+}
+
+static void decode_extract_decode_Fmt_18(DisasContext *ctx, arg_decode18 *a, uint32_t insn)
+{
+    a->r1 = extract32(insn, 10, 5);
+    a->r2 = extract32(insn, 5, 5);
+}
+
+static void decode_extract_decode_Fmt_19(DisasContext *ctx, arg_decode19 *a, uint32_t insn)
+{
+    a->r3 = extract32(insn, 0, 5);
+    a->size = extract32(insn, 10, 2);
+    a->cond = extract32(insn, 5, 3);
     a->r2 = extract32(insn, 12, 5);
     a->r1 = extract32(insn, 17, 5);
 }
 
-static void decode_extract_decode_Fmt_22(DisasContext *ctx, arg_decode22 *a, uint32_t insn)
+static void decode_extract_decode_Fmt_2(DisasContext *ctx, arg_decode2 *a, uint32_t insn)
 {
-    a->type = extract32(insn, 16, 3);
+    a->size = extract32(insn, 10, 2);
+    a->r3 = extract32(insn, 0, 5);
+    a->r1 = extract32(insn, 17, 5);
+    a->r2 = extract32(insn, 12, 5);
+}
+
+static void decode_extract_decode_Fmt_20(DisasContext *ctx, arg_decode20 *a, uint32_t insn)
+{
+    a->count = extract32(insn, 6, 6);
+    a->r1 = extract32(insn, 17, 5);
+    a->r2 = extract32(insn, 12, 5);
+    a->start = extract32(insn, 0, 6);
+}
+
+static void decode_extract_decode_Fmt_21(DisasContext *ctx, arg_decode21 *a, uint32_t insn)
+{
+    a->v3 = extract32(insn, 0, 4);
     a->v1 = extract32(insn, 12, 4);
     a->v2 = extract32(insn, 8, 4);
-    a->v3 = extract32(insn, 0, 4);
+    a->type = extract32(insn, 16, 3);
+}
+
+static void decode_extract_decode_Fmt_22(DisasContext *ctx, arg_decode22 *a, uint32_t insn)
+{
+    a->slot = extract32(insn, 5, 6);
+    a->v1 = extract32(insn, 12, 4);
+    a->r2 = extract32(insn, 0, 5);
+    a->type = extract32(insn, 16, 3);
 }
 
 static void decode_extract_decode_Fmt_23(DisasContext *ctx, arg_decode23 *a, uint32_t insn)
 {
-    a->type = extract32(insn, 16, 3);
-    a->r2 = extract32(insn, 0, 5);
-    a->slot = extract32(insn, 5, 6);
     a->v1 = extract32(insn, 12, 4);
+    a->v2 = extract32(insn, 8, 4);
+    a->type = extract32(insn, 16, 3);
 }
 
 static void decode_extract_decode_Fmt_24(DisasContext *ctx, arg_decode24 *a, uint32_t insn)
 {
-    a->type = extract32(insn, 16, 3);
+    a->target = extract32(insn, 0, 3);
     a->v1 = extract32(insn, 12, 4);
     a->v2 = extract32(insn, 8, 4);
+    a->type = extract32(insn, 16, 3);
 }
 
 static void decode_extract_decode_Fmt_25(DisasContext *ctx, arg_decode25 *a, uint32_t insn)
 {
-    a->type = extract32(insn, 16, 3);
-    a->target = extract32(insn, 0, 3);
     a->v1 = extract32(insn, 12, 4);
-    a->v2 = extract32(insn, 8, 4);
+    a->r1 = extract32(insn, 0, 5);
+    a->type = extract32(insn, 16, 3);
 }
 
 static void decode_extract_decode_Fmt_26(DisasContext *ctx, arg_decode26 *a, uint32_t insn)
 {
-    a->type = extract32(insn, 16, 3);
-    a->v1 = extract32(insn, 12, 4);
-    a->r1 = extract32(insn, 0, 5);
+    a->imm = sextract32(insn, 0, 8);
+    a->r1 = extract32(insn, 12, 5);
+    a->v1 = extract32(insn, 8, 4);
 }
 
 static void decode_extract_decode_Fmt_27(DisasContext *ctx, arg_decode27 *a, uint32_t insn)
 {
-    a->v1 = extract32(insn, 8, 4);
     a->r1 = extract32(insn, 12, 5);
-    a->imm = sextract32(insn, 0, 8);
+    a->r2 = extract32(insn, 0, 5);
+    a->v1 = extract32(insn, 8, 4);
 }
 
 static void decode_extract_decode_Fmt_28(DisasContext *ctx, arg_decode28 *a, uint32_t insn)
 {
-    a->r2 = extract32(insn, 0, 5);
-    a->v1 = extract32(insn, 8, 4);
-    a->r1 = extract32(insn, 12, 5);
+    a->v3 = extract32(insn, 0, 4);
+    a->v2 = extract32(insn, 8, 4);
+    a->type = extract32(insn, 16, 3);
+    a->cond = extract32(insn, 4, 3);
+    a->v1 = extract32(insn, 12, 4);
 }
 
 static void decode_extract_decode_Fmt_29(DisasContext *ctx, arg_decode29 *a, uint32_t insn)
 {
-    a->type = extract32(insn, 16, 3);
-    a->v2 = extract32(insn, 8, 4);
+    a->check_sign = extract32(insn, 0, 1);
     a->v1 = extract32(insn, 12, 4);
-    a->cond = extract32(insn, 4, 3);
-    a->v3 = extract32(insn, 0, 4);
+    a->v2 = extract32(insn, 8, 4);
+    a->type = extract32(insn, 16, 3);
 }
 
 static void decode_extract_decode_Fmt_3(DisasContext *ctx, arg_decode3 *a, uint32_t insn)
 {
     a->size = extract32(insn, 10, 2);
-    a->r2 = extract32(insn, 12, 5);
     a->r3 = extract32(insn, 0, 5);
+    a->r2 = extract32(insn, 12, 5);
 }
 
 static void decode_extract_decode_Fmt_30(DisasContext *ctx, arg_decode30 *a, uint32_t insn)
 {
-    a->type = extract32(insn, 16, 3);
-    a->check_sign = extract32(insn, 0, 1);
-    a->v1 = extract32(insn, 12, 4);
+    a->v3 = extract32(insn, 0, 4);
     a->v2 = extract32(insn, 8, 4);
+    a->type = extract32(insn, 16, 3);
+    a->v1 = extract32(insn, 12, 4);
+    a->is_signed = extract32(insn, 4, 1);
 }
 
 static void decode_extract_decode_Fmt_31(DisasContext *ctx, arg_decode31 *a, uint32_t insn)
 {
-    a->type = extract32(insn, 16, 3);
-    a->is_signed = extract32(insn, 4, 1);
-    a->v2 = extract32(insn, 8, 4);
     a->v1 = extract32(insn, 12, 4);
-    a->v3 = extract32(insn, 0, 4);
-}
-
-static void decode_extract_decode_Fmt_32(DisasContext *ctx, arg_decode32 *a, uint32_t insn)
-{
-    a->type = extract32(insn, 16, 3);
     a->r2 = extract32(insn, 0, 5);
-    a->v1 = extract32(insn, 12, 4);
+    a->type = extract32(insn, 16, 3);
 }
 
 static void decode_extract_decode_Fmt_4(DisasContext *ctx, arg_decode4 *a, uint32_t insn)
 {
     a->size = extract32(insn, 10, 2);
-    a->r2 = extract32(insn, 12, 5);
     a->imm8 = extract32(insn, 0, 8);
     a->r1 = extract32(insn, 17, 5);
+    a->r2 = extract32(insn, 12, 5);
 }
 
 static void decode_extract_decode_Fmt_5(DisasContext *ctx, arg_decode5 *a, uint32_t insn)
 {
     a->size = extract32(insn, 10, 2);
-    a->r2 = extract32(insn, 12, 5);
     a->imm8 = extract32(insn, 0, 8);
+    a->r2 = extract32(insn, 12, 5);
 }
 
 static void decode_extract_decode_Fmt_6(DisasContext *ctx, arg_decode6 *a, uint32_t insn)
 {
+    a->size = extract32(insn, 10, 2);
+    a->r1 = extract32(insn, 17, 5);
+    a->r2 = extract32(insn, 12, 5);
 }
 
 static void decode_extract_decode_Fmt_7(DisasContext *ctx, arg_decode7 *a, uint32_t insn)
 {
     a->size = extract32(insn, 10, 2);
-    a->r2 = extract32(insn, 12, 5);
+    a->to = extract32(insn, 0, 2);
     a->r1 = extract32(insn, 17, 5);
+    a->r2 = extract32(insn, 12, 5);
 }
 
 static void decode_extract_decode_Fmt_8(DisasContext *ctx, arg_decode8 *a, uint32_t insn)
 {
-    a->size = extract32(insn, 10, 2);
-    a->r2 = extract32(insn, 12, 5);
-    a->to = extract32(insn, 0, 2);
-    a->r1 = extract32(insn, 17, 5);
+    a->rel = sextract32(insn, 0, 20);
+    a->r1 = extract32(insn, 20, 5);
 }
 
 static void decode_extract_decode_Fmt_9(DisasContext *ctx, arg_decode9 *a, uint32_t insn)
 {
-    a->r3 = extract32(insn, 0, 5);
-    a->cond = extract32(insn, 5, 3);
-    a->size = extract32(insn, 10, 2);
-    a->r2 = extract32(insn, 12, 5);
-    a->r1 = extract32(insn, 17, 5);
+    a->imm = extract32(insn, 0, 16);
+    a->r1 = extract32(insn, 20, 5);
 }
 
 static bool decode(DisasContext *ctx, uint32_t insn)
@@ -761,7 +714,6 @@ static bool decode(DisasContext *ctx, uint32_t insn)
         arg_decode3 f_decode3;
         arg_decode30 f_decode30;
         arg_decode31 f_decode31;
-        arg_decode32 f_decode32;
         arg_decode4 f_decode4;
         arg_decode5 f_decode5;
         arg_decode6 f_decode6;
@@ -773,110 +725,100 @@ static bool decode(DisasContext *ctx, uint32_t insn)
     switch ((insn >> 25) & 0xf) {
     case 0x0:
         /* ...0000. ........ ........ ........ */
-        /* hive64.decode:3 */
+        /* hive64.decode:10 */
         decode_extract_decode_Fmt_0(ctx, &u.f_decode0, insn);
         if (dis_branch(ctx, &u.f_decode0)) return true;
         break;
     case 0x1:
         /* ...0001. ........ ........ ........ */
-        /* hive64.decode:4 */
+        /* hive64.decode:11 */
         decode_extract_decode_Fmt_0(ctx, &u.f_decode0, insn);
         if (dis_branch_link(ctx, &u.f_decode0)) return true;
         break;
     case 0x2:
         /* ...0010. ........ ........ ........ */
-        /* hive64.decode:5 */
+        /* hive64.decode:12 */
         decode_extract_decode_Fmt_1(ctx, &u.f_decode1, insn);
         if (dis_branch_reg(ctx, &u.f_decode1)) return true;
         break;
     case 0x3:
         /* ...0011. ........ ........ ........ */
-        /* hive64.decode:6 */
+        /* hive64.decode:13 */
         decode_extract_decode_Fmt_1(ctx, &u.f_decode1, insn);
         if (dis_branch_reg_link(ctx, &u.f_decode1)) return true;
         break;
     case 0x4:
         /* ...0100. ........ ........ ........ */
-        switch (insn & 0x01800300) {
+        switch (insn & 0x01c00300) {
         case 0x00000000:
-            /* ...01000 0....... ......00 ........ */
-            /* hive64.decode:8 */
+            /* ...01000 00...... ......00 ........ */
+            /* hive64.decode:25 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_add_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x00000100:
-            /* ...01000 0....... ......01 ........ */
-            /* hive64.decode:26 */
+            /* ...01000 00...... ......01 ........ */
+            /* hive64.decode:53 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_add_imm(ctx, &u.f_decode4)) return true;
             break;
         case 0x00800000:
-            /* ...01000 1....... ......00 ........ */
-            switch ((insn >> 22) & 0x1) {
-            case 0x0:
-                /* ...01000 10...... ......00 ........ */
-                /* hive64.decode:9 */
-                decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
-                if (dis_sub_reg(ctx, &u.f_decode2)) return true;
-                break;
-            case 0x1:
-                /* ...01000 11...... ......00 ........ */
-                /* hive64.decode:10 */
-                decode_extract_decode_Fmt_3(ctx, &u.f_decode3, insn);
-                if (dis_cmp_reg(ctx, &u.f_decode3)) return true;
-                break;
-            }
+            /* ...01000 10...... ......00 ........ */
+            /* hive64.decode:26 */
+            decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
+            if (dis_sub_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x00800100:
-            /* ...01000 1....... ......01 ........ */
-            switch ((insn >> 22) & 0x1) {
-            case 0x0:
-                /* ...01000 10...... ......01 ........ */
-                /* hive64.decode:27 */
-                decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
-                if (dis_sub_imm(ctx, &u.f_decode4)) return true;
-                break;
-            case 0x1:
-                /* ...01000 11...... ......01 ........ */
-                /* hive64.decode:28 */
-                decode_extract_decode_Fmt_5(ctx, &u.f_decode5, insn);
-                if (dis_cmp_imm(ctx, &u.f_decode5)) return true;
-                break;
-            }
+            /* ...01000 10...... ......01 ........ */
+            /* hive64.decode:54 */
+            decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
+            if (dis_sub_imm(ctx, &u.f_decode4)) return true;
+            break;
+        case 0x00c00000:
+            /* ...01000 11...... ......00 ........ */
+            /* hive64.decode:27 */
+            decode_extract_decode_Fmt_3(ctx, &u.f_decode3, insn);
+            if (dis_cmp_reg(ctx, &u.f_decode3)) return true;
+            break;
+        case 0x00c00100:
+            /* ...01000 11...... ......01 ........ */
+            /* hive64.decode:55 */
+            decode_extract_decode_Fmt_5(ctx, &u.f_decode5, insn);
+            if (dis_cmp_imm(ctx, &u.f_decode5)) return true;
             break;
         case 0x01000000:
-            /* ...01001 0....... ......00 ........ */
-            /* hive64.decode:11 */
+            /* ...01001 00...... ......00 ........ */
+            /* hive64.decode:28 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_mul_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x01000100:
-            /* ...01001 0....... ......01 ........ */
-            /* hive64.decode:29 */
+            /* ...01001 00...... ......01 ........ */
+            /* hive64.decode:56 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_mul_imm(ctx, &u.f_decode4)) return true;
             break;
         case 0x01800000:
-            /* ...01001 1....... ......00 ........ */
-            /* hive64.decode:12 */
+            /* ...01001 10...... ......00 ........ */
+            /* hive64.decode:29 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_div_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x01800100:
-            /* ...01001 1....... ......01 ........ */
-            /* hive64.decode:30 */
+            /* ...01001 10...... ......01 ........ */
+            /* hive64.decode:57 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_div_imm(ctx, &u.f_decode4)) return true;
             break;
         case 0x01800200:
-            /* ...01001 1....... ......10 ........ */
-            /* hive64.decode:14 */
+            /* ...01001 10...... ......10 ........ */
+            /* hive64.decode:31 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_divs_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x01800300:
-            /* ...01001 1....... ......11 ........ */
-            /* hive64.decode:32 */
+            /* ...01001 10...... ......11 ........ */
+            /* hive64.decode:59 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_divs_imm(ctx, &u.f_decode4)) return true;
             break;
@@ -884,86 +826,76 @@ static bool decode(DisasContext *ctx, uint32_t insn)
         break;
     case 0x5:
         /* ...0101. ........ ........ ........ */
-        switch (insn & 0x01800300) {
+        switch (insn & 0x01c00300) {
         case 0x00000000:
-            /* ...01010 0....... ......00 ........ */
-            /* hive64.decode:13 */
+            /* ...01010 00...... ......00 ........ */
+            /* hive64.decode:30 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_mod_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x00000100:
-            /* ...01010 0....... ......01 ........ */
-            /* hive64.decode:31 */
+            /* ...01010 00...... ......01 ........ */
+            /* hive64.decode:58 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_mod_imm(ctx, &u.f_decode4)) return true;
             break;
         case 0x00000200:
-            /* ...01010 0....... ......10 ........ */
-            /* hive64.decode:15 */
+            /* ...01010 00...... ......10 ........ */
+            /* hive64.decode:32 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_mods_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x00000300:
-            /* ...01010 0....... ......11 ........ */
-            /* hive64.decode:33 */
+            /* ...01010 00...... ......11 ........ */
+            /* hive64.decode:60 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_mods_imm(ctx, &u.f_decode4)) return true;
             break;
         case 0x00800000:
-            /* ...01010 1....... ......00 ........ */
-            switch ((insn >> 22) & 0x1) {
-            case 0x0:
-                /* ...01010 10...... ......00 ........ */
-                /* hive64.decode:16 */
-                decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
-                if (dis_and_reg(ctx, &u.f_decode2)) return true;
-                break;
-            case 0x1:
-                /* ...01010 11...... ......00 ........ */
-                /* hive64.decode:17 */
-                decode_extract_decode_Fmt_3(ctx, &u.f_decode3, insn);
-                if (dis_tst_reg(ctx, &u.f_decode3)) return true;
-                break;
-            }
+            /* ...01010 10...... ......00 ........ */
+            /* hive64.decode:33 */
+            decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
+            if (dis_and_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x00800100:
-            /* ...01010 1....... ......01 ........ */
-            switch ((insn >> 22) & 0x1) {
-            case 0x0:
-                /* ...01010 10...... ......01 ........ */
-                /* hive64.decode:34 */
-                decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
-                if (dis_and_imm(ctx, &u.f_decode4)) return true;
-                break;
-            case 0x1:
-                /* ...01010 11...... ......01 ........ */
-                /* hive64.decode:35 */
-                decode_extract_decode_Fmt_5(ctx, &u.f_decode5, insn);
-                if (dis_tst_imm(ctx, &u.f_decode5)) return true;
-                break;
-            }
+            /* ...01010 10...... ......01 ........ */
+            /* hive64.decode:61 */
+            decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
+            if (dis_and_imm(ctx, &u.f_decode4)) return true;
+            break;
+        case 0x00c00000:
+            /* ...01010 11...... ......00 ........ */
+            /* hive64.decode:34 */
+            decode_extract_decode_Fmt_3(ctx, &u.f_decode3, insn);
+            if (dis_tst_reg(ctx, &u.f_decode3)) return true;
+            break;
+        case 0x00c00100:
+            /* ...01010 11...... ......01 ........ */
+            /* hive64.decode:62 */
+            decode_extract_decode_Fmt_5(ctx, &u.f_decode5, insn);
+            if (dis_tst_imm(ctx, &u.f_decode5)) return true;
             break;
         case 0x01000000:
-            /* ...01011 0....... ......00 ........ */
-            /* hive64.decode:18 */
+            /* ...01011 00...... ......00 ........ */
+            /* hive64.decode:35 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_or_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x01000100:
-            /* ...01011 0....... ......01 ........ */
-            /* hive64.decode:36 */
+            /* ...01011 00...... ......01 ........ */
+            /* hive64.decode:63 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_or_imm(ctx, &u.f_decode4)) return true;
             break;
         case 0x01800000:
-            /* ...01011 1....... ......00 ........ */
-            /* hive64.decode:19 */
+            /* ...01011 10...... ......00 ........ */
+            /* hive64.decode:36 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_xor_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x01800100:
-            /* ...01011 1....... ......01 ........ */
-            /* hive64.decode:37 */
+            /* ...01011 10...... ......01 ........ */
+            /* hive64.decode:64 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_xor_imm(ctx, &u.f_decode4)) return true;
             break;
@@ -971,76 +903,64 @@ static bool decode(DisasContext *ctx, uint32_t insn)
         break;
     case 0x6:
         /* ...0110. ........ ........ ........ */
-        switch (insn & 0x01800300) {
+        switch (insn & 0x01c00300) {
         case 0x00000000:
-            /* ...01100 0....... ......00 ........ */
-            /* hive64.decode:20 */
+            /* ...01100 00...... ......00 ........ */
+            /* hive64.decode:37 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_shl_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x00000100:
-            /* ...01100 0....... ......01 ........ */
-            if ((insn & 0x000000ff) == 0x00000000) {
-                /* ...01100 0....... ......01 00000000 */
-                if ((insn & 0x003ffc00) == 0x003fdc00) {
-                    /* ...01100 0.111111 11011101 00000000 */
-                    /* hive64.decode:40 */
-                    decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
-                    if (dis_ret(ctx, &u.f_decode6)) return true;
-                }
-                /* hive64.decode:41 */
-                decode_extract_decode_Fmt_7(ctx, &u.f_decode7, insn);
-                if (dis_mov(ctx, &u.f_decode7)) return true;
-            }
-            /* hive64.decode:43 */
+            /* ...01100 00...... ......01 ........ */
+            /* hive64.decode:65 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_shl_imm(ctx, &u.f_decode4)) return true;
             break;
         case 0x00800000:
-            /* ...01100 1....... ......00 ........ */
-            /* hive64.decode:21 */
+            /* ...01100 10...... ......00 ........ */
+            /* hive64.decode:38 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_shr_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x00800100:
-            /* ...01100 1....... ......01 ........ */
-            /* hive64.decode:45 */
+            /* ...01100 10...... ......01 ........ */
+            /* hive64.decode:66 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_shr_imm(ctx, &u.f_decode4)) return true;
             break;
         case 0x00800200:
-            /* ...01100 1....... ......10 ........ */
-            /* hive64.decode:22 */
+            /* ...01100 10...... ......10 ........ */
+            /* hive64.decode:39 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_sar_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x00800300:
-            /* ...01100 1....... ......11 ........ */
-            /* hive64.decode:46 */
+            /* ...01100 10...... ......11 ........ */
+            /* hive64.decode:67 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_sar_imm(ctx, &u.f_decode4)) return true;
             break;
         case 0x01000000:
-            /* ...01101 0....... ......00 ........ */
-            /* hive64.decode:23 */
+            /* ...01101 00...... ......00 ........ */
+            /* hive64.decode:40 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_rol_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x01000100:
-            /* ...01101 0....... ......01 ........ */
-            /* hive64.decode:47 */
+            /* ...01101 00...... ......01 ........ */
+            /* hive64.decode:68 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_rol_imm(ctx, &u.f_decode4)) return true;
             break;
         case 0x01800000:
-            /* ...01101 1....... ......00 ........ */
-            /* hive64.decode:24 */
+            /* ...01101 10...... ......00 ........ */
+            /* hive64.decode:41 */
             decode_extract_decode_Fmt_2(ctx, &u.f_decode2, insn);
             if (dis_ror_reg(ctx, &u.f_decode2)) return true;
             break;
         case 0x01800100:
-            /* ...01101 1....... ......01 ........ */
-            /* hive64.decode:48 */
+            /* ...01101 10...... ......01 ........ */
+            /* hive64.decode:69 */
             decode_extract_decode_Fmt_4(ctx, &u.f_decode4, insn);
             if (dis_ror_imm(ctx, &u.f_decode4)) return true;
             break;
@@ -1048,97 +968,82 @@ static bool decode(DisasContext *ctx, uint32_t insn)
         break;
     case 0x7:
         /* ...0111. ........ ........ ........ */
-        switch ((insn >> 23) & 0x3) {
-        case 0x0:
-            /* ...01110 0....... ........ ........ */
-            decode_extract_decode_Fmt_7(ctx, &u.f_decode7, insn);
-            switch ((insn >> 9) & 0x1) {
-            case 0x0:
-                /* ...01110 0....... ......0. ........ */
-                /* hive64.decode:50 */
-                if (dis_neg(ctx, &u.f_decode7)) return true;
-                break;
-            }
+        switch (insn & 0x01c00300) {
+        case 0x00000000:
+            /* ...01110 00...... ......00 ........ */
+            /* hive64.decode:71 */
+            decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
+            if (dis_neg(ctx, &u.f_decode6)) return true;
             break;
-        case 0x1:
-            /* ...01110 1....... ........ ........ */
-            decode_extract_decode_Fmt_7(ctx, &u.f_decode7, insn);
-            switch ((insn >> 9) & 0x1) {
-            case 0x0:
-                /* ...01110 1....... ......0. ........ */
-                /* hive64.decode:51 */
-                if (dis_not(ctx, &u.f_decode7)) return true;
-                break;
-            }
+        case 0x00800000:
+            /* ...01110 10...... ......00 ........ */
+            /* hive64.decode:72 */
+            decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
+            if (dis_not(ctx, &u.f_decode6)) return true;
             break;
-        case 0x2:
-            /* ...01111 0....... ........ ........ */
-            /* hive64.decode:52 */
-            decode_extract_decode_Fmt_8(ctx, &u.f_decode8, insn);
-            if (dis_extend(ctx, &u.f_decode8)) return true;
-            break;
-        case 0x3:
-            /* ...01111 1....... ........ ........ */
+        case 0x01000100:
+            /* ...01111 00...... ......01 ........ */
+            /* hive64.decode:73 */
             decode_extract_decode_Fmt_7(ctx, &u.f_decode7, insn);
-            switch ((insn >> 9) & 0x1) {
-            case 0x0:
-                /* ...01111 1....... ......0. ........ */
-                /* hive64.decode:53 */
-                if (dis_swe(ctx, &u.f_decode7)) return true;
-                break;
-            }
+            if (dis_extend(ctx, &u.f_decode7)) return true;
+            break;
+        case 0x01800000:
+            /* ...01111 10...... ......00 ........ */
+            /* hive64.decode:74 */
+            decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
+            if (dis_swe(ctx, &u.f_decode6)) return true;
             break;
         }
         break;
     case 0x8:
         /* ...1000. ........ ........ ........ */
-        /* hive64.decode:109 */
-        decode_extract_decode_Fmt_16(ctx, &u.f_decode16, insn);
-        if (dis_lea(ctx, &u.f_decode16)) return true;
+        /* hive64.decode:81 */
+        decode_extract_decode_Fmt_8(ctx, &u.f_decode8, insn);
+        if (dis_lea(ctx, &u.f_decode8)) return true;
         break;
     case 0x9:
         /* ...1001. ........ ........ ........ */
-        decode_extract_decode_Fmt_17(ctx, &u.f_decode17, insn);
+        decode_extract_decode_Fmt_9(ctx, &u.f_decode9, insn);
         switch ((insn >> 16) & 0x7) {
         case 0x0:
             /* ...1001. .....000 ........ ........ */
-            /* hive64.decode:110 */
-            if (dis_movz_0(ctx, &u.f_decode17)) return true;
+            /* hive64.decode:95 */
+            if (dis_movz_0(ctx, &u.f_decode9)) return true;
             break;
         case 0x1:
             /* ...1001. .....001 ........ ........ */
-            /* hive64.decode:111 */
-            if (dis_movz_16(ctx, &u.f_decode17)) return true;
+            /* hive64.decode:96 */
+            if (dis_movz_16(ctx, &u.f_decode9)) return true;
             break;
         case 0x2:
             /* ...1001. .....010 ........ ........ */
-            /* hive64.decode:112 */
-            if (dis_movz_32(ctx, &u.f_decode17)) return true;
+            /* hive64.decode:97 */
+            if (dis_movz_32(ctx, &u.f_decode9)) return true;
             break;
         case 0x3:
             /* ...1001. .....011 ........ ........ */
-            /* hive64.decode:113 */
-            if (dis_movz_48(ctx, &u.f_decode17)) return true;
+            /* hive64.decode:98 */
+            if (dis_movz_48(ctx, &u.f_decode9)) return true;
             break;
         case 0x4:
             /* ...1001. .....100 ........ ........ */
-            /* hive64.decode:114 */
-            if (dis_movk_0(ctx, &u.f_decode17)) return true;
+            /* hive64.decode:99 */
+            if (dis_movk_0(ctx, &u.f_decode9)) return true;
             break;
         case 0x5:
             /* ...1001. .....101 ........ ........ */
-            /* hive64.decode:115 */
-            if (dis_movk_16(ctx, &u.f_decode17)) return true;
+            /* hive64.decode:100 */
+            if (dis_movk_16(ctx, &u.f_decode9)) return true;
             break;
         case 0x6:
             /* ...1001. .....110 ........ ........ */
-            /* hive64.decode:116 */
-            if (dis_movk_32(ctx, &u.f_decode17)) return true;
+            /* hive64.decode:101 */
+            if (dis_movk_32(ctx, &u.f_decode9)) return true;
             break;
         case 0x7:
             /* ...1001. .....111 ........ ........ */
-            /* hive64.decode:117 */
-            if (dis_movk_48(ctx, &u.f_decode17)) return true;
+            /* hive64.decode:102 */
+            if (dis_movk_48(ctx, &u.f_decode9)) return true;
             break;
         }
         break;
@@ -1147,439 +1052,334 @@ static bool decode(DisasContext *ctx, uint32_t insn)
         switch ((insn >> 15) & 0x7) {
         case 0x0:
             /* ...1010. ......00 0....... ........ */
-            /* hive64.decode:119 */
-            decode_extract_decode_Fmt_18(ctx, &u.f_decode18, insn);
-            if (dis_ldr_reg(ctx, &u.f_decode18)) return true;
+            /* hive64.decode:130 */
+            decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
+            if (dis_ldr_reg(ctx, &u.f_decode10)) return true;
             break;
         case 0x1:
             /* ...1010. ......00 1....... ........ */
-            /* hive64.decode:120 */
-            decode_extract_decode_Fmt_18(ctx, &u.f_decode18, insn);
-            if (dis_ldr_reg_update(ctx, &u.f_decode18)) return true;
+            /* hive64.decode:131 */
+            decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
+            if (dis_ldr_reg_update(ctx, &u.f_decode10)) return true;
             break;
         case 0x2:
             /* ...1010. ......01 0....... ........ */
-            /* hive64.decode:121 */
-            decode_extract_decode_Fmt_19(ctx, &u.f_decode19, insn);
-            if (dis_ldr_imm(ctx, &u.f_decode19)) return true;
+            /* hive64.decode:132 */
+            decode_extract_decode_Fmt_11(ctx, &u.f_decode11, insn);
+            if (dis_ldr_imm(ctx, &u.f_decode11)) return true;
             break;
         case 0x3:
             /* ...1010. ......01 1....... ........ */
-            /* hive64.decode:122 */
-            decode_extract_decode_Fmt_19(ctx, &u.f_decode19, insn);
-            if (dis_ldr_imm_update(ctx, &u.f_decode19)) return true;
+            /* hive64.decode:133 */
+            decode_extract_decode_Fmt_11(ctx, &u.f_decode11, insn);
+            if (dis_ldr_imm_update(ctx, &u.f_decode11)) return true;
             break;
         case 0x4:
             /* ...1010. ......10 0....... ........ */
-            /* hive64.decode:123 */
-            decode_extract_decode_Fmt_18(ctx, &u.f_decode18, insn);
-            if (dis_str_reg(ctx, &u.f_decode18)) return true;
+            /* hive64.decode:134 */
+            decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
+            if (dis_str_reg(ctx, &u.f_decode10)) return true;
             break;
         case 0x5:
             /* ...1010. ......10 1....... ........ */
-            /* hive64.decode:124 */
-            decode_extract_decode_Fmt_18(ctx, &u.f_decode18, insn);
-            if (dis_str_reg_update(ctx, &u.f_decode18)) return true;
+            /* hive64.decode:135 */
+            decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
+            if (dis_str_reg_update(ctx, &u.f_decode10)) return true;
             break;
         case 0x6:
             /* ...1010. ......11 0....... ........ */
-            /* hive64.decode:125 */
-            decode_extract_decode_Fmt_19(ctx, &u.f_decode19, insn);
-            if (dis_str_imm(ctx, &u.f_decode19)) return true;
+            /* hive64.decode:136 */
+            decode_extract_decode_Fmt_11(ctx, &u.f_decode11, insn);
+            if (dis_str_imm(ctx, &u.f_decode11)) return true;
             break;
         case 0x7:
             /* ...1010. ......11 1....... ........ */
-            /* hive64.decode:126 */
-            decode_extract_decode_Fmt_19(ctx, &u.f_decode19, insn);
-            if (dis_str_imm_update(ctx, &u.f_decode19)) return true;
+            /* hive64.decode:137 */
+            decode_extract_decode_Fmt_11(ctx, &u.f_decode11, insn);
+            if (dis_str_imm_update(ctx, &u.f_decode11)) return true;
             break;
         }
         break;
     case 0xb:
         /* ...1011. ........ ........ ........ */
-        decode_extract_decode_Fmt_20(ctx, &u.f_decode20, insn);
+        decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
         switch ((insn >> 17) & 0x1) {
         case 0x0:
             /* ...1011. ......0. ........ ........ */
-            /* hive64.decode:127 */
-            if (dis_ldr_pc_rel(ctx, &u.f_decode20)) return true;
+            /* hive64.decode:138 */
+            if (dis_ldr_pc_rel(ctx, &u.f_decode12)) return true;
             break;
         case 0x1:
             /* ...1011. ......1. ........ ........ */
-            /* hive64.decode:128 */
-            if (dis_str_pc_rel(ctx, &u.f_decode20)) return true;
+            /* hive64.decode:139 */
+            if (dis_str_pc_rel(ctx, &u.f_decode12)) return true;
             break;
         }
         break;
     case 0xc:
         /* ...1100. ........ ........ ........ */
-        switch ((insn >> 22) & 0x7) {
+        switch ((insn >> 20) & 0x1f) {
         case 0x0:
-            /* ...11000 00...... ........ ........ */
-            /* hive64.decode:97 */
-            decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
-            if (dis_cpuid(ctx, &u.f_decode6)) return true;
+            /* ...11000 0000.... ........ ........ */
+            /* hive64.decode:145 */
+            decode_extract_decode_Fmt_13(ctx, &u.f_decode13, insn);
+            if (dis_cpuid(ctx, &u.f_decode13)) return true;
             break;
         case 0x1:
-            /* ...11000 01...... ........ ........ */
-            /* hive64.decode:98 */
-            decode_extract_decode_Fmt_13(ctx, &u.f_decode13, insn);
-            if (dis_brk(ctx, &u.f_decode13)) return true;
+            /* ...11000 0001.... ........ ........ */
+            /* hive64.decode:146 */
+            decode_extract_decode_Fmt_14(ctx, &u.f_decode14, insn);
+            if (dis_brk(ctx, &u.f_decode14)) return true;
             break;
         case 0x2:
-            /* ...11000 10...... ........ ........ */
-            /* hive64.decode:99 */
-            decode_extract_decode_Fmt_14(ctx, &u.f_decode14, insn);
-            if (dis_zeroupper(ctx, &u.f_decode14)) return true;
+            /* ...11000 0010.... ........ ........ */
+            /* hive64.decode:147 */
+            decode_extract_decode_Fmt_15(ctx, &u.f_decode15, insn);
+            if (dis_zeroupper(ctx, &u.f_decode15)) return true;
             break;
         case 0x3:
-            /* ...11000 11...... ........ ........ */
-            /* hive64.decode:100 */
-            decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
-            if (dis_sret(ctx, &u.f_decode6)) return true;
+            /* ...11000 0011.... ........ ........ */
+            /* hive64.decode:148 */
+            decode_extract_decode_Fmt_13(ctx, &u.f_decode13, insn);
+            if (dis_sret(ctx, &u.f_decode13)) return true;
             break;
         case 0x4:
-            /* ...11001 00...... ........ ........ */
-            /* hive64.decode:101 */
-            decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
-            if (dis_hret(ctx, &u.f_decode6)) return true;
+            /* ...11000 0100.... ........ ........ */
+            /* hive64.decode:149 */
+            decode_extract_decode_Fmt_13(ctx, &u.f_decode13, insn);
+            if (dis_hret(ctx, &u.f_decode13)) return true;
             break;
         case 0x5:
-            /* ...11001 01...... ........ ........ */
-            /* hive64.decode:102 */
-            decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
-            if (dis_iret(ctx, &u.f_decode6)) return true;
+            /* ...11000 0101.... ........ ........ */
+            /* hive64.decode:150 */
+            decode_extract_decode_Fmt_13(ctx, &u.f_decode13, insn);
+            if (dis_iret(ctx, &u.f_decode13)) return true;
             break;
         case 0x6:
-            /* ...11001 10...... ........ ........ */
-            /* hive64.decode:103 */
-            decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
-            if (dis_svc(ctx, &u.f_decode6)) return true;
+            /* ...11000 0110.... ........ ........ */
+            /* hive64.decode:151 */
+            decode_extract_decode_Fmt_13(ctx, &u.f_decode13, insn);
+            if (dis_svc(ctx, &u.f_decode13)) return true;
             break;
         case 0x7:
-            /* ...11001 11...... ........ ........ */
-            /* hive64.decode:104 */
-            decode_extract_decode_Fmt_15(ctx, &u.f_decode15, insn);
-            if (dis_mov_cr_r(ctx, &u.f_decode15)) return true;
+            /* ...11000 0111.... ........ ........ */
+            /* hive64.decode:152 */
+            decode_extract_decode_Fmt_16(ctx, &u.f_decode16, insn);
+            if (dis_mov_cr_r(ctx, &u.f_decode16)) return true;
+            break;
+        case 0x8:
+            /* ...11000 1000.... ........ ........ */
+            /* hive64.decode:153 */
+            decode_extract_decode_Fmt_16(ctx, &u.f_decode16, insn);
+            if (dis_mov_r_cr(ctx, &u.f_decode16)) return true;
+            break;
+        case 0x9:
+            /* ...11000 1001.... ........ ........ */
+            /* hive64.decode:154 */
+            decode_extract_decode_Fmt_13(ctx, &u.f_decode13, insn);
+            if (dis_hexit(ctx, &u.f_decode13)) return true;
+            break;
+        case 0xa:
+            /* ...11000 1010.... ........ ........ */
+            /* hive64.decode:155 */
+            decode_extract_decode_Fmt_13(ctx, &u.f_decode13, insn);
+            if (dis_sexit(ctx, &u.f_decode13)) return true;
+            break;
+        case 0x10:
+            /* ...11001 0000.... ........ ........ */
+            decode_extract_decode_Fmt_17(ctx, &u.f_decode17, insn);
+            switch (insn & 0x000c8000) {
+            case 0x00000000:
+                /* ...11001 000000.. 0....... ........ */
+                /* hive64.decode:157 */
+                if (dis_fadd(ctx, &u.f_decode17)) return true;
+                break;
+            case 0x00040000:
+                /* ...11001 000001.. 0....... ........ */
+                /* hive64.decode:169 */
+                if (dis_dadd(ctx, &u.f_decode17)) return true;
+                break;
+            case 0x00080000:
+                /* ...11001 000010.. 0....... ........ */
+                /* hive64.decode:158 */
+                if (dis_fsub(ctx, &u.f_decode17)) return true;
+                break;
+            case 0x00088000:
+                /* ...11001 000010.. 1....... ........ */
+                /* hive64.decode:159 */
+                if (dis_fcmp(ctx, &u.f_decode17)) return true;
+                break;
+            case 0x000c0000:
+                /* ...11001 000011.. 0....... ........ */
+                /* hive64.decode:170 */
+                if (dis_dsub(ctx, &u.f_decode17)) return true;
+                break;
+            case 0x000c8000:
+                /* ...11001 000011.. 1....... ........ */
+                /* hive64.decode:171 */
+                if (dis_dcmp(ctx, &u.f_decode17)) return true;
+                break;
+            }
+            break;
+        case 0x11:
+            /* ...11001 0001.... ........ ........ */
+            decode_extract_decode_Fmt_17(ctx, &u.f_decode17, insn);
+            switch (insn & 0x000c8000) {
+            case 0x00000000:
+                /* ...11001 000100.. 0....... ........ */
+                /* hive64.decode:160 */
+                if (dis_fmul(ctx, &u.f_decode17)) return true;
+                break;
+            case 0x00040000:
+                /* ...11001 000101.. 0....... ........ */
+                /* hive64.decode:172 */
+                if (dis_dmul(ctx, &u.f_decode17)) return true;
+                break;
+            case 0x00080000:
+                /* ...11001 000110.. 0....... ........ */
+                /* hive64.decode:161 */
+                if (dis_fdiv(ctx, &u.f_decode17)) return true;
+                break;
+            case 0x000c0000:
+                /* ...11001 000111.. 0....... ........ */
+                /* hive64.decode:173 */
+                if (dis_ddiv(ctx, &u.f_decode17)) return true;
+                break;
+            }
+            break;
+        case 0x12:
+            /* ...11001 0010.... ........ ........ */
+            switch (insn & 0x000c8000) {
+            case 0x00000000:
+                /* ...11001 001000.. 0....... ........ */
+                /* hive64.decode:162 */
+                decode_extract_decode_Fmt_17(ctx, &u.f_decode17, insn);
+                if (dis_fmod(ctx, &u.f_decode17)) return true;
+                break;
+            case 0x00040000:
+                /* ...11001 001001.. 0....... ........ */
+                /* hive64.decode:174 */
+                decode_extract_decode_Fmt_17(ctx, &u.f_decode17, insn);
+                if (dis_dmod(ctx, &u.f_decode17)) return true;
+                break;
+            case 0x00080000:
+                /* ...11001 001010.. 0....... ........ */
+                decode_extract_decode_Fmt_18(ctx, &u.f_decode18, insn);
+                switch ((insn >> 16) & 0x1) {
+                case 0x0:
+                    /* ...11001 001010.0 0....... ........ */
+                    /* hive64.decode:163 */
+                    if (dis_i2f(ctx, &u.f_decode18)) return true;
+                    break;
+                case 0x1:
+                    /* ...11001 001010.1 0....... ........ */
+                    /* hive64.decode:164 */
+                    if (dis_f2i(ctx, &u.f_decode18)) return true;
+                    break;
+                }
+                break;
+            case 0x000c0000:
+                /* ...11001 001011.. 0....... ........ */
+                decode_extract_decode_Fmt_18(ctx, &u.f_decode18, insn);
+                switch ((insn >> 16) & 0x1) {
+                case 0x0:
+                    /* ...11001 001011.0 0....... ........ */
+                    /* hive64.decode:175 */
+                    if (dis_i2d(ctx, &u.f_decode18)) return true;
+                    break;
+                case 0x1:
+                    /* ...11001 001011.1 0....... ........ */
+                    /* hive64.decode:176 */
+                    if (dis_d2i(ctx, &u.f_decode18)) return true;
+                    break;
+                }
+                break;
+            }
+            break;
+        case 0x13:
+            /* ...11001 0011.... ........ ........ */
+            decode_extract_decode_Fmt_18(ctx, &u.f_decode18, insn);
+            switch (insn & 0x000c8000) {
+            case 0x00000000:
+                /* ...11001 001100.. 0....... ........ */
+                /* hive64.decode:165 */
+                if (dis_fsin(ctx, &u.f_decode18)) return true;
+                break;
+            case 0x00040000:
+                /* ...11001 001101.. 0....... ........ */
+                /* hive64.decode:177 */
+                if (dis_dsin(ctx, &u.f_decode18)) return true;
+                break;
+            case 0x00080000:
+                /* ...11001 001110.. 0....... ........ */
+                /* hive64.decode:166 */
+                if (dis_fsqrt(ctx, &u.f_decode18)) return true;
+                break;
+            case 0x000c0000:
+                /* ...11001 001111.. 0....... ........ */
+                /* hive64.decode:178 */
+                if (dis_dsqrt(ctx, &u.f_decode18)) return true;
+                break;
+            }
+            break;
+        case 0x14:
+            /* ...11001 0100.... ........ ........ */
+            decode_extract_decode_Fmt_18(ctx, &u.f_decode18, insn);
+            switch (insn & 0x000c8000) {
+            case 0x00000000:
+                /* ...11001 010000.. 0....... ........ */
+                /* hive64.decode:167 */
+                if (dis_f2d(ctx, &u.f_decode18)) return true;
+                break;
+            case 0x00040000:
+                /* ...11001 010001.. 0....... ........ */
+                /* hive64.decode:179 */
+                if (dis_d2f(ctx, &u.f_decode18)) return true;
+                break;
+            }
             break;
         }
         break;
     case 0xd:
         /* ...1101. ........ ........ ........ */
         switch ((insn >> 22) & 0x7) {
-        case 0x0:
-            /* ...11010 00...... ........ ........ */
-            /* hive64.decode:105 */
-            decode_extract_decode_Fmt_15(ctx, &u.f_decode15, insn);
-            if (dis_mov_r_cr(ctx, &u.f_decode15)) return true;
-            break;
-        case 0x1:
-            /* ...11010 01...... ........ ........ */
-            /* hive64.decode:106 */
-            decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
-            if (dis_hexit(ctx, &u.f_decode6)) return true;
-            break;
         case 0x2:
             /* ...11010 10...... ........ ........ */
-            /* hive64.decode:107 */
+            /* hive64.decode:181 */
+            decode_extract_decode_Fmt_19(ctx, &u.f_decode19, insn);
+            if (dis_cswp(ctx, &u.f_decode19)) return true;
+            break;
+        case 0x3:
+            /* ...11010 11...... ........ ........ */
+            /* hive64.decode:182 */
             decode_extract_decode_Fmt_6(ctx, &u.f_decode6, insn);
-            if (dis_sexit(ctx, &u.f_decode6)) return true;
-            break;
-        case 0x4:
-            /* ...11011 00...... ........ ........ */
-            switch ((insn >> 17) & 0x1f) {
-            case 0x0:
-                /* ...11011 0000000. ........ ........ */
-                /* hive64.decode:58 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_fadd(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x1:
-                /* ...11011 0000001. ........ ........ */
-                /* hive64.decode:59 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_faddi(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x2:
-                /* ...11011 0000010. ........ ........ */
-                switch ((insn >> 16) & 0x1) {
-                case 0x0:
-                    /* ...11011 00000100 ........ ........ */
-                    /* hive64.decode:60 */
-                    decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                    if (dis_fsub(ctx, &u.f_decode10)) return true;
-                    break;
-                case 0x1:
-                    /* ...11011 00000101 ........ ........ */
-                    /* hive64.decode:62 */
-                    decode_extract_decode_Fmt_11(ctx, &u.f_decode11, insn);
-                    if (dis_fcmp(ctx, &u.f_decode11)) return true;
-                    break;
-                }
-                break;
-            case 0x3:
-                /* ...11011 0000011. ........ ........ */
-                switch ((insn >> 16) & 0x1) {
-                case 0x0:
-                    /* ...11011 00000110 ........ ........ */
-                    /* hive64.decode:61 */
-                    decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                    if (dis_fsubi(ctx, &u.f_decode10)) return true;
-                    break;
-                case 0x1:
-                    /* ...11011 00000111 ........ ........ */
-                    /* hive64.decode:63 */
-                    decode_extract_decode_Fmt_11(ctx, &u.f_decode11, insn);
-                    if (dis_fcmpi(ctx, &u.f_decode11)) return true;
-                    break;
-                }
-                break;
-            case 0x4:
-                /* ...11011 0000100. ........ ........ */
-                /* hive64.decode:64 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_fmul(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x5:
-                /* ...11011 0000101. ........ ........ */
-                /* hive64.decode:65 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_fmuli(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x6:
-                /* ...11011 0000110. ........ ........ */
-                /* hive64.decode:66 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_fdiv(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x7:
-                /* ...11011 0000111. ........ ........ */
-                /* hive64.decode:67 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_fdivi(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x8:
-                /* ...11011 0001000. ........ ........ */
-                /* hive64.decode:68 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_fmod(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x9:
-                /* ...11011 0001001. ........ ........ */
-                /* hive64.decode:69 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_fmodi(ctx, &u.f_decode10)) return true;
-                break;
-            case 0xa:
-                /* ...11011 0001010. ........ ........ */
-                /* hive64.decode:70 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_f2i(ctx, &u.f_decode12)) return true;
-                break;
-            case 0xb:
-                /* ...11011 0001011. ........ ........ */
-                /* hive64.decode:71 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_i2f(ctx, &u.f_decode12)) return true;
-                break;
-            case 0xc:
-                /* ...11011 0001100. ........ ........ */
-                /* hive64.decode:72 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_fsin(ctx, &u.f_decode12)) return true;
-                break;
-            case 0xd:
-                /* ...11011 0001101. ........ ........ */
-                /* hive64.decode:73 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_fsini(ctx, &u.f_decode12)) return true;
-                break;
-            case 0xe:
-                /* ...11011 0001110. ........ ........ */
-                /* hive64.decode:74 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_fsqrt(ctx, &u.f_decode12)) return true;
-                break;
-            case 0xf:
-                /* ...11011 0001111. ........ ........ */
-                /* hive64.decode:75 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_fsqrti(ctx, &u.f_decode12)) return true;
-                break;
-            case 0x10:
-                /* ...11011 0010000. ........ ........ */
-                /* hive64.decode:94 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_s2f(ctx, &u.f_decode12)) return true;
-                break;
-            }
-            break;
-        case 0x5:
-            /* ...11011 01...... ........ ........ */
-            switch ((insn >> 17) & 0x1f) {
-            case 0x0:
-                /* ...11011 0100000. ........ ........ */
-                /* hive64.decode:76 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_sadd(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x1:
-                /* ...11011 0100001. ........ ........ */
-                /* hive64.decode:77 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_saddi(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x2:
-                /* ...11011 0100010. ........ ........ */
-                switch ((insn >> 16) & 0x1) {
-                case 0x0:
-                    /* ...11011 01000100 ........ ........ */
-                    /* hive64.decode:78 */
-                    decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                    if (dis_ssub(ctx, &u.f_decode10)) return true;
-                    break;
-                case 0x1:
-                    /* ...11011 01000101 ........ ........ */
-                    /* hive64.decode:80 */
-                    decode_extract_decode_Fmt_11(ctx, &u.f_decode11, insn);
-                    if (dis_scmp(ctx, &u.f_decode11)) return true;
-                    break;
-                }
-                break;
-            case 0x3:
-                /* ...11011 0100011. ........ ........ */
-                switch ((insn >> 16) & 0x1) {
-                case 0x0:
-                    /* ...11011 01000110 ........ ........ */
-                    /* hive64.decode:79 */
-                    decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                    if (dis_ssubi(ctx, &u.f_decode10)) return true;
-                    break;
-                case 0x1:
-                    /* ...11011 01000111 ........ ........ */
-                    /* hive64.decode:81 */
-                    decode_extract_decode_Fmt_11(ctx, &u.f_decode11, insn);
-                    if (dis_scmpi(ctx, &u.f_decode11)) return true;
-                    break;
-                }
-                break;
-            case 0x4:
-                /* ...11011 0100100. ........ ........ */
-                /* hive64.decode:82 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_smul(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x5:
-                /* ...11011 0100101. ........ ........ */
-                /* hive64.decode:83 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_smuli(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x6:
-                /* ...11011 0100110. ........ ........ */
-                /* hive64.decode:84 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_sdiv(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x7:
-                /* ...11011 0100111. ........ ........ */
-                /* hive64.decode:85 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_sdivi(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x8:
-                /* ...11011 0101000. ........ ........ */
-                /* hive64.decode:86 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_smod(ctx, &u.f_decode10)) return true;
-                break;
-            case 0x9:
-                /* ...11011 0101001. ........ ........ */
-                /* hive64.decode:87 */
-                decode_extract_decode_Fmt_10(ctx, &u.f_decode10, insn);
-                if (dis_smodi(ctx, &u.f_decode10)) return true;
-                break;
-            case 0xa:
-                /* ...11011 0101010. ........ ........ */
-                /* hive64.decode:88 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_s2i(ctx, &u.f_decode12)) return true;
-                break;
-            case 0xb:
-                /* ...11011 0101011. ........ ........ */
-                /* hive64.decode:89 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_i2s(ctx, &u.f_decode12)) return true;
-                break;
-            case 0xc:
-                /* ...11011 0101100. ........ ........ */
-                /* hive64.decode:90 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_ssin(ctx, &u.f_decode12)) return true;
-                break;
-            case 0xd:
-                /* ...11011 0101101. ........ ........ */
-                /* hive64.decode:91 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_ssini(ctx, &u.f_decode12)) return true;
-                break;
-            case 0xe:
-                /* ...11011 0101110. ........ ........ */
-                /* hive64.decode:92 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_ssqrt(ctx, &u.f_decode12)) return true;
-                break;
-            case 0xf:
-                /* ...11011 0101111. ........ ........ */
-                /* hive64.decode:93 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_ssqrti(ctx, &u.f_decode12)) return true;
-                break;
-            case 0x10:
-                /* ...11011 0110000. ........ ........ */
-                /* hive64.decode:95 */
-                decode_extract_decode_Fmt_12(ctx, &u.f_decode12, insn);
-                if (dis_f2s(ctx, &u.f_decode12)) return true;
-                break;
-            }
-            break;
-        case 0x6:
-            /* ...11011 10...... ........ ........ */
-            /* hive64.decode:55 */
-            decode_extract_decode_Fmt_9(ctx, &u.f_decode9, insn);
-            if (dis_cswap(ctx, &u.f_decode9)) return true;
-            break;
-        case 0x7:
-            /* ...11011 11...... ........ ........ */
-            /* hive64.decode:56 */
-            decode_extract_decode_Fmt_7(ctx, &u.f_decode7, insn);
-            if (dis_xchg(ctx, &u.f_decode7)) return true;
+            if (dis_xchg(ctx, &u.f_decode6)) return true;
             break;
         }
         break;
     case 0xe:
         /* ...1110. ........ ........ ........ */
-        decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+        decode_extract_decode_Fmt_20(ctx, &u.f_decode20, insn);
         switch ((insn >> 22) & 0x7) {
         case 0x0:
             /* ...11100 00...... ........ ........ */
-            /* hive64.decode:130 */
-            if (dis_ubxt(ctx, &u.f_decode21)) return true;
+            /* hive64.decode:184 */
+            if (dis_ubxt(ctx, &u.f_decode20)) return true;
             break;
         case 0x1:
             /* ...11100 01...... ........ ........ */
-            /* hive64.decode:131 */
-            if (dis_sbxt(ctx, &u.f_decode21)) return true;
+            /* hive64.decode:185 */
+            if (dis_sbxt(ctx, &u.f_decode20)) return true;
             break;
         case 0x2:
             /* ...11100 10...... ........ ........ */
-            /* hive64.decode:132 */
-            if (dis_ubdp(ctx, &u.f_decode21)) return true;
+            /* hive64.decode:186 */
+            if (dis_ubdp(ctx, &u.f_decode20)) return true;
             break;
         case 0x3:
             /* ...11100 11...... ........ ........ */
-            /* hive64.decode:133 */
-            if (dis_sbdp(ctx, &u.f_decode21)) return true;
+            /* hive64.decode:187 */
+            if (dis_sbdp(ctx, &u.f_decode20)) return true;
             break;
         }
         break;
@@ -1588,100 +1388,100 @@ static bool decode(DisasContext *ctx, uint32_t insn)
         switch ((insn >> 19) & 0x3f) {
         case 0x20:
             /* ...11111 00000... ........ ........ */
-            /* hive64.decode:136 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vadd(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:190 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vadd(ctx, &u.f_decode21)) return true;
             break;
         case 0x21:
             /* ...11111 00001... ........ ........ */
-            /* hive64.decode:137 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vsub(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:191 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vsub(ctx, &u.f_decode21)) return true;
             break;
         case 0x22:
             /* ...11111 00010... ........ ........ */
-            /* hive64.decode:138 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vmul(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:192 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vmul(ctx, &u.f_decode21)) return true;
             break;
         case 0x23:
             /* ...11111 00011... ........ ........ */
-            /* hive64.decode:139 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vdiv(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:193 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vdiv(ctx, &u.f_decode21)) return true;
             break;
         case 0x24:
             /* ...11111 00100... ........ ........ */
-            /* hive64.decode:140 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vaddsub(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:194 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vaddsub(ctx, &u.f_decode21)) return true;
             break;
         case 0x25:
             /* ...11111 00101... ........ ........ */
-            /* hive64.decode:141 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vmadd(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:195 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vmadd(ctx, &u.f_decode21)) return true;
             break;
         case 0x26:
             /* ...11111 00110... ........ ........ */
-            decode_extract_decode_Fmt_23(ctx, &u.f_decode23, insn);
+            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
             switch ((insn >> 11) & 0x1) {
             case 0x0:
                 /* ...11111 00110... ....0... ........ */
-                /* hive64.decode:142 */
-                if (dis_vmov_reg(ctx, &u.f_decode23)) return true;
+                /* hive64.decode:196 */
+                if (dis_vmov_reg(ctx, &u.f_decode22)) return true;
                 break;
             case 0x1:
                 /* ...11111 00110... ....1... ........ */
-                /* hive64.decode:143 */
-                if (dis_vmov_reg2(ctx, &u.f_decode23)) return true;
+                /* hive64.decode:197 */
+                if (dis_vmov_reg2(ctx, &u.f_decode22)) return true;
                 break;
             }
             break;
         case 0x27:
             /* ...11111 00111... ........ ........ */
-            /* hive64.decode:144 */
-            decode_extract_decode_Fmt_24(ctx, &u.f_decode24, insn);
-            if (dis_vmov(ctx, &u.f_decode24)) return true;
+            /* hive64.decode:198 */
+            decode_extract_decode_Fmt_23(ctx, &u.f_decode23, insn);
+            if (dis_vmov(ctx, &u.f_decode23)) return true;
             break;
         case 0x28:
             /* ...11111 01000... ........ ........ */
-            /* hive64.decode:145 */
-            decode_extract_decode_Fmt_25(ctx, &u.f_decode25, insn);
-            if (dis_vconv(ctx, &u.f_decode25)) return true;
+            /* hive64.decode:199 */
+            decode_extract_decode_Fmt_24(ctx, &u.f_decode24, insn);
+            if (dis_vconv(ctx, &u.f_decode24)) return true;
             break;
         case 0x29:
             /* ...11111 01001... ........ ........ */
-            /* hive64.decode:146 */
-            decode_extract_decode_Fmt_26(ctx, &u.f_decode26, insn);
-            if (dis_vlen(ctx, &u.f_decode26)) return true;
+            /* hive64.decode:200 */
+            decode_extract_decode_Fmt_25(ctx, &u.f_decode25, insn);
+            if (dis_vlen(ctx, &u.f_decode25)) return true;
             break;
         case 0x2a:
             /* ...11111 01010... ........ ........ */
             switch ((insn >> 17) & 0x3) {
             case 0x0:
                 /* ...11111 0101000. ........ ........ */
-                /* hive64.decode:151 */
-                decode_extract_decode_Fmt_28(ctx, &u.f_decode28, insn);
-                if (dis_vldr_reg(ctx, &u.f_decode28)) return true;
+                /* hive64.decode:205 */
+                decode_extract_decode_Fmt_27(ctx, &u.f_decode27, insn);
+                if (dis_vldr_reg(ctx, &u.f_decode27)) return true;
                 break;
             case 0x1:
                 /* ...11111 0101001. ........ ........ */
-                /* hive64.decode:152 */
-                decode_extract_decode_Fmt_28(ctx, &u.f_decode28, insn);
-                if (dis_vldr_reg_update(ctx, &u.f_decode28)) return true;
+                /* hive64.decode:206 */
+                decode_extract_decode_Fmt_27(ctx, &u.f_decode27, insn);
+                if (dis_vldr_reg_update(ctx, &u.f_decode27)) return true;
                 break;
             case 0x2:
                 /* ...11111 0101010. ........ ........ */
-                /* hive64.decode:147 */
-                decode_extract_decode_Fmt_27(ctx, &u.f_decode27, insn);
-                if (dis_vldr_imm(ctx, &u.f_decode27)) return true;
+                /* hive64.decode:201 */
+                decode_extract_decode_Fmt_26(ctx, &u.f_decode26, insn);
+                if (dis_vldr_imm(ctx, &u.f_decode26)) return true;
                 break;
             case 0x3:
                 /* ...11111 0101011. ........ ........ */
-                /* hive64.decode:148 */
-                decode_extract_decode_Fmt_27(ctx, &u.f_decode27, insn);
-                if (dis_vldr_imm_update(ctx, &u.f_decode27)) return true;
+                /* hive64.decode:202 */
+                decode_extract_decode_Fmt_26(ctx, &u.f_decode26, insn);
+                if (dis_vldr_imm_update(ctx, &u.f_decode26)) return true;
                 break;
             }
             break;
@@ -1690,101 +1490,101 @@ static bool decode(DisasContext *ctx, uint32_t insn)
             switch ((insn >> 17) & 0x3) {
             case 0x0:
                 /* ...11111 0101100. ........ ........ */
-                /* hive64.decode:153 */
-                decode_extract_decode_Fmt_28(ctx, &u.f_decode28, insn);
-                if (dis_vstr_reg(ctx, &u.f_decode28)) return true;
+                /* hive64.decode:207 */
+                decode_extract_decode_Fmt_27(ctx, &u.f_decode27, insn);
+                if (dis_vstr_reg(ctx, &u.f_decode27)) return true;
                 break;
             case 0x1:
                 /* ...11111 0101101. ........ ........ */
-                /* hive64.decode:154 */
-                decode_extract_decode_Fmt_28(ctx, &u.f_decode28, insn);
-                if (dis_vstr_reg_update(ctx, &u.f_decode28)) return true;
+                /* hive64.decode:208 */
+                decode_extract_decode_Fmt_27(ctx, &u.f_decode27, insn);
+                if (dis_vstr_reg_update(ctx, &u.f_decode27)) return true;
                 break;
             case 0x2:
                 /* ...11111 0101110. ........ ........ */
-                /* hive64.decode:149 */
-                decode_extract_decode_Fmt_27(ctx, &u.f_decode27, insn);
-                if (dis_vstr_imm(ctx, &u.f_decode27)) return true;
+                /* hive64.decode:203 */
+                decode_extract_decode_Fmt_26(ctx, &u.f_decode26, insn);
+                if (dis_vstr_imm(ctx, &u.f_decode26)) return true;
                 break;
             case 0x3:
                 /* ...11111 0101111. ........ ........ */
-                /* hive64.decode:150 */
-                decode_extract_decode_Fmt_27(ctx, &u.f_decode27, insn);
-                if (dis_vstr_imm_update(ctx, &u.f_decode27)) return true;
+                /* hive64.decode:204 */
+                decode_extract_decode_Fmt_26(ctx, &u.f_decode26, insn);
+                if (dis_vstr_imm_update(ctx, &u.f_decode26)) return true;
                 break;
             }
             break;
         case 0x2c:
             /* ...11111 01100... ........ ........ */
-            /* hive64.decode:155 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vand(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:209 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vand(ctx, &u.f_decode21)) return true;
             break;
         case 0x2d:
             /* ...11111 01101... ........ ........ */
-            /* hive64.decode:156 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vor(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:210 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vor(ctx, &u.f_decode21)) return true;
             break;
         case 0x2e:
             /* ...11111 01110... ........ ........ */
-            /* hive64.decode:157 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vxor(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:211 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vxor(ctx, &u.f_decode21)) return true;
             break;
         case 0x2f:
             /* ...11111 01111... ........ ........ */
-            /* hive64.decode:158 */
-            decode_extract_decode_Fmt_29(ctx, &u.f_decode29, insn);
-            if (dis_vcmp(ctx, &u.f_decode29)) return true;
+            /* hive64.decode:212 */
+            decode_extract_decode_Fmt_28(ctx, &u.f_decode28, insn);
+            if (dis_vcmp(ctx, &u.f_decode28)) return true;
             break;
         case 0x30:
             /* ...11111 10000... ........ ........ */
-            /* hive64.decode:159 */
-            decode_extract_decode_Fmt_30(ctx, &u.f_decode30, insn);
-            if (dis_vminmax(ctx, &u.f_decode30)) return true;
+            /* hive64.decode:213 */
+            decode_extract_decode_Fmt_29(ctx, &u.f_decode29, insn);
+            if (dis_vminmax(ctx, &u.f_decode29)) return true;
             break;
         case 0x31:
             /* ...11111 10001... ........ ........ */
-            /* hive64.decode:160 */
-            decode_extract_decode_Fmt_24(ctx, &u.f_decode24, insn);
-            if (dis_vabs(ctx, &u.f_decode24)) return true;
+            /* hive64.decode:214 */
+            decode_extract_decode_Fmt_23(ctx, &u.f_decode23, insn);
+            if (dis_vabs(ctx, &u.f_decode23)) return true;
             break;
         case 0x32:
             /* ...11111 10010... ........ ........ */
-            /* hive64.decode:161 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vshl(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:215 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vshl(ctx, &u.f_decode21)) return true;
             break;
         case 0x33:
             /* ...11111 10011... ........ ........ */
-            /* hive64.decode:162 */
-            decode_extract_decode_Fmt_31(ctx, &u.f_decode31, insn);
-            if (dis_vshr(ctx, &u.f_decode31)) return true;
+            /* hive64.decode:216 */
+            decode_extract_decode_Fmt_30(ctx, &u.f_decode30, insn);
+            if (dis_vshr(ctx, &u.f_decode30)) return true;
             break;
         case 0x34:
             /* ...11111 10100... ........ ........ */
-            /* hive64.decode:163 */
-            decode_extract_decode_Fmt_24(ctx, &u.f_decode24, insn);
-            if (dis_vsqrt(ctx, &u.f_decode24)) return true;
+            /* hive64.decode:217 */
+            decode_extract_decode_Fmt_23(ctx, &u.f_decode23, insn);
+            if (dis_vsqrt(ctx, &u.f_decode23)) return true;
             break;
         case 0x35:
             /* ...11111 10101... ........ ........ */
-            /* hive64.decode:164 */
-            decode_extract_decode_Fmt_22(ctx, &u.f_decode22, insn);
-            if (dis_vmod(ctx, &u.f_decode22)) return true;
+            /* hive64.decode:218 */
+            decode_extract_decode_Fmt_21(ctx, &u.f_decode21, insn);
+            if (dis_vmod(ctx, &u.f_decode21)) return true;
             break;
         case 0x36:
             /* ...11111 10110... ........ ........ */
-            /* hive64.decode:165 */
-            decode_extract_decode_Fmt_32(ctx, &u.f_decode32, insn);
-            if (dis_vmovall(ctx, &u.f_decode32)) return true;
+            /* hive64.decode:219 */
+            decode_extract_decode_Fmt_31(ctx, &u.f_decode31, insn);
+            if (dis_vmovall(ctx, &u.f_decode31)) return true;
             break;
-        case 0x3f:
-            /* ...11111 11111... ........ ........ */
-            /* hive64.decode:166 */
-            decode_extract_decode_Fmt_29(ctx, &u.f_decode29, insn);
-            if (dis_vtst(ctx, &u.f_decode29)) return true;
+        case 0x37:
+            /* ...11111 10111... ........ ........ */
+            /* hive64.decode:220 */
+            decode_extract_decode_Fmt_28(ctx, &u.f_decode28, insn);
+            if (dis_vtst(ctx, &u.f_decode28)) return true;
             break;
         }
         break;
